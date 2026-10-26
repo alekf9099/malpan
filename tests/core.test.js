@@ -5,6 +5,7 @@ import { distribution, throwSticks, BACKDO, DO, GAE, GEOL, YUT, MO } from '../sr
 import { createRound, legalMoves, applyMove, scoreMove, throwYut, reroll } from '../src/core/round.js';
 import { createRun, startRound, settleRound, buy, sellCharm, moveCharm, ROUNDS } from '../src/core/run.js';
 import { createRng } from '../src/core/rng.js';
+import { yutRoll } from '../src/core/boards/yut.js';
 
 // 정해진 결과만 내는 가짜 윷: 평평한 면 개수 n 을 고정한다
 function fixedRound(extra = {}) {
@@ -13,7 +14,7 @@ function fixedRound(extra = {}) {
     charms: [], tiles: {}, pFlat: 0.55, boss: null, ...extra
   });
 }
-function give(r, result) { r.pending = { result, flats: [], granted: 0 }; r.phase = 'move'; }
+function give(r, result) { r.pending = { roll: yutRoll(result), granted: 0 }; r.phase = 'move'; }
 const rngAlways = (v) => ({ next: () => v, int: () => 0, pick: (l) => l[0], shuffle: (l) => l });
 
 test('판은 29칸', () => {
@@ -102,7 +103,7 @@ test('도깨비를 잡으면 칩 +50·배수 +1(+흥 1), 잡힌 도깨비는 출
   const ev = applyMove(r, idx, rngAlways(0.99));
   const score = ev.find((e) => e.type === 'score');
   assert.equal(score.chips, 30 + 50);
-  assert.equal(score.mult, 3);
+  assert.equal(score.mult, 3 * 2); // 새로 나간 첫 말은 호랑이 — 맹공으로 ×2
   assert.equal(opp.node, START);
   assert.equal(r.phase, 'throw');
   assert.equal(r.extra, 1);
@@ -120,7 +121,7 @@ test('골인하면 칩 +100·배수 +2(+흥 1)', () => {
 });
 
 test('부적은 왼쪽부터 계산된다 — ×2 가 뒤에 있어야 더 세다', () => {
-  const base = { result: YUT, stack: 2, captured: 0, homed: 0, waiting: 0, onDiagonal: false, tile: null };
+  const base = { roll: yutRoll(YUT), tier: 4, stack: 2, captured: 0, homed: 0, waiting: 0, onDiagonal: false, tile: null };
   const a = scoreMove({ charms: ['gambler', 'magpie'], boss: null }, base); // (1+1)×2 +1 = 5
   const b = scoreMove({ charms: ['magpie', 'gambler'], boss: null }, base); // (1+1+1)×2 = 6
   assert.equal(a.mult, 5);
@@ -137,10 +138,10 @@ test('보스 "도 무효"면 도가 나와도 둘 수가 없다', () => {
 test('윷·모는 던질 기회를 쓰지 않고 한 번 더, 다시 던지면 그 한 번 더는 취소', () => {
   const r = fixedRound();
   throwYut(r, rngAlways(0.01)); // 모두 평평 → 윷
-  assert.equal(r.pending.result, YUT);
+  assert.equal(r.pending.roll.value, YUT);
   assert.equal(r.extra, 1);
   reroll(r, rngAlways(0.99)); // 모두 엎어짐 → 모(다시 +1)
-  assert.equal(r.pending.result, MO);
+  assert.equal(r.pending.roll.value, MO);
   assert.equal(r.extra, 1);
   assert.equal(r.throwsLeft, 6);
 });
@@ -169,7 +170,7 @@ test('상점: 사고, 팔고, 순서 바꾸기', () => {
   assert.equal(buy(run, i).ok, false); // 이미 팔림
   const t = run.shop.offers.findIndex((o) => o.kind === 'tile');
   const res = buy(run, t);
-  assert.ok(res.ok && run.tiles[res.node]);
+  assert.ok(res.ok && run.tiles[res.board][res.node]);
   run.charms.push('ox');
   moveCharm(run, 1, 0);
   assert.equal(run.charms[0], 'ox');
@@ -182,7 +183,7 @@ test('같은 시드면 같은 판', () => {
     const r = startRound(run);
     const log = [];
     while (r.phase !== 'over') {
-      if (r.phase === 'throw') log.push(...throwYut(r, run.rng).map((e) => e.type + (e.result ?? '')));
+      if (r.phase === 'throw') log.push(...throwYut(r, run.rng).map((e) => e.type + (e.roll?.value ?? '')));
       else log.push(...applyMove(r, 0, run.rng).map((e) => e.type));
     }
     return log.join(',') + '|' + r.score;
@@ -248,7 +249,7 @@ test('미리보기는 위험도를 보여 준다: 도깨비 바로 앞 칸은 �
 test('흥은 최대 5, 내 말이 잡히면 꺼진다', () => {
   const r = fixedRound();
   r.heung = HEUNG_MAX;
-  const base = { result: GAE, stack: 1, captured: 1, homed: 0, waiting: 0, onDiagonal: false, tile: null, treasure: false, heung: HEUNG_MAX };
+  const base = { roll: yutRoll(GAE), tier: 2, stack: 1, captured: 1, homed: 0, waiting: 0, onDiagonal: false, tile: null, treasure: false, heung: HEUNG_MAX };
   assert.equal(scoreMove(r, base).mult, 1 + 1 + HEUNG_MAX);
   // 도깨비가 내 말을 잡는 상황
   const me = r.pieces[0]; me.node = 'o2'; me.prev = 'o1';
@@ -260,7 +261,7 @@ test('흥은 최대 5, 내 말이 잡히면 꺼진다', () => {
   const seq = [0.99, 0.01, 0.99, 0.99, 0.99]; // 보따리 굴림은 마지막
   let i = 0;
   const rng = { next: () => seq[Math.min(i++, seq.length - 1)] };
-  r.extra = 0; r.pending.granted = 0;
+  r.extra = 0;
   const ev = applyMove(r, legalMoves(r).findIndex((m) => m.kind === 'new'), rng);
   assert.ok(ev.some((e) => e.type === 'capture' && e.who === 'opp'));
   assert.ok(ev.some((e) => e.type === 'heungLost'));
@@ -286,7 +287,7 @@ test('보따리는 내 차례 3번이 지나면 사라진다', () => {
   const rng = rngAlways(0.99); // 도깨비는 모(전부 엎어짐)… 보따리 새로 생기지 않게 0.99
   for (let k = 0; k < 3; k++) {
     give(r, DO);
-    r.pending.granted = 0; r.extra = 0;
+    r.extra = 0;
     applyMove(r, 0, rng);
     if (r.phase === 'over') break;
   }
@@ -315,7 +316,7 @@ test('도깨비가 골인하면 내 던질 기회가 하나 준다', () => {
   r.pieces.find((p) => p.id === 'd0').node = 'home';
   r.throwsLeft = 4;
   give(r, GEOL);
-  r.pending.granted = 0; r.extra = 0;
+  r.extra = 0;
   // 도깨비가 도(평평 1개, 표시 아닌 가락)를 던지게: 가락0 엎어짐, 가락1 평평, 나머지 엎어짐
   const seq = [0.99, 0.01, 0.99, 0.99, 0.99];
   let i = 0;

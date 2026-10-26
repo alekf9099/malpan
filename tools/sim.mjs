@@ -9,7 +9,6 @@
 
 import { createRun, startRound, settleRound, nextRound, buy, ROUNDS } from '../src/core/run.js';
 import { throwYut, applyMove, reroll, legalMoves } from '../src/core/round.js';
-import { BACKDO, DO } from '../src/core/sticks.js';
 import { charmById } from '../src/core/items.js';
 
 const runs = Number(process.argv[2] || 2000);
@@ -37,8 +36,8 @@ function playRound(run, policy) {
   let guard = 0;
   while (r.phase !== 'over' && guard++ < 500) {
     if (r.phase === 'throw') { throwYut(r, run.rng); continue; }
-    const res = r.pending.result;
-    if (policy !== 'random' && r.rerolls > 0 && (res === DO || res === BACKDO)) { reroll(r, run.rng); continue; }
+    const tier = r.pending.roll.tier;
+    if (policy !== 'random' && r.rerolls > 0 && tier <= 1) { reroll(r, run.rng); continue; }
     const pick = policy === 'random' ? 'random' : policy === 'careful' ? 'careful' : 'greedy';
     applyMove(r, policies[pick](r, run.rng), run.rng);
   }
@@ -76,7 +75,7 @@ function simulate(policy) {
 
 const pct = (a, b) => (b ? (100 * a / b).toFixed(1) + '%' : '—').padStart(6);
 console.log(`런 ${runs}개 · 시드 ${seed0}~${seed0 + runs - 1}`);
-console.log('라운드 목표: ' + ROUNDS.map((r, i) => `R${i + 1} ${r.target}${r.boss ? '(보스)' : ''}`).join(' · '));
+console.log('라운드 목표: ' + ROUNDS.map((r, i) => `R${i + 1} ${r.board} ${r.target}${r.boss ? '(보스)' : ''}`).join(' · '));
 console.log('');
 console.log('정책      ' + ROUNDS.map((_, i) => `R${i + 1}통과`.padStart(8)).join('') + '   클리어   R별 평균점수');
 for (const p of ['random', 'greedy', 'shopper', 'careful']) {

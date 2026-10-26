@@ -1,0 +1,18 @@
+# 캐릭터 렌더러용 개발 서버: yut 폴더를 그대로 열고, POST /save/<이름> 을 assets/chars/ 에 저장한다.
+# 사용: python tools/save-server.py . 7374  → http://127.0.0.1:7374/tools/render-chars.html?save
+import sys, os, re, http.server, functools
+ROOT = os.path.abspath(sys.argv[1]); PORT = int(sys.argv[2])
+OUT = os.path.join(ROOT, 'assets', 'chars')
+class H(http.server.SimpleHTTPRequestHandler):
+    def do_POST(self):
+        m = re.fullmatch(r'/save/([a-z0-9-]+\.(webp|png))', self.path)
+        if not m:
+            self.send_response(400); self.end_headers(); return
+        n = int(self.headers['Content-Length'])
+        data = self.rfile.read(n)
+        os.makedirs(OUT, exist_ok=True)
+        open(os.path.join(OUT, m.group(1)), 'wb').write(data)
+        self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-store'); super().end_headers()
+http.server.ThreadingHTTPServer(('127.0.0.1', PORT), functools.partial(H, directory=ROOT)).serve_forever()

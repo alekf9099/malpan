@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>캐릭터 렌더러</title>
+<!--
+  Kenney Cube Pets(CC0) 3D 모델을 판과 같은 시점(세로 눌림 0.58 = 고도 약 35.4°, 45° 회전)으로
+  찍어 스프라이트 시트(WebP, 동작 5줄 × 8프레임)로 만든다. 개발용 도구 — 게임은 결과 그림만 쓴다.
+  tools/save-server.py 로 열고 ?save 를 붙이면 assets/chars/ 에 바로 저장한다.
+-->
+<style>
+  body { margin: 0; padding: 16px; background: #F4EBDD; font: 14px sans-serif; }
+  #out { display: flex; flex-direction: column; gap: 8px; }
+  #out img { background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0 / 16px 16px; image-rendering: auto; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="status">준비 중…</div>
+<div id="out"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const params = new URLSearchParams(location.search);
+const SAVE = params.has('save');
+const FRAME = 160;          // 한 프레임 크기(px)
+const FRAMES = 8;           // 동작당 프레임 수
+const INK = '#22201D';
+const OUTLINE = 6;          // 먹선 두께(px, FRAME 기준)
+const ELEV = Math.asin(0.58);
+const AZIM = Math.PI / 4;
+
+// 게임 이름 → 모델·꾸밈. horns: 도깨비 뿔, tint: 몸 색 바꾸기
+const CAST = {
+  tiger:   { model: 'animal-tiger' },
+  rabbit:  { model: 'animal-bunny' },
+  parrot:  { model: 'animal-parrot' },
+  panda:   { model: 'animal-panda' },
+  dokkaebiRed:  { model: 'animal-polar', tint: '#E0533D', horns: '#F5D35E' },
+  dokkaebiBlue: { model: 'animal-polar', tint: '#4F7FD0', horns: '#F5D35E' }
+};
+const ACTIONS = { idle: 'idle', walk: 'walk', cheer: 'gesture-positive', sad: 'gesture-negative', dance: 'dance' };
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+const RS = FRAME * 2; // 두 배로 찍고 줄여서 가장자리를 부드럽게
+renderer.setSize(RS, RS);
+renderer.setClearColor(0x000000, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xfff6e8, 0x8a7a68, 1.6));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6);
+sun.position.set(-2, 5, 3);
+scene.add(sun);
+
+const loader = new GLTFLoader();
+const load = (name) => new Promise((ok, no) => loader.load(`../assets/models/${name}.glb`, ok, undefined, no));
+
+// 모든 캐릭터가 같은 크기로 보이도록 화면 틀은 하나로 고정한다
+const VIEW = 2.75;    // 직교 카메라 세로 폭(월드 단위). 모델 높이 1.5~2.0
+const FOOT = 0.8;    // 땅 한가운데가 놓이는 높이(프레임 위에서 아래로 비율)
+const cam = new THREE.OrthographicCamera(-VIEW / 2, VIEW / 2, VIEW / 2, -VIEW / 2, 0.1, 50);
+const D = 10;
+cam.position.set(D * Math.cos(ELEV) * Math.sin(AZIM), D * Math.sin(ELEV), D * Math.cos(ELEV) * Math.cos(AZIM));
+cam.lookAt(0, 0, 0);
+// 땅(원점)이 FOOT 위치에 오도록 화면을 아래로 민다
+const shift = (FOOT - 0.5) * VIEW;
+cam.top += shift; cam.bottom += shift;
+cam.updateProjectionMatrix();
+
+function tintModel(root, color) {
+  // 흰 털(밝은 픽셀)만 물들이고 눈·코 같은 어두운 부분은 그대로 둔다
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = o.material.clone();
+    const c = new THREE.Color(color);
+    o.material.onBeforeCompile = (sh) => {
+      sh.uniforms.tintColor = { value: c };
+      sh.fragmentShader = 'uniform vec3 tintColor;\n' + sh.fragmentShader.replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+         float lum = dot(diffuseColor.rgb, vec3(.299,.587,.114));
+         float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
+         float w = smoothstep(.3, .45, lum) * (1. - smoothstep(.08, .2, sat));
+         diffuseColor.rgb = mix(diffuseColor.rgb, tintColor * (.55 + .5 * lum), w);`);
+    };
+  });
+}
+
+function addHorns(root, color) {
+  const body = root.getObjectByName('body') || root;
+  const box = new THREE.Box3().setFromObject(body);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: .6 });
+  const top = box.max.y, cz = (box.min.z + box.max.z) / 2, w = box.max.x - box.min.x;
+  for (const sx of [-1, 1]) {
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.42, 4), mat);
+    horn.rotation.y = Math.PI / 4;
+    horn.rotation.z = -sx * 0.22;
+    // 몸 기준 좌표로 붙여 동작을 따라 움직이게 한다
+    const p = body.worldToLocal(new THREE.Vector3(sx * w * 0.22, top + 0.17, cz + 0.05));
+    horn.position.copy(p);
+    body.add(horn);
+  }
+}
+
+function outline(src) {
+  // 알파를 둥글게 번지게 해 먹선을 깔고, 그 위에 원본을 얹는다
+  const c = document.createElement('canvas');
+  c.width = c.height = FRAME;
+  const g = c.getContext('2d');
+  const ink = document.createElement('canvas');
+  ink.width = ink.height = FRAME;
+  const ig = ink.getContext('2d');
+  ig.drawImage(src, 0, 0, FRAME, FRAME);
+  ig.globalCompositeOperation = 'source-in';
+  ig.fillStyle = INK;
+  ig.fillRect(0, 0, FRAME, FRAME);
+  for (let a = 0; a < 16; a++) {
+    const t = (a / 16) * Math.PI * 2;
+    g.drawImage(ink, Math.cos(t) * OUTLINE, Math.sin(t) * OUTLINE);
+  }
+  g.drawImage(src, 0, 0, FRAME, FRAME);
+  return c;
+}
+
+async function renderCast(kind, spec) {
+  const gltf = await load(spec.model);
+  const root = gltf.scene;
+  if (spec.tint) tintModel(root, spec.tint);
+  if (spec.horns) addHorns(root, spec.horns);
+  scene.add(root);
+  const mixer = new THREE.AnimationMixer(root);
+  const sheets = {};
+  for (const [act, clipName] of Object.entries(ACTIONS)) {
+    const clip = gltf.animations.find((a) => a.name === clipName);
+    const sheet = document.createElement('canvas');
+    sheet.width = FRAME * FRAMES; sheet.height = FRAME;
+    const sg = sheet.getContext('2d');
+    mixer.stopAllAction();
+    const action = mixer.clipAction(clip);
+    action.reset().play();
+    for (let f = 0; f < FRAMES; f++) {
+      mixer.setTime((clip.duration * f) / FRAMES);
+      renderer.render(scene, cam);
+      sg.drawImage(outline(renderer.domElement), f * FRAME, 0);
+    }
+    sheets[act] = sheet;
+  }
+  scene.remove(root);
+  return sheets;
+}
+
+async function save(name, canvas) {
+  const blob = await new Promise((ok) => canvas.toBlob(ok, 'image/webp', 0.88));
+  const r = await fetch(`/save/${name}`, { method: 'POST', body: blob });
+  if (!r.ok) throw new Error('save failed ' + name);
+}
+
+const out = document.getElementById('out');
+const only = params.get('only');
+for (const [kind, spec] of Object.entries(CAST)) {
+  if (only && !only.split(',').includes(kind)) continue;
+  document.getElementById('status').textContent = kind + ' 렌더링…';
+  const sheets = await renderCast(kind, spec);
+  // 한 캐릭터의 동작을 세로로 이어 붙인 시트 하나로 저장한다(행 순서 = ACTIONS 순서)
+  const all = document.createElement('canvas');
+  const acts = Object.keys(sheets);
+  all.width = FRAME * FRAMES; all.height = FRAME * acts.length;
+  acts.forEach((a, i) => all.getContext('2d').drawImage(sheets[a], 0, i * FRAME));
+  const img = new Image();
+  img.src = all.toDataURL();
+  img.width = all.width / 2;
+  out.append(kind, img);
+  if (SAVE) await save(`${kind.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}.webp`, all);
+}
+document.getElementById('status').textContent = '끝';
+window.renderDone = true;
+</script>
+</body>
+</html>

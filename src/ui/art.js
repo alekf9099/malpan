@@ -5,74 +5,32 @@ import { COORDS, EDGES, BIG_NODES } from '../core/board.js';
 const INK = '#22201D';
 const S = `stroke="${INK}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"`;
 
-function eyes(lx, rx, y, r = 2.6) {
-  return `<circle cx="${lx}" cy="${y}" r="${r}" fill="${INK}"/><circle cx="${rx}" cy="${y}" r="${r}" fill="${INK}"/>` +
-    `<circle cx="${lx + 0.9}" cy="${y - 0.9}" r="0.9" fill="#fff"/><circle cx="${rx + 0.9}" cy="${y - 0.9}" r="0.9" fill="#fff"/>`;
-}
-const blush = (lx, rx, y) => `<ellipse cx="${lx}" cy="${y}" rx="3.4" ry="2.2" fill="#E0533D" opacity=".35"/><ellipse cx="${rx}" cy="${y}" rx="3.4" ry="2.2" fill="#E0533D" opacity=".35"/>`;
+/** 내 말 4종. 순서대로 m0~m3. 능력은 core/heroes.js */
+export const HEROES = ['tiger', 'rabbit', 'parrot', 'panda'];
 
-/** 내 말 4종 — 민화 동물. 순서대로 m0~m3. */
-export const HEROES = ['tiger', 'rabbit', 'magpie', 'turtle'];
+// 캐릭터는 Kenney Cube Pets(CC0) 3D 모델을 판과 같은 시점으로 찍은 스프라이트 시트다(tools/render-chars.html).
+// 시트 한 장 = 동작 5줄 × 8프레임. 줄 순서는 ACTS 와 같다.
+const SHEET = { tiger: 'tiger', rabbit: 'rabbit', parrot: 'parrot', panda: 'panda', dokkaebiRed: 'dokkaebi-red', dokkaebiBlue: 'dokkaebi-blue' };
+export const ACTS = ['idle', 'walk', 'cheer', 'sad', 'dance'];
 
-const CHARACTERS = {
-  tiger: () => `
-    <circle cx="17" cy="17" r="7.5" fill="#F08A2B" ${S}/><circle cx="47" cy="17" r="7.5" fill="#F08A2B" ${S}/>
-    <circle cx="17" cy="17" r="3.2" fill="#F6C9A0"/><circle cx="47" cy="17" r="3.2" fill="#F6C9A0"/>
-    <ellipse cx="32" cy="36" rx="23" ry="20" fill="#F08A2B" ${S}/>
-    <path d="M32 17v7M25.5 18.5l2 5.5M38.5 18.5l-2 5.5M10 33h6M10.5 39.5h5M54 33h-6M53.5 39.5h-5" ${S} fill="none"/>
-    <ellipse cx="32" cy="44" rx="11" ry="8" fill="#FFF6E8" ${S}/>
-    ${eyes(24, 40, 32)}
-    <path d="M29 39.5h6l-3 3.2z" fill="${INK}" stroke="${INK}" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M28.5 45.5q3.5 3 7 0" ${S} stroke-width="2.2" fill="none"/>
-    ${blush(18, 46, 41)}`,
-  rabbit: () => `
-    <ellipse cx="23" cy="15" rx="6.5" ry="14" transform="rotate(-12 23 15)" fill="#FFFDF7" ${S}/>
-    <ellipse cx="41" cy="15" rx="6.5" ry="14" transform="rotate(12 41 15)" fill="#FFFDF7" ${S}/>
-    <ellipse cx="23" cy="16" rx="2.6" ry="9" transform="rotate(-12 23 16)" fill="#F4A7A0"/>
-    <ellipse cx="41" cy="16" rx="2.6" ry="9" transform="rotate(12 41 16)" fill="#F4A7A0"/>
-    <ellipse cx="32" cy="40" rx="21" ry="18" fill="#FFFDF7" ${S}/>
-    ${eyes(24, 40, 38)}
-    <ellipse cx="32" cy="44" rx="2.4" ry="1.7" fill="#E0533D"/>
-    <path d="M28.5 47q1.8 2.2 3.5 0q1.7 2.2 3.5 0" ${S} stroke-width="2" fill="none"/>
-    ${blush(18, 46, 45)}`,
-  magpie: () => `
-    <path d="M20 40L3 55l4 3 18-12z" fill="#2F4A8A" ${S}/>
-    <path d="M22 43L7 61l4 2 16-14z" fill="#26262E" ${S}/>
-    <path d="M17 38q2-14 16-18q14-3 20 8q4 9-2 17q-8 9-22 6q-11-3-12-13z" fill="#26262E" ${S}/>
-    <path d="M26 44q8 6 20 1q3-3 3-7q-11 6-23 6z" fill="#FFFDF7" ${S} stroke-width="2.4"/>
-    <path d="M21 33q9-5 17 1q-4 7-14 7q-4-3-3-8z" fill="#2F4A8A" ${S} stroke-width="2.4"/>
-    <path d="M24 34q6-2 11 1" stroke="#FFFDF7" stroke-width="3" stroke-linecap="round" fill="none"/>
-    <circle cx="44" cy="27" r="3.4" fill="#FFFDF7" stroke="${INK}" stroke-width="2"/>
-    <circle cx="45" cy="27" r="1.9" fill="${INK}"/><circle cx="45.7" cy="26.3" r=".7" fill="#fff"/>
-    <path d="M52 27l9 2.5-8.5 3.5z" fill="#F2B33D" ${S} stroke-width="2.2"/>
-    <path d="M33 54l-1 5M39 54l1 5" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>
-    <ellipse cx="47" cy="34" rx="3" ry="1.8" fill="#E0533D" opacity=".4"/>`,
-  turtle: () => `
-    <ellipse cx="17" cy="51" rx="6" ry="4" fill="#8CCB7E" ${S}/><ellipse cx="41" cy="52" rx="6" ry="4" fill="#8CCB7E" ${S}/>
-    <circle cx="51" cy="29" r="10" fill="#8CCB7E" ${S}/>
-    <path d="M7 44q2-22 24-22q22 0 24 22z" fill="#3E9B6A" ${S}/>
-    <path d="M18 28l6 8h14l6-8M24 36l-3 8M38 36l3 8" stroke="#2A6D4A" stroke-width="2.4" stroke-linecap="round" fill="none"/>
-    <path d="M7 44h48" ${S}/>
-    ${eyes(48, 55, 27, 2.2)}
-    <path d="M48 33q3 2 6 0" ${S} stroke-width="2" fill="none"/>`,
-  dokkaebiRed: () => dokkaebi('#E0533D', '#A93524'),
-  dokkaebiBlue: () => dokkaebi('#2F6BD8', '#1F4A9A')
-};
-
-function dokkaebi(face, dark) {
-  return `
-    <path d="M32 3l6 13H26z" fill="#F2B33D" ${S}/>
-    <path d="M12 26q0-12 20-12t20 12v12q0 16-20 16T12 38z" fill="${face}" ${S}/>
-    <path d="M16 18q-6 2-6 9M48 18q6 2 6 9" stroke="${dark}" stroke-width="4" stroke-linecap="round" fill="none"/>
-    <path d="M18 24l9 3M46 24l-9 3" ${S} stroke-width="3.4"/>
-    <circle cx="24" cy="32" r="5.5" fill="#FFFDF7" ${S} stroke-width="2.4"/><circle cx="40" cy="32" r="5.5" fill="#FFFDF7" ${S} stroke-width="2.4"/>
-    <circle cx="25" cy="33" r="2.4" fill="${INK}"/><circle cx="39" cy="33" r="2.4" fill="${INK}"/>
-    <path d="M20 42q12 9 24 0" fill="#7A2318" ${S} stroke-width="2.6"/>
-    <path d="M24 43.5l2 4 2-3.2M40 43.5l-2 4-2-3.2" fill="#FFFDF7" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>`;
+export function character(kind, size = 64, start = 'idle') {
+  const delay = -(Math.random() * 1.2).toFixed(2);
+  return `<span class="char" data-act="${start}" style="--sz:${size}px;background-image:url(assets/chars/${SHEET[kind]}.webp);animation-delay:${delay}s" aria-hidden="true"></span>`;
 }
 
-export function character(kind, size = 64) {
-  return `<svg viewBox="0 0 64 64" width="${size}" height="${size}" aria-hidden="true">${CHARACTERS[kind]()}</svg>`;
+/** 캐릭터 동작 바꾸기. ms 가 있으면 그만큼 뒤에 대기 동작으로 돌아간다. */
+export function act(el, name, ms = 0) {
+  const c = el?.querySelector('.char');
+  if (!c) return;
+  clearTimeout(c._back);
+  c.dataset.act = name;
+  if (ms) c._back = setTimeout(() => { c.dataset.act = 'idle'; }, ms);
+}
+
+/** 바라보는 쪽. 그림은 왼쪽 아래를 본다 — 오른쪽으로 갈 때 뒤집는다. */
+export function face(el, dx) {
+  const c = el?.querySelector('.char');
+  if (c && Math.abs(dx) > 0.5) c.style.setProperty('--flip', dx > 0 ? -1 : 1);
 }
 
 /** 말 id → 그림 종류. 내 말은 m0~m3, 도깨비는 d0~d2. */

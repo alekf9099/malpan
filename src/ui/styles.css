@@ -117,17 +117,17 @@ body {
 @keyframes floatup { 0% { opacity: 0; transform: translate(-50%, 0) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -54px) scale(1); } }
 
 /* ── 윷판 ── */
-.board-wrap { position: relative; margin: 10px auto 0; width: 328px; height: 328px; }
-.board-wrap #mat svg { position: absolute; left: 0; top: 0; width: 328px; height: 328px; }
+.board-wrap { position: relative; margin: 0 auto; width: 390px; height: var(--board-h, 306px); }
+.board-wrap #mat svg { position: absolute; left: 0; top: 0; }
 .board-wrap svg.mat { position: absolute; inset: 0; }
+/* 말은 발이 칸에 닿게 세운다. 위치는 left/top, 움직임은 transform 애니메이션 */
 .piece {
-  position: absolute; width: 44px; height: 44px; margin: -26px 0 0 -22px; z-index: 5;
-  transition: left .16s ease-in-out, top .16s ease-in-out;
+  position: absolute; width: 46px; height: 46px; transform-origin: 50% 92%;
   filter: drop-shadow(0 3px 0 rgba(34, 32, 29, .35));
 }
-.piece svg { width: 100%; height: 100%; display: block; }
-.piece.hop { animation: hop .16s ease-in-out; }
-@keyframes hop { 50% { transform: translateY(-14px); } }
+.piece::after { content: ""; position: absolute; left: 18%; right: 18%; bottom: -3px; height: 8px; border-radius: 50%; background: rgba(34,32,29,.28); z-index: -1; }
+/* 스프라이트에는 춤·환호용 여백이 있어 말 칸보다 조금 크게 그리고 발을 칸에 맞춘다 */
+.piece .char { width: 124%; height: 124%; display: block; margin: -26% 0 0 -12%; }
 .piece.movable { cursor: pointer; animation: wiggle 1.1s ease-in-out infinite; z-index: 8; }
 @keyframes wiggle { 0%, 100% { transform: translateY(0) rotate(0); } 25% { transform: translateY(-4px) rotate(-6deg); } 75% { transform: translateY(-4px) rotate(6deg); } }
 .piece .count {
@@ -139,13 +139,13 @@ body {
 .piece.caught { animation: caught .5s ease-in forwards; }
 @keyframes caught { 30% { transform: translateY(-26px) rotate(-20deg) scale(1.1); } 100% { transform: translateY(40px) rotate(160deg) scale(.2); opacity: 0; } }
 .target {
-  position: absolute; z-index: 7; width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%;
-  border: 3px dashed var(--ink); background: rgba(242, 179, 61, .55); cursor: pointer;
+  position: absolute; width: 42px; height: 26px; margin: -13px 0 0 -21px; border-radius: 50%;
+  border: 3px dashed var(--ink); background: rgba(242, 179, 61, .6); cursor: pointer;
   animation: pulse 1s ease-in-out infinite;
 }
 @keyframes pulse { 50% { transform: scale(1.15); } }
 .target .gain {
-  position: absolute; left: 50%; top: -30px; transform: translateX(-50%); white-space: nowrap;
+  position: absolute; left: 50%; top: -28px; transform: translateX(-50%); white-space: nowrap;
   padding: 2px 7px 1px; border-radius: 8px; border: 2px solid var(--ink); background: var(--white);
   font-weight: 900; font-size: 12px; font-variant-numeric: tabular-nums;
 }
@@ -162,7 +162,7 @@ body {
 .newbtn .gain { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); white-space: nowrap; padding: 1px 6px; border-radius: 8px; border: 2px solid var(--ink); background: var(--white); font-weight: 900; font-size: 11px; }
 
 /* ── 윷 던지기 ── */
-.throw-zone { position: relative; height: 96px; margin: 0 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.throw-zone { position: relative; height: 96px; margin: 0 16px; perspective: 520px; display: flex; align-items: center; justify-content: center; gap: 10px; }
 .stick { width: 20px; height: 84px; transition: transform .5s var(--spring); }
 .stick.toss { animation: toss .55s ease-out; }
 @keyframes toss { 0% { transform: translateY(0) rotate(0); } 45% { transform: translateY(-60px) rotate(240deg); } 100% { transform: translateY(0) rotate(360deg); } }
@@ -250,8 +250,7 @@ body {
 .logo span { color: var(--red); display: inline-block; transform: rotate(-4deg); }
 .sub { margin-top: 12px; font-weight: 700; color: var(--ink-2); font-size: 15px; }
 .cast { display: flex; gap: 6px; margin: 34px 0 30px; }
-.cast svg { width: 58px; height: 58px; filter: drop-shadow(0 3px 0 rgba(34, 32, 29, .35)); animation: idle 2.4s ease-in-out infinite; }
-.cast svg:nth-child(2) { animation-delay: .3s; } .cast svg:nth-child(3) { animation-delay: .6s; } .cast svg:nth-child(4) { animation-delay: .9s; } .cast svg:nth-child(5) { animation-delay: 1.2s; }
+.cast .char { filter: drop-shadow(0 3px 0 rgba(34, 32, 29, .25)); }
 @keyframes idle { 50% { transform: translateY(-6px); } }
 .shake { animation: shake .4s; }
 @keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
@@ -294,3 +293,128 @@ body {
 .legend { display: flex; gap: 10px; margin-top: 10px; }
 .legend > div { flex: 1; display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--white); border: 2.5px solid var(--ink); border-radius: 12px; font-size: 12px; font-weight: 700; line-height: 1.3; }
 .legend svg { flex: none; }
+
+/* ── v0.3: 여러 판 · 큰 연출 ── */
+.app.board-yut { --board-h: 306px; }
+.stick-tray { display: flex; gap: 10px; align-items: center; justify-content: center; }
+.stick-tray.opp, .dice-tray.opp { transform: scale(.72); opacity: .85; }
+.dice-tray { display: flex; gap: 26px; align-items: center; justify-content: center; transform-style: preserve-3d; }
+.die { position: relative; width: 50px; height: 50px; transform-style: preserve-3d; }
+.die .face {
+  position: absolute; inset: 0; border: 3px solid var(--ink); border-radius: 12px; background: var(--white);
+  backface-visibility: hidden; display: flex; align-items: center; justify-content: center;
+}
+.die .face svg { width: 84%; height: 84%; }
+.die.chess .face { background: #F5D35E; }
+.die .f1 { transform: translateZ(25px); }
+.die .f6 { transform: rotateY(180deg) translateZ(25px); }
+.die .f3 { transform: rotateY(90deg) translateZ(25px); }
+.die .f4 { transform: rotateY(-90deg) translateZ(25px); }
+.die .f2 { transform: rotateX(90deg) translateZ(25px); }
+.die .f5 { transform: rotateX(-90deg) translateZ(25px); }
+
+.fx-layer { position: absolute; inset: 0; z-index: 80; pointer-events: none; overflow: hidden; }
+.fx-dust { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #D9C7A4; border: 2px solid rgba(34,32,29,.35); }
+.fx-confetti { position: absolute; width: 9px; height: 13px; border: 1.5px solid var(--ink); border-radius: 2px; }
+.fx-star { position: absolute; width: 22px; height: 22px; }
+.fx-star svg { width: 100%; height: 100%; display: block; }
+.fx-ring { position: absolute; width: 70px; height: 70px; border-radius: 50%; border: 5px solid var(--white); }
+.fx-spark { position: absolute; width: 9px; height: 9px; border: 1.5px solid var(--ink); }
+.fx-pow {
+  position: absolute; white-space: nowrap; font-family: var(--display); font-size: 30px; line-height: 1;
+  padding: 6px 12px 2px; border: 3.5px solid var(--ink); border-radius: 14px; box-shadow: 0 5px 0 var(--ink);
+}
+.fly-chip {
+  z-index: 85; white-space: nowrap; font-family: var(--display); font-size: 22px; color: var(--white);
+  padding: 2px 9px; background: var(--blue); border: 2.5px solid var(--ink); border-radius: 10px; pointer-events: none;
+}
+.fly-coin { z-index: 85; width: 22px; height: 22px; pointer-events: none; }
+.key-card {
+  position: absolute; left: 50%; top: 42%; z-index: 88; width: 210px; padding: 18px 16px 16px; text-align: center;
+  background: #F5D35E; border: 4px solid var(--ink); border-radius: 18px; box-shadow: 0 7px 0 var(--ink);
+  transform: translate(-50%, -50%);
+}
+.key-card .k { font-weight: 900; font-size: 12px; letter-spacing: 2px; color: #7A4A00; }
+.key-card b { display: block; font-family: var(--display); font-weight: 400; font-size: 32px; margin: 6px 0 4px; color: #C8342A; }
+.key-card span { font-weight: 800; font-size: 14px; }
+.board-badge { display: inline-flex; align-items: center; gap: 6px; }
+.target.dim { opacity: .35; }
+.piece.picked { filter: drop-shadow(0 0 0 #F2B33D) drop-shadow(0 3px 0 rgba(34,32,29,.35)); }
+.piece.picked::before { content: ""; position: absolute; left: 50%; top: -14px; width: 0; height: 0; margin-left: -7px; border: 7px solid transparent; border-top: 10px solid var(--red); }
+.board-preview { margin-top: 12px; padding: 12px; border: 2.5px solid var(--ink); border-radius: 14px; background: var(--white); display: flex; gap: 12px; align-items: center; }
+.board-preview .roller-mini { width: 120px; height: 70px; display: flex; align-items: center; justify-content: center; transform: scale(.8); perspective: 400px; }
+/* 굴림 장치는 왼쪽, 결과 도장은 오른쪽 — 서로 가리지 않게 */
+#roller { position: absolute; left: 8px; top: 0; bottom: 0; width: 210px; display: flex; align-items: center; justify-content: center; perspective: 520px; }
+.throw-zone .stamp { right: 4px; }
+
+/* 점수 라벨: 고리와 분리해 맨 위에 띄우되 클릭은 통과시킨다 */
+.target-tag { position: absolute; width: 0; height: 0; pointer-events: none; }
+.target-tag .gain {
+  position: absolute; left: 0; top: -34px; transform: translateX(-50%); white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px 1px; border-radius: 8px; border: 2px solid var(--ink);
+  background: var(--white); font-weight: 900; font-size: 12px; font-variant-numeric: tabular-nums; box-shadow: 0 2px 0 var(--ink);
+}
+.target-tag .gain.hot { background: var(--yellow); }
+.target-tag .risk { font-style: normal; padding: 0 4px; border-radius: 5px; background: var(--red); color: var(--white); font-size: 10.5px; }
+.target-tag .risk.safe { background: var(--green); }
+.app.board-chess .target-tag .gain { font-size: 11px; padding: 1px 5px 0; top: -30px; }
+.app.board-chess .target-tag .risk.safe { font-size: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; }
+
+/* 도깨비는 클릭을 통과시켜 아래 도착 고리(잡기)를 누를 수 있게 */
+.piece[data-piece^="d"] { pointer-events: none; }
+
+/* ── v0.4: 큰 판 + 카메라, 화면 높이 재배분 ── */
+.board-wrap { height: 372px !important; overflow: hidden; margin-top: 6px !important; touch-action: none;
+  background: radial-gradient(ellipse at 50% 40%, rgba(255,255,255,.5), transparent 70%); }
+#cam { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+.zoom-btn { position: absolute; right: 10px; bottom: 10px; z-index: 2000; padding: 6px 12px 5px; }
+.target-tag .gain { transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; }
+.scoreboard { padding: 8px 14px 10px !important; margin-top: 8px !important; }
+.score-now { font-size: 34px !important; }
+.heung { margin-top: 6px !important; }
+.trays { height: 40px !important; padding-top: 2px !important; }
+.throw-zone { height: 86px !important; }
+.charms { padding: 6px 16px 8px !important; }
+.slot, .charm { width: 46px !important; height: 62px !important; }
+
+/* ── 타이틀 「말판 원정대」 ── */
+.title2 { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 18px 22px; text-align: center; }
+.title-boards { position: relative; width: 100%; height: 74px; }
+.title-boards .tb { position: absolute; top: 0; filter: drop-shadow(0 4px 0 rgba(34,32,29,.3)); animation: bob 2.8s ease-in-out infinite; }
+.title-boards .tb1 { left: 26px; transform: rotate(-10deg); }
+.title-boards .tb2 { left: 50%; margin-left: -40px; top: 6px; animation-delay: .5s; }
+.title-boards .tb3 { right: 30px; transform: rotate(12deg); animation-delay: 1s; }
+.bundle-sticks { display: inline-flex; gap: 4px; transform: rotate(-8deg); }
+.bundle-sticks .stick { width: 13px; height: 56px; }
+@keyframes bob { 50% { translate: 0 -8px; } }
+.logo2 { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-family: var(--display); line-height: 1; }
+.logo2 .l1 { font-size: 64px; letter-spacing: -2px; }
+.logo2 .l2 { font-size: 64px; letter-spacing: -2px; color: var(--red); display: inline-block; transform: rotate(-5deg) translateY(4px); text-shadow: 0 4px 0 var(--ink); -webkit-text-stroke: 2px var(--ink); }
+.boards-line { display: flex; align-items: center; gap: 6px; margin: 12px 0 14px; font-weight: 900; font-size: 13px; }
+.boards-line span { padding: 3px 10px; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--white); }
+.boards-line i { width: 14px; height: 3px; background: var(--ink); border-radius: 2px; }
+.roster { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: 100%; }
+.hero-card { display: flex; gap: 6px; align-items: center; text-align: left; padding: 8px 8px 8px 4px; background: var(--white); border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 3px 0 var(--ink); animation: up .45s var(--spring) both; }
+.hero-art { flex: none; width: 84px; height: 84px; margin: -8px -6px -8px -8px; filter: drop-shadow(0 3px 0 rgba(34,32,29,.28)); }
+.hero-txt b { display: block; font-weight: 900; font-size: 15px; }
+.hero-txt .skill { display: inline-block; margin: 2px 0 3px; padding: 1px 7px; border-radius: 999px; background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; }
+.hero-txt p { margin: 0; font-size: 11px; line-height: 1.35; font-weight: 600; color: var(--ink-2); }
+.villain { display: flex; align-items: center; gap: 8px; margin: 12px 0 14px; font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.villain .char { filter: drop-shadow(0 3px 0 rgba(34,32,29,.3)); }
+.mini-roster { display: flex; justify-content: space-between; gap: 4px; margin-top: 8px; }
+.mini-roster div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; font-weight: 900; padding: 4px; background: var(--white); border: 2px solid var(--ink); border-radius: 10px; }
+
+/* ── 캐릭터 스프라이트 (Kenney Cube Pets, CC0) — 5줄(동작) × 8프레임 ── */
+.char {
+  display: inline-block; flex: none; width: var(--sz, 64px); height: var(--sz, 64px);
+  background-repeat: no-repeat; background-size: 800% 500%;
+  background-position: 0 calc(var(--row, 0) * 25%);
+  transform: scaleX(var(--flip, 1));
+  animation: char-frames var(--dur, 1.1s) steps(8) infinite;
+}
+.char[data-act="idle"] { --row: 0; --dur: 1.1s; }
+.char[data-act="walk"] { --row: 1; --dur: .5s; }
+.char[data-act="cheer"] { --row: 2; --dur: .75s; }
+.char[data-act="sad"] { --row: 3; --dur: 1s; }
+.char[data-act="dance"] { --row: 4; --dur: .8s; }
+@keyframes char-frames { from { background-position-x: 0%; } to { background-position-x: 114.2857%; } }

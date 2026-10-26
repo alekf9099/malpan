@@ -1,18 +1,18 @@
-// 런 전체: 라운드 → 상점 → 라운드 … 6라운드. 보스는 3·6라운드.
+// 런 전체: 윷놀이판 2라운드 → 주사위판 2라운드 → 체스판 2라운드. 판마다 두 번째 라운드가 보스.
 
 import { createRng } from './rng.js';
 import { createRound } from './round.js';
-import { NODES } from './board.js';
+import { boardOf } from './boards/index.js';
 import { DEFAULT_P_FLAT } from './sticks.js';
 import { CHARMS, TILES, STICKS, BOSS_RULES, charmById } from './items.js';
 
 export const ROUNDS = [
-  { target: 350, opp: 2 },
-  { target: 650, opp: 2 },
-  { target: 850, opp: 3, boss: true },
-  { target: 1250, opp: 2 },
-  { target: 1650, opp: 3 },
-  { target: 2000, opp: 3, boss: true }
+  { board: 'yut', target: 400, opp: 2 },
+  { board: 'yut', target: 650, opp: 3, boss: true },
+  { board: 'marble', target: 1100, opp: 2 },
+  { board: 'marble', target: 1400, opp: 3, boss: true },
+  { board: 'chess', target: 1450, opp: 2 },
+  { board: 'chess', target: 1800, opp: 3, boss: true }
 ];
 export const THROWS_PER_ROUND = 7;
 export const REROLLS_PER_ROUND = 2;
@@ -55,9 +55,10 @@ export function startRound(run) {
     myPieces: MY_PIECES,
     oppPieces: spec.opp,
     charms: run.charms,
-    tiles: run.tiles,
+    tiles: run.tiles[spec.board] || {},
     pFlat: pFlatOf(run),
-    boss
+    boss,
+    board: spec.board
   });
   run.status = 'round';
   return run.round;
@@ -100,9 +101,14 @@ function makeShop(run) {
   return { offers };
 }
 
-/** 칸 개조를 놓을 빈 칸(참먹이 제외). */
+/** 칸 개조는 다음 라운드의 판에 놓는다. 출발점·판 고유 이벤트 칸은 피한다. */
+function nextBoard(run) {
+  return boardOf(ROUNDS[Math.min(run.roundNo, ROUNDS.length - 1)].board);
+}
 function freeNodes(run) {
-  return NODES.filter((n) => n !== 'o0' && !run.tiles[n]);
+  const b = nextBoard(run);
+  const used = run.tiles[b.id] || {};
+  return b.nodes.filter((n) => n !== b.entry && !used[n] && !b.tile(n));
 }
 
 export function buy(run, index) {
@@ -117,8 +123,9 @@ export function buy(run, index) {
   if (offer.kind === 'stick') run.stick = offer.id;
   if (offer.kind === 'tile') {
     const node = run.rng.pick(freeNodes(run));
-    run.tiles[node] = offer.id;
-    return { ok: true, node };
+    const b = nextBoard(run).id;
+    (run.tiles[b] ||= {})[node] = offer.id;
+    return { ok: true, node, board: b };
   }
   return { ok: true };
 }

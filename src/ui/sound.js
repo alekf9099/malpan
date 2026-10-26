@@ -53,9 +53,16 @@ export const Sound = {
     if (on) init();
     return on;
   },
-  /** 윷가락이 바닥에 부딪히는 딱딱 소리 */
-  clatter() { for (let i = 0; i < 5; i++) knock(1400 + Math.random() * 1600, { vol: 0.28, delay: 0.32 + i * 0.045 + Math.random() * 0.03, dur: 0.05, q: 9 }); },
+  /** 바닥에 떨어지는 소리: 윷가락은 딱딱, 주사위는 데구르르, 기물 주사위는 묵직하게 */
+  clatter(kind = 'sticks') {
+    if (kind === 'dice') { for (let i = 0; i < 7; i++) knock(2200 + Math.random() * 1400, { vol: 0.2, delay: i * 0.06 + Math.random() * 0.03, dur: 0.035, q: 14 }); return; }
+    if (kind === 'chess') { knock(700, { vol: 0.35, dur: 0.09, q: 5 }); knock(900, { vol: 0.25, delay: 0.12, dur: 0.07, q: 6 }); return; }
+    for (let i = 0; i < 5; i++) knock(1400 + Math.random() * 1600, { vol: 0.28, delay: i * 0.045 + Math.random() * 0.03, dur: 0.05, q: 9 });
+  },
   toss() { knock(500, { vol: 0.12, dur: 0.18, q: 1 }); },
+  /** 하늘에서 떨어지는 말 */
+  drop() { tone(880, 0.25, { type: 'sine', vol: 0.06, to: 220 }); knock(160, { vol: 0.45, dur: 0.14, q: 1.2, delay: 0.38 }); },
+  whoosh() { knock(900, { vol: 0.25, dur: 0.45, q: 0.6 }); tone(300, 0.4, { type: 'sine', vol: 0.04, to: 900 }); },
   stamp() { knock(180, { vol: 0.5, dur: 0.16, q: 1.4 }); tone(98, 0.18, { type: 'sine', vol: 0.2, to: 60 }); },
   step(i = 0) { knock(900 + (i % 3) * 120, { vol: 0.18, dur: 0.05, q: 12 }); },
   stack() { tone(PENTA[5], 0.12, { vol: 0.1 }); tone(PENTA[7], 0.14, { vol: 0.1, delay: 0.07 }); },

@@ -1,39 +1,68 @@
-// 화면 컨트롤러. 규칙은 core 가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 순서대로 연출한다.
+// 화면 컨트롤러. 규칙은 core 가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 차례로 연출한다.
+//   board-view  아이소메트릭 판과 말 위치
+//   roller      윷가락·주사위·기물 주사위
+//   anim / fx   점프·찌그러짐·날려 보내기 / 먼지·폭죽·스티커
 
 import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, ROUNDS, MAX_CHARMS, SHOP_REROLL_COST, pFlatOf } from '../core/run.js';
-import { throwYut, reroll, applyMove, legalMoves, threats, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
-import { START, HOME, COORDS } from '../core/board.js';
-import { NAMES, BACKDO, DO, GAE, GEOL, YUT, MO, distribution } from '../core/sticks.js';
+import { throwYut, reroll, applyMove, legalMoves, threats, boardFor, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
+import { START, HOME } from '../core/board.js';
 import { TILES, STICKS, charmById } from '../core/items.js';
-import { character, kindOf, stick, charmCard, tileArt, stickArt, coin, boardSvg, nodeXY, HEROES, bundle, traitBadge } from './art.js';
+import { BOARDS } from '../core/boards/index.js';
+import { HEROES as HERO_SKILLS, heroOf } from '../core/heroes.js';
+import { character, act, face, kindOf, charmCard, tileArt, stickArt, coin, HEROES, bundle, traitBadge } from './art.js';
+import { useBoard, boardSvg, nodeXY, depth, pieceSize, canvasSize } from './board-view.js';
+import * as Camera from './camera.js';
+import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
+import * as FX from './fx.js';
+import * as Roller from './roller.js';
 import { Sound } from './sound.js';
 
+// 게임 이름은 여기 한 곳에서만 바꾼다
+export const GAME_TITLE = { main: '말판', accent: '원정대', sub: '도깨비에게 빼앗긴 놀이판을 되찾아라' };
+
 const app = document.getElementById('app');
-const G = { run: null, busy: false, flats: [true, false, true, true], throwsMax: 0, stampEl: null };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const G = { run: null, busy: false, throwsMax: 0, stampEl: null, picked: null, boardId: null };
 const $ = (sel) => app.querySelector(sel);
 const R = () => G.run.round;
+const B = () => boardFor(R());
 
-const STAMP_COLOR = { [BACKDO]: 'ink', [DO]: 'white', [GAE]: 'green', [GEOL]: 'blue', [YUT]: '', [MO]: 'yellow' };
+const STACK_STEP = 21; // 업힌 말이 위로 쌓이는 높이
 
 // ── 타이틀 ───────────────────────────────────────────────────
 
 function title() {
+  G.boardId = null;
+  app.className = 'app';
+  document.title = `${GAME_TITLE.main} ${GAME_TITLE.accent}`;
+  const cards = HERO_SKILLS.map((h, i) => `
+    <div class="hero-card" style="animation-delay:${i * 90}ms">
+      <div class="hero-art">${character(HEROES[i], 84)}</div>
+      <div class="hero-txt"><b>${h.name}</b><span class="skill">${h.skill}</span><p>${h.desc}</p></div>
+    </div>`).join('');
   app.innerHTML = `
-    <div class="title">
-      <div class="logo">윷판을<br><span>뒤집어라</span></div>
-      <div class="sub">윷 던지고, 업고, 잡고 — 점수를 쌓아 도깨비를 이겨라</div>
-      <div class="cast">${HEROES.map((k) => character(k)).join('')}${character('dokkaebiRed')}</div>
-      <button class="btn" id="start" style="width:220px;height:64px;font-size:28px">한 판 시작</button>
-      <div class="sub" style="font-size:12.5px;margin-top:18px">6라운드 · 3·6라운드는 도깨비 대장</div>
+    <div class="title2">
+      <div class="title-boards" aria-hidden="true">
+        <span class="tb tb1">${Roller.chessDieIcon('knight')}</span>
+        <span class="tb tb2">${Roller.stickBundle()}</span>
+        <span class="tb tb3">${Roller.dieIcon(5)}</span>
+      </div>
+      <div class="logo2"><span class="l1">${GAME_TITLE.main}</span><span class="l2">${GAME_TITLE.accent}</span></div>
+      <div class="sub">${GAME_TITLE.sub}</div>
+      <div class="boards-line"><span>윷놀이판</span><i></i><span>주사위판</span><i></i><span>체스판</span></div>
+      <div class="roster">${cards}</div>
+      <div class="villain">${character('dokkaebiRed', 46)}<span>판마다 마지막엔 <b>도깨비 대장</b>이 기다린다</span>${character('dokkaebiBlue', 46)}</div>
+      <button class="btn" id="start" style="width:100%;height:62px;font-size:28px">원정 떠나기</button>
     </div>`;
   $('#start').onclick = () => {
     Sound.unlock(); Sound.click();
-    const fixed = parseInt(new URLSearchParams(location.search).get('seed'), 10);
+    const q = new URLSearchParams(location.search);
+    const fixed = parseInt(q.get('seed'), 10);
     G.run = createRun(Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed);
+    // 개발·테스트용: ?round=3 이면 그 라운드(주사위판)부터 시작한다
+    const startAt = parseInt(q.get('round'), 10);
+    if (startAt >= 1 && startAt <= ROUNDS.length) G.run.roundNo = startAt;
     startRound(G.run);
-    buildGame();
-    roundIntro();
+    enterRound();
   };
 }
 
@@ -48,30 +77,68 @@ function buildGame() {
       <div class="heung" id="heung"></div>
       <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
     </div>
-    <div class="board-wrap" id="board"><div id="mat"></div><div id="layer"></div></div>
+    <div class="board-wrap" id="board"><div id="cam"><div id="mat"></div><div id="layer"></div></div>
+      <button class="btn small white zoom-btn" id="zoom" aria-label="전체 보기">전체</button></div>
     <div class="trays" id="trays"></div>
-    <div class="throw-zone" id="sticks"></div>
+    <div class="throw-zone" id="sticks"><div id="roller"></div></div>
     <div class="controls">
       <button class="btn main" id="throw">던지기</button>
       <div class="side"><button class="btn small white" id="reroll"></button></div>
     </div>
     <div class="throws" id="pips"></div>
     <div class="hint" id="hint"></div>
-    <div class="charms" id="charms"></div>`;
+    <div class="charms" id="charms"></div>
+    <div class="fx-layer" id="fx"></div>`;
+  FX.useLayer($('#fx'));
   $('#throw').onclick = onThrow;
   $('#reroll').onclick = onReroll;
-  G.throwsMax = R().throwsLeft;
-  drawSticks(G.flats, false);
+  $('#zoom').onclick = () => {
+    Sound.click();
+    if (Camera.zoomedIn()) Camera.overview(); else frameAction();
+    drawZoom();
+  };
+}
+
+function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.zoomedIn() ? '전체' : '확대'; }
+
+/** 지금 볼만한 곳(내 말·도깨비·보따리·출발점)을 화면에 맞춘다. */
+function frameAction() {
+  const r = R();
+  const pts = r.pieces.filter((p) => p.node !== START && p.node !== HOME).map((p) => nodeXY(p.node));
+  for (const t of r.treasures) pts.push(nodeXY(t.node));
+  if (B().entry) pts.push(nodeXY(B().entry));
+  if (!pts.length) pts.push(nodeXY(HOME));
+  Camera.frame(pts, { maxZoom: 0.92 });
+}
+
+/** 라운드에 들어갈 때. 판이 바뀌면 판을 새로 깔고 소개한다. */
+function enterRound() {
+  const r = R();
+  const newBoard = G.boardId !== r.boardId;
+  G.boardId = r.boardId;
+  useBoard(B());
+  if (newBoard || !$('#board')) buildGame();
+  app.className = 'app board-' + r.boardId;
+  G.throwsMax = r.throwsLeft;
+  G.picked = null;
+  clearStamp();
+  hideCalc();
+  $('#layer').innerHTML = '';
+  Roller.idle($('#roller'), B());
+  Camera.attach($('#board'), $('#cam'), canvasSize());
   refresh();
+  Camera.overview(0);
+  drawZoom();
+  if (newBoard) boardIntro(); else roundIntro();
 }
 
 function refresh() {
   drawHeung();
-  drawBundles();
   drawTop();
   drawScore(R().score);
   drawBoard();
   syncPieces();
+  drawBundles();
   drawTrays();
   drawControls();
   drawCharms();
@@ -80,61 +147,56 @@ function refresh() {
 function drawTop() {
   const r = R();
   $('#top').innerHTML = `
-    <span class="pill">${r.number} / ${ROUNDS.length} 라운드</span>
+    <span class="pill">${r.number} / ${ROUNDS.length}</span>
+    <span class="pill">${B().name}</span>
     ${r.boss ? `<span class="pill boss">대장 · ${r.boss.name}</span>` : ''}
     <span style="flex:1"></span>
-    <span class="pill">${coin()} ${G.run.coins}</span>
+    <span class="pill" id="coinPill">${coin()} ${G.run.coins}</span>
     <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button>`;
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); drawTop(); };
-}
-
-/** 흥 게이지: 칸 5개. 켜진 만큼 모든 이동에 배수가 더해진다. */
-function drawHeung(flash, h = R().heung) {
-  const el = $('#heung');
-  el.className = 'heung' + (h >= HEUNG_MAX ? ' max' : '') + (flash === 'lost' ? ' lost' : '');
-  el.innerHTML = `<span class="lbl">흥</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
-    `<span class="val">${h ? `배수 +${h}` : '잡기·업기·골인·보따리로 오른다'}</span>`;
-  if (!h) el.querySelector('.val').style.color = 'var(--ink-3)';
-  $('#score').classList.toggle('hot', h >= HEUNG_MAX);
-}
-
-function drawBundles() {
-  $('#layer').querySelectorAll('.bundle').forEach((b) => b.remove());
-  for (const t of R().treasures) addBundle(t.node, t.ttl, false);
-}
-
-function addBundle(node, ttl, animate) {
-  const b = document.createElement('div');
-  b.className = 'bundle';
-  b.dataset.node = node;
-  if (!animate) b.style.animation = 'none';
-  b.innerHTML = bundle(34) + `<span class="ttl">${ttl}</span>`;
-  place(b, node);
-  $('#layer').appendChild(b);
 }
 
 function drawScore(value) {
   const r = R();
   $('#scoreNow').textContent = value.toLocaleString();
   $('#target').textContent = r.target.toLocaleString();
-  const pct = Math.min(100, (100 * value) / r.target);
   $('#bar').classList.toggle('done', value >= r.target);
-  $('#bar i').style.width = pct + '%';
+  $('#bar i').style.width = Math.min(100, (100 * value) / r.target) + '%';
 }
 
-function drawBoard() {
-  $('#mat').innerHTML = boardSvg(R().tiles);
+/** 흥 게이지: 칸 5개. 켜진 만큼 모든 이동에 배수가 더해진다. */
+function drawHeung(flashKind, h = R().heung) {
+  const el = $('#heung');
+  el.className = 'heung' + (h >= HEUNG_MAX ? ' max' : '') + (flashKind === 'lost' ? ' lost' : '');
+  el.innerHTML = `<span class="lbl">흥</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
+    `<span class="val">${h ? `배수 +${h}` : '잡기·업기·골인·보따리로 오른다'}</span>`;
+  if (!h) el.querySelector('.val').style.color = 'var(--ink-3)';
+  $('#score').classList.toggle('hot', h >= HEUNG_MAX);
 }
+
+function drawBoard() { $('#mat').innerHTML = boardSvg(R().tiles); }
+
+// ── 좌표 ─────────────────────────────────────────────────────
+
+/** 판 화면 좌표 → 앱 좌표(효과 층은 앱 전체를 덮는다) */
+function toApp([x, y]) {
+  const b = $('#board');
+  return [x + b.offsetLeft, y + b.offsetTop];
+}
+/** 노드 → 앱 좌표. 카메라 이동·확대를 거친 실제 화면 위치 */
+const nodeApp = (node) => toApp(Camera.toView(nodeXY(node)));
 
 // ── 말 ───────────────────────────────────────────────────────
 
 function pieceEl(id) {
   let el = $('#layer').querySelector(`[data-piece="${id}"]`);
   if (!el) {
+    const p = R().pieces.find((q) => q.id === id);
     el = document.createElement('div');
     el.className = 'piece';
     el.dataset.piece = id;
-    const p = R().pieces.find((q) => q.id === id);
+    const s = pieceSize();
+    el.style.width = el.style.height = s + 'px';
     el.innerHTML = character(kindOf(id)) + '<span class="count" hidden></span>' +
       (p?.trait ? `<span class="trait">${traitBadge(p.trait)}</span>` : '<span class="warn" hidden>!</span>');
     $('#layer').appendChild(el);
@@ -142,74 +204,112 @@ function pieceEl(id) {
   return el;
 }
 
-function place(el, node) {
+/** 말을 노드 위에 세운다. level 은 업힌 순서(0 이 맨 아래). */
+function place(el, node, level = 0) {
   const [x, y] = nodeXY(node);
-  el.style.left = x + 'px';
-  el.style.top = y + 'px';
+  const s = pieceSize();
+  el.style.left = x - s / 2 + 'px';
+  el.style.top = y - s * 0.92 - level * STACK_STEP + 'px';
+  el.style.zIndex = depth(y) + level;
+  return [x, y - level * STACK_STEP];
 }
 
-/** 상태 그대로 말을 놓는다. 같은 칸의 말은 맨 위 하나만 보이고 숫자 배지를 단다. */
+/** 상태 그대로 말을 놓는다. 같은 칸의 말은 탑처럼 쌓아 보여준다. */
 function syncPieces() {
   const r = R();
-  $('#layer').querySelectorAll('.target').forEach((t) => t.remove());
+  $('#layer').querySelectorAll('.target, .target-tag').forEach((t) => t.remove());
   const byNode = {};
   for (const p of r.pieces) {
     const el = pieceEl(p.id);
-    el.classList.remove('movable', 'caught', 'hop');
+    el.classList.remove('movable', 'picked');
+    el.style.opacity = '';
     el.onclick = null;
     if (p.node === START || p.node === HOME) { el.style.display = 'none'; continue; }
+    if (p.owner === 'me') el.onclick = () => heroTip(p.id);
     (byNode[p.node] ||= []).push(p);
   }
   for (const [node, list] of Object.entries(byNode)) {
     list.forEach((p, i) => {
       const el = pieceEl(p.id);
-      el.style.display = i === 0 ? '' : 'none';
-      place(el, node);
+      el.style.display = '';
+      place(el, node, i);
       const badge = el.querySelector('.count');
-      badge.hidden = i !== 0 || list.length < 2;
+      badge.hidden = i !== list.length - 1 || list.length < 2;
       badge.textContent = '×' + list.length;
     });
   }
-  // 다음 도깨비 차례에 잡힐 수 있는 내 말에 경고(15% 이상)
+  // 잡힐 위험 경고는 묶음의 맨 위 말에만
   const danger = threats(r);
   for (const p of r.pieces.filter((q) => q.owner === 'me')) {
     const warn = pieceEl(p.id).querySelector('.warn');
-    if (warn) warn.hidden = !(danger[p.node] >= 0.15);
+    const list = byNode[p.node] || [];
+    if (warn) warn.hidden = !(danger[p.node] >= 0.15) || list[list.length - 1] !== p;
   }
   if (r.phase === 'move' && !G.busy) showOptions();
 }
 
-/** 둘 수 있는 수를 판 위에 표시한다: 움직일 말이 꿈틀대고, 도착 칸에 예상 점수가 뜬다. */
+/** 묶음(같은 칸에 업힌 말들)의 맨 위 말 요소 */
+function topOf(node) {
+  const ids = R().pieces.filter((p) => p.node === node).map((p) => p.id);
+  return pieceEl(ids[ids.length - 1]);
+}
+
+/**
+ * 둘 수 있는 수 표시: 움직일 말이 꿈틀대고, 도착 칸에 예상 점수와 잡힐 확률이 뜬다.
+ * 수가 많으면(체스판) 말을 먼저 고르고 그 말의 수만 보여준다.
+ */
 function showOptions() {
-  const moves = legalMoves(R());
-  const best = Math.max(...moves.map((m) => m.preview.score.total));
-  const used = {};
-  moves.forEach((m, i) => {
-    if (m.kind === 'stack') {
-      const top = R().pieces.find((p) => p.id === m.pieceIds[0] && p.node === m.from);
-      const el = pieceEl(top.id);
-      el.classList.add('movable');
-      el.onclick = () => doMove(i);
-    }
-    const dest = m.preview.dest === HOME ? 'o0' : m.preview.dest;
+  const moves = legalMoves(R()).map((m, i) => ({ ...m, i }));
+  const groups = [...new Set(moves.map((m) => m.from))];
+  const twoStep = moves.length > 6 && groups.length > 1;
+  if (twoStep && !groups.includes(G.picked)) {
+    const best = moves.reduce((a, b) => (b.preview.score.total > a.preview.score.total ? b : a));
+    G.picked = best.from;
+  }
+  const shown = twoStep ? moves.filter((m) => m.from === G.picked) : moves;
+  const best = Math.max(...shown.map((m) => m.preview.score.total));
+  // 카메라: 움직일 말과 도착 칸이 모두 보이게
+  const pts = shown.map((m) => nodeXY(m.preview.dest === HOME ? (B().entry || m.from) : m.preview.dest));
+  for (const g of groups) if (g !== START) pts.push(nodeXY(g));
+  if (groups.includes(START) && B().entry) pts.push(nodeXY(B().entry));
+  Camera.frame(pts, { maxZoom: 1 });
+  drawZoom();
+
+  for (const g of groups) {
+    if (g === START) continue;
+    const el = topOf(g);
+    el.classList.add('movable');
+    if (twoStep && g === G.picked) el.classList.add('picked');
+    el.onclick = () => {
+      if (twoStep && g !== G.picked) { Sound.click(); G.picked = g; syncPieces(); drawTrays(); return; }
+      const only = moves.filter((m) => m.from === g);
+      if (only.length === 1) doMove(only[0].i);
+    };
+  }
+
+  for (const m of shown) {
+    const pv = m.preview;
+    const dest = pv.dest === HOME ? (B().entry || m.path[m.path.length - 2] || m.from) : pv.dest;
+    const [x, y] = nodeXY(dest);
+    // 도착 고리는 말보다 아래 층, 점수 라벨은 따로 맨 위 층에(클릭은 고리가 받는다)
     const t = document.createElement('div');
     t.className = 'target';
-    const [x, y] = nodeXY(dest);
-    const off = (used[dest] = (used[dest] || 0) + 1) - 1;
-    t.style.left = x + off * 18 + 'px';
+    t.style.left = x + 'px';
     t.style.top = y + 'px';
-    const pv = m.preview;
-    const label = pv.dest === HOME ? '골인 ' : pv.captured ? '잡기 ' : pv.treasure ? '보따리 ' : pv.joined ? '업기 ' : '';
+    t.style.zIndex = depth(y) - 1;
+    const label = pv.dest === HOME ? '골인 ' : pv.captured ? '잡기 ' : pv.treasure ? '보따리 ' : pv.joined ? '업기 ' : pv.boardTile ? pv.boardTile.name + ' ' : '';
     const risk = pv.dest === HOME ? '' : pv.danger >= 0.05
       ? `<i class="risk">${Math.round(pv.danger * 100)}%</i>`
       : '<i class="risk safe">안전</i>';
-    // 라벨은 판 바깥쪽으로 비켜 띄운다 — 오른쪽 변의 칸이면 왼쪽에, 위 변이면 아래에
-    const [cx, cy] = COORDS[dest];
-    const side = cx > 0.9 ? 'left' : cx < 0.1 ? 'right' : cy < 0.1 ? 'below' : 'above';
-    t.innerHTML = `<span class="gain ${side} ${pv.score.total === best ? 'hot' : ''}">${label}+${pv.score.total}${risk}</span>`;
-    t.onclick = () => doMove(i);
-    $('#layer').appendChild(t);
-  });
+    const tag = document.createElement('div');
+    tag.className = 'target-tag';
+    tag.style.left = x + 'px';
+    tag.style.top = y + 'px';
+    tag.style.zIndex = 600 + depth(y);
+    tag.innerHTML = `<span class="gain ${pv.score.total === best ? 'hot' : ''}">${label}+${pv.score.total}${risk}</span>`;
+    t.onclick = () => doMove(m.i);
+    $('#layer').append(t, tag);
+  }
 }
 
 function drawTrays() {
@@ -223,18 +323,10 @@ function drawTrays() {
   const home = mine.filter((p) => p.node === HOME).length;
   const oppWait = opp.filter((p) => p.node === START).length;
   $('#trays').innerHTML = `
-    <div class="tray newbtn"><span class="label">대기</span>${minis || '<span class="label">—</span>'}</div>
+    <div class="tray"><span class="label">대기</span>${minis || '<span class="label">—</span>'}</div>
     <div class="tray"><span class="label">도깨비 대기 ${oppWait}</span><span class="label">골인</span><b style="font-family:var(--display);font-size:20px">${home}/${mine.length}</b></div>`;
   const ready = $('#trays [data-new]:not([data-new=""])');
   if (ready) ready.onclick = () => doMove(Number(ready.dataset.new));
-}
-
-function drawSticks(flats, toss) {
-  $('#sticks').innerHTML = flats.map((f, i) => stick(f, i === 0)).join('');
-  if (toss) $('#sticks').querySelectorAll('.stick').forEach((s, i) => {
-    s.style.animationDelay = i * 30 + 'ms';
-    s.classList.add('toss');
-  });
 }
 
 function drawControls() {
@@ -242,25 +334,43 @@ function drawControls() {
   const canThrow = !G.busy && r.phase === 'throw';
   const tb = $('#throw');
   tb.disabled = !canThrow;
-  tb.textContent = r.extra > 0 && r.phase === 'throw' ? '한 번 더!' : '던지기';
+  tb.textContent = r.extra > 0 && r.phase === 'throw' ? '한 번 더!' : B().rollName;
   tb.classList.toggle('yellow', r.extra > 0 && r.phase === 'throw');
+  tb.style.fontSize = '24px';
   const rb = $('#reroll');
   rb.disabled = G.busy || r.phase !== 'move' || r.rerolls <= 0;
-  rb.innerHTML = `다시 던지기<br><span style="font-family:var(--display);font-size:20px">×${r.rerolls}</span>`;
+  rb.innerHTML = `다시 굴리기<br><span style="font-family:var(--display);font-size:20px">×${r.rerolls}</span>`;
   const used = G.throwsMax - r.throwsLeft;
   $('#pips').innerHTML = Array.from({ length: G.throwsMax }, (_, i) => `<i class="${i < used ? 'used' : ''}"></i>`).join('') +
     Array.from({ length: r.extra }, () => '<i class="extra"></i>').join('');
-  $('#hint').textContent = G.busy ? '' : r.phase === 'move' ? '노란 칸을 누르세요 — 숫자는 예상 점수, 빨간 %는 잡힐 확률'
-    : r.phase === 'throw' ? `던질 기회 ${r.throwsLeft}번${r.extra ? ` + 한 번 더 ${r.extra}` : ''}` : '';
+  const many = r.phase === 'move' && legalMoves(r).length > 6;
+  $('#hint').textContent = G.busy ? '' : r.phase === 'move'
+    ? (many ? '말을 눌러 고르고, 노란 칸을 누르세요 — %는 잡힐 확률' : '노란 칸을 누르세요 — 숫자는 예상 점수, %는 잡힐 확률')
+    : r.phase === 'throw' ? `남은 기회 ${r.throwsLeft}번${r.extra ? ` + 한 번 더 ${r.extra}` : ''}` : '';
 }
 
 function drawCharms(container = $('#charms'), inShop = false) {
   const ids = G.run.charms;
   container.innerHTML = Array.from({ length: MAX_CHARMS }, (_, i) =>
     ids[i] ? `<div class="charm" data-i="${i}" title="${charmById(ids[i]).name}">${charmCard(ids[i])}</div>` : '<div class="slot"></div>').join('');
-  container.querySelectorAll('.charm').forEach((el) => {
-    el.onclick = () => charmTip(Number(el.dataset.i), inShop);
-  });
+  container.querySelectorAll('.charm').forEach((el) => { el.onclick = () => charmTip(Number(el.dataset.i), inShop); });
+}
+
+/** 내 말을 누르면 그 캐릭터의 능력을 보여준다. */
+function heroTip(pieceId) {
+  if (G.busy) return;
+  const h = heroOf(pieceId);
+  if (!h) return;
+  Sound.click();
+  app.querySelector('.tip')?.remove();
+  const tip = document.createElement('div');
+  tip.className = 'tip';
+  const used = h.escape && R().escapeUsed ? ' (이번 라운드엔 이미 썼다)' : '';
+  tip.innerHTML = `<div style="display:flex;gap:10px;align-items:center">${character(kindOf(pieceId), 52)}
+    <div><b>${h.name} · ${h.skill}</b><p style="margin:4px 0 0">${h.desc}${used}</p></div></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn small white" data-a="close">닫기</button></div>`;
+  app.appendChild(tip);
+  tip.querySelector('[data-a]').onclick = () => tip.remove();
 }
 
 function charmTip(i, inShop) {
@@ -287,18 +397,34 @@ function charmTip(i, inShop) {
       if (a === 'right') moveCharm(G.run, i, i + 1);
       if (a === 'sell') { sellCharm(G.run, i); Sound.coin(); }
       tip.remove();
-      afterCharmChange(inShop);
+      if (inShop) { openShop(); return; }
+      R().charms = G.run.charms.slice();
+      R().pFlat = pFlatOf(G.run);
+      drawTop(); drawCharms();
+      if (R().phase === 'move') syncPieces();
     };
   });
 }
 
-function afterCharmChange(inShop) {
-  if (inShop) { openShop(); return; }
-  R().charms = G.run.charms.slice();
-  R().pFlat = pFlatOf(G.run);
-  drawTop();
-  drawCharms();
-  if (R().phase === 'move') syncPieces();
+// ── 보따리 ───────────────────────────────────────────────────
+
+function drawBundles() {
+  $('#layer').querySelectorAll('.bundle').forEach((b) => b.remove());
+  for (const t of R().treasures) addBundle(t.node, t.ttl);
+}
+
+function addBundle(node, ttl) {
+  const b = document.createElement('div');
+  b.className = 'bundle';
+  b.dataset.node = node;
+  b.style.animation = 'none';
+  b.innerHTML = bundle(34) + `<span class="ttl">${ttl}</span>`;
+  const [x, y] = nodeXY(node);
+  b.style.left = x + 'px';
+  b.style.top = y - 6 + 'px';
+  b.style.zIndex = depth(y) - 1;
+  $('#layer').appendChild(b);
+  return b;
 }
 
 // ── 조작 ─────────────────────────────────────────────────────
@@ -306,17 +432,20 @@ function afterCharmChange(inShop) {
 async function onThrow() {
   if (G.busy || R().phase !== 'throw') return;
   Sound.unlock();
+  G.picked = null;
   await play(throwYut(R(), G.run.rng));
 }
 
 async function onReroll() {
   if (G.busy || R().phase !== 'move' || R().rerolls <= 0) return;
+  G.picked = null;
   await play(reroll(R(), G.run.rng));
 }
 
 async function doMove(i) {
   if (G.busy || R().phase !== 'move') return;
   Sound.click();
+  G.picked = null;
   await play(applyMove(R(), i, G.run.rng));
 }
 
@@ -326,14 +455,15 @@ async function play(events) {
   G.busy = true;
   app.querySelector('.tip')?.remove();
   drawControls();
-  $('#layer').querySelectorAll('.target').forEach((t) => t.remove());
-  $('#layer').querySelectorAll('.piece').forEach((el) => { el.classList.remove('movable'); el.onclick = null; });
+  $('#layer').querySelectorAll('.target, .target-tag').forEach((t) => t.remove());
+  $('#layer').querySelectorAll('.piece').forEach((el) => { el.classList.remove('movable', 'picked'); el.onclick = null; });
   for (const e of events) {
     const h = HANDLERS[e.type];
     if (h) await h(e);
   }
   G.busy = false;
   if (R().phase === 'over') { await roundOver(); return; }
+  if (R().phase === 'throw') { frameAction(); drawZoom(); }
   syncPieces();
   drawBundles();
   drawHeung();
@@ -368,168 +498,248 @@ function toast(text) {
   setTimeout(() => t.remove(), 1400);
 }
 
-function floater(text, node, color) {
-  const [x, y] = nodeXY(node);
-  const f = document.createElement('div');
-  f.className = 'floater';
-  f.textContent = text;
-  if (color) f.style.background = color;
-  f.style.left = Math.min(270, Math.max(58, x)) + 'px'; // 판 가장자리에서 잘리지 않게 안쪽으로
-  f.style.top = y - 20 + 'px';
-  $('#board').appendChild(f);
-  setTimeout(() => f.remove(), 1000);
+/** 결과 도장의 색: 등급이 높을수록 뜨겁게 */
+const TIER_COLOR = { [-1]: 'ink', 1: 'white', 2: 'green', 3: 'blue', 4: '', 5: 'yellow' };
+
+/** 이동 경로를 한 칸씩 뛴다. 업힌 말은 같이 뛴다. 체스 미끄러짐은 낮게, 나이트는 높게. */
+async function travel(e) {
+  const els = e.pieceIds.map(pieceEl);
+  const board = B();
+  const first = e.path[0] === HOME ? (board.entry || e.from) : e.path[0];
+  let prev;
+  Camera.follow(nodeXY(e.from === START ? first : e.from), 300);
+  if (e.from === START) {
+    // 등장: 하늘에서 첫 칸으로 떨어진다
+    els.forEach((el, lvl) => { el.style.display = ''; place(el, first, lvl); el.querySelector('.count').hidden = true; });
+    G.lastLand = first;
+    if (e.who === 'me') Sound.drop(); else Sound.step(0);
+    await Promise.all(els.map((el) => drop(el, { height: 150, duration: 440 })));
+    FX.dust(...nodeApp(first), 7);
+    prev = nodeXY(first);
+    e = { ...e, path: e.path.slice(1) };
+  } else {
+    prev = nodeXY(e.from);
+  }
+  els.forEach((el) => act(el, 'walk'));
+  const jumpy = board.id === 'chess' && e.roll?.value === 'knight';
+  for (let k = 0; k < e.path.length; k++) {
+    const node = e.path[k];
+    const warpLeg = e.warp && k === e.path.length - 1;
+    const target = node === HOME ? (board.entry || e.path[k - 1] || e.from) : node;
+    const to = nodeXY(target);
+    G.lastLand = target;
+    const height = warpLeg ? 150 : jumpy ? 70 : board.id === 'chess' ? 12 : 26;
+    const duration = warpLeg ? 700 : jumpy ? 420 : board.id === 'chess' ? 150 : 190;
+    if (warpLeg) { Sound.whoosh(); FX.pow(...nodeApp(e.path[k - 1]), '비행기!', '#2F6BD8', '#FFFDF7'); }
+    Camera.follow(to, warpLeg ? 650 : duration + 40);
+    await Promise.all(els.map((el, lvl) => {
+      face(el, to[0] - prev[0]);
+      place(el, target, lvl);
+      return hop(el, [prev[0], prev[1]], to, { height, duration });
+    }));
+    Sound.step(k);
+    if (k === e.path.length - 1 || warpLeg || jumpy) FX.dust(...nodeApp(target), warpLeg || jumpy ? 8 : 4);
+    prev = to;
+  }
+  els.forEach((el) => act(el, 'idle'));
+  if (e.path[e.path.length - 1] === HOME) {
+    els.forEach((el) => act(el, 'dance'));
+    // 골인: 높이 뛰어 사라진다
+    await Promise.all(els.map((el) => tween(el, [
+      { transform: 'translateY(0) scale(1)', opacity: 1 },
+      { transform: 'translateY(-70px) scale(1.15) rotate(-10deg)', opacity: 1, offset: 0.5 },
+      { transform: 'translateY(-120px) scale(.3) rotate(20deg)', opacity: 0 }
+    ], { duration: 520, easing: 'ease-out', fill: 'forwards' })));
+    els.forEach((el) => { el.style.display = 'none'; });
+  }
 }
 
 const HANDLERS = {
   async throw(e) {
     clearStamp();
     hideCalc();
+    Sound.toss(B().roller);
+    const anim = Roller.animate($('#roller'), B(), e.roll, e.who);
+    setTimeout(() => Sound.clatter(B().roller), B().roller === 'sticks' ? 380 : 450);
+    await anim;
+    const extra = e.bonus ? (B().roller === 'dice' ? '더블! 한 번 더' : '한 번 더!') : e.rerolled ? '다시 굴렸다' : '';
     if (e.who === 'opp') {
-      drawSticks(e.flats, true);
-      Sound.toss();
-      await sleep(380);
-      Sound.clatter();
-      await sleep(260);
-      stampText('도깨비 ' + NAMES[e.result], 'ink opp');
-      await sleep(650);
+      stampText('도깨비 ' + e.roll.label, 'ink opp');
+      await sleep(420);
       return;
     }
-    drawSticks(e.flats, true);
-    Sound.toss();
-    await sleep(320);
-    Sound.clatter();
-    await sleep(260);
-    stampText(NAMES[e.result] + '!', STAMP_COLOR[e.result], e.bonus ? '한 번 더!' : e.rerolled ? '다시 던졌다' : '');
-    G.flats = e.flats;
-    await sleep(420);
+    stampText(e.roll.label + '!', TIER_COLOR[e.roll.tier] ?? '', extra);
+    if (e.bonus) FX.sparkle(320, $('#sticks').offsetTop + 40, 8, '#F2B33D');
+    await sleep(380);
   },
   async noMove(e) {
-    toast(e.who === 'opp' ? '도깨비가 움직일 수 없다' : e.why === 'boss' ? '도깨비 대장: 도는 무효!' : '움직일 말이 없다');
+    toast(e.who === 'opp' ? '도깨비가 움직일 수 없다' : e.why === 'boss' ? '도깨비 대장: 약한 수는 무효!' : '움직일 말이 없다');
     await sleep(700);
   },
   async oppTurn() {
     toast('도깨비 차례');
-    await sleep(450);
+    await sleep(380);
   },
-  async move(e) {
-    const els = e.pieceIds.map(pieceEl);
-    for (const el of els) {
-      if (el.style.display === 'none') { place(el, e.from === START ? 'o0' : e.from); }
-    }
-    els.forEach((el, i) => { el.style.display = i === 0 ? '' : 'none'; el.querySelector('.count').hidden = true; });
-    // 떠난 칸에 남은 말의 숫자 배지는 지운다(남은 말 수는 연출이 끝난 뒤 syncPieces 가 다시 단다)
-    if (e.from !== START) {
-      const [fx, fy] = nodeXY(e.from);
-      $('#layer').querySelectorAll('.piece').forEach((el) => {
-        if (!els.includes(el) && parseFloat(el.style.left) === fx && parseFloat(el.style.top) === fy) el.querySelector('.count').hidden = true;
-      });
-    }
-    let i = 0;
-    for (const node of e.path) {
-      const n = node === HOME ? 'o0' : node;
-      for (const el of els) { place(el, n); el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop'); }
-      Sound.step(i++);
-      await sleep(175);
-    }
-    if (e.path[e.path.length - 1] === HOME) els.forEach((el) => { el.style.display = 'none'; });
-  },
+  async move(e) { await travel(e); },
   async capture(e) {
-    for (const id of e.victimIds) {
-      const el = pieceEl(id);
-      el.style.display = '';
-      el.classList.add('caught');
-    }
+    const at = nodeApp(e.node);
+    // 타격의 순간: 화면이 번쩍이고 잠깐 멈춘다
     Sound.capture();
-    $('#board').classList.remove('shake'); void $('#board').offsetWidth; $('#board').classList.add('shake');
-    floater(e.who === 'me' ? '잡았다!' : '잡혔다…', e.node, e.who === 'me' ? '#F2B33D' : '#E0533D');
+    flash(app);
+    e.attackerIds?.forEach((id) => { squish(pieceEl(id), 0.55); act(pieceEl(id), 'cheer', 1100); });
+    e.victimIds.forEach((id) => act(pieceEl(id), 'sad'));
+    await sleep(110);
+    FX.ring(...at);
+    FX.stars(...at, 9);
+    FX.pow(at[0], at[1] - 46, e.who === 'me' ? '퍽! 잡았다' : '앗, 잡혔다', e.who === 'me' ? '#F2B33D' : '#E0533D', e.who === 'me' ? '#22201D' : '#FFFDF7');
+    shake($('#board'), 9, 420);
     if (e.who === 'opp') Sound.caught();
-    await sleep(560);
-    for (const id of e.victimIds) { const el = pieceEl(id); el.classList.remove('caught'); el.style.display = 'none'; }
+    const dir = nodeXY(e.node)[0] < 195 ? -1 : 1;
+    await Promise.all(e.victimIds.map((id) => { const el = pieceEl(id); el.style.display = ''; return knockOut(el, dir); }));
+    e.victimIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
   },
   async stack(e) {
     Sound.stack();
-    floater(`업었다 ×${e.pieceIds.length}`, e.node, '#FFFDF7');
-    const top = pieceEl(e.pieceIds[0]);
-    e.pieceIds.forEach((id, i) => { if (i) pieceEl(id).style.display = 'none'; });
-    top.style.display = '';
-    const badge = top.querySelector('.count');
-    badge.hidden = false;
-    badge.textContent = '×' + e.pieceIds.length;
-    await sleep(380);
+    const ids = e.pieceIds;
+    // 아래에 있던 말이 눌렸다가 튀고, 탑으로 다시 쌓인다
+    ids.forEach((id, lvl) => { const el = pieceEl(id); el.style.display = ''; place(el, e.node, lvl); });
+    ids.forEach((id) => act(pieceEl(id), 'cheer', 900));
+    await squish(pieceEl(ids[0]), 0.6);
+    const [x, y] = nodeApp(e.node);
+    FX.sparkle(x, y - 30, 8);
+    FX.pow(x, y - 40 - ids.length * STACK_STEP, `업었다 ×${ids.length}`, '#FFFDF7', '#22201D', 8);
+    await sleep(300);
   },
   async home(e) {
     Sound.home();
-    floater(`골인! ×${e.pieceIds.length}`, 'o0', e.who === 'opp' ? '#2F6BD8' : '#3E9B6A');
-    if (e.who === 'opp') {
-      if (e.throwsLost) {
-        Sound.penalty();
-        toast(`도깨비 골인 — 던질 기회 −${e.throwsLost}`);
-        $('#pips').classList.add('hurt');
-        G.throwsMax = Math.max(G.throwsMax - e.throwsLost, R().throwsLeft);
-        setTimeout(() => $('#pips')?.classList.remove('hurt'), 600);
-        drawControls();
-      } else toast('도깨비가 골인했다');
+    const at = nodeApp(G.lastLand || B().entry);
+    FX.confetti(at[0], at[1] - 20, 30);
+    FX.pow(at[0], at[1] - 60, e.who === 'opp' ? '도깨비 골인' : `골인! ×${e.pieceIds.length}`, e.who === 'opp' ? '#2F6BD8' : '#3E9B6A', '#FFFDF7');
+    if (e.who === 'opp' && e.throwsLost) {
+      Sound.penalty();
+      toast(`도깨비 골인 — 던질 기회 −${e.throwsLost}`);
+      $('#pips').classList.add('hurt');
+      G.throwsMax = Math.max(G.throwsMax - e.throwsLost, R().throwsLeft);
+      setTimeout(() => $('#pips')?.classList.remove('hurt'), 600);
+      drawControls();
     }
-    await sleep(520);
+    await sleep(560);
+  },
+  async coin(e) {
+    Sound.coin();
+    await coinsFly(nodeApp(e.node), e.amount);
+  },
+  async trap(e) {
+    toast('덫에 걸린 도깨비!');
+    Sound.capture();
+    await Promise.all(e.pieceIds.map((id) => knockOut(pieceEl(id), 1)));
+    e.pieceIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; });
+  },
+  async score(e) {
+    const last = R().pieces.find((p) => p.owner === 'me' && p.node !== START && p.node !== HOME);
+    await animateScore(e);
+    if (e.total >= e.target * 0.3) {
+      Sound.big();
+      stampText('대박!', 'yellow', `+${e.total.toLocaleString()}`);
+      R().pieces.filter((p) => p.owner === 'me').forEach((p) => act(pieceEl(p.id), 'dance', 1600));
+      shake($('#board'), 10, 500);
+      const sb = $('#score').getBoundingClientRect(), ab = app.getBoundingClientRect(), k = sb.width / $('#score').offsetWidth;
+      FX.confetti((sb.left - ab.left) / k + 80, (sb.top - ab.top) / k + 30, 40, 1.4);
+      await sleep(600);
+    }
+    void last;
   },
   async heung(e) {
     Sound.heung(e.value);
     drawHeung(null, e.value);
     const pip = $('#heung').querySelectorAll('.pips i')[e.value - 1];
-    pip?.classList.add('bump');
+    if (pip) tween(pip, [{ transform: 'scale(1)' }, { transform: 'scale(1.6) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 360 });
     if (e.value >= HEUNG_MAX) toast('흥이 넘친다! 배수 +5');
     await sleep(260);
   },
   async heungLost(e) {
     Sound.heungLost();
-    toast(`흥이 꺼졌다… (배수 +${e.value} 사라짐)`);
+    toast(e.why === 'trap' ? `함정! 흥이 꺼졌다 (배수 +${e.value} 사라짐)` : `흥이 꺼졌다… (배수 +${e.value} 사라짐)`);
     drawHeung('lost', 0);
-    await sleep(520);
+    shake($('#heung'), 6, 400);
+    await sleep(480);
   },
   async treasureSpawn(e) {
     Sound.bundle();
-    addBundle(e.node, e.ttl, true);
-    floater('보따리!', e.node, '#FFFDF7');
-    await sleep(420);
+    const b = addBundle(e.node, e.ttl);
+    b.style.animation = '';
+    await drop(b, { height: 120, duration: 420 });
+    FX.dust(...nodeApp(e.node), 5);
   },
   async treasureGone(e) {
     const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
-    if (b) { b.classList.add('gone'); Sound.bundleGone(); await sleep(350); b.remove(); }
+    if (b) { Sound.bundleGone(); await tween(b, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.6)', opacity: 0 }], { duration: 320, fill: 'forwards' }); b.remove(); }
   },
   async treasureTake(e) {
     const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
-    if (b) { b.classList.add('gone'); setTimeout(() => b.remove(), 350); }
-    if (e.who === 'me') { Sound.coin(); floater(`+${TREASURE_COINS} 엽전`, e.node, '#F2B33D'); }
-    else { Sound.penalty(); toast('도깨비가 보따리를 가로챘다'); }
-    await sleep(380);
+    const at = nodeApp(e.node);
+    if (b) { tween(b, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.8) rotate(20deg)', opacity: 0 }], { duration: 380, fill: 'forwards' }).then(() => b.remove()); }
+    FX.stars(at[0], at[1] - 10, 6);
+    if (e.who === 'me') { Sound.coin(); await coinsFly(at, TREASURE_COINS); }
+    else { Sound.penalty(); FX.pow(at[0], at[1] - 40, '보따리를 뺏겼다', '#E0533D', '#FFFDF7'); await sleep(400); }
   },
-  async coin(e) {
-    Sound.coin();
-    floater('+1 엽전', e.node, '#F2B33D');
-    await sleep(300);
-  },
-  async trap(e) {
-    toast('덫에 걸린 도깨비!');
-    e.pieceIds.forEach((id) => { pieceEl(id).classList.add('caught'); });
-    Sound.capture();
-    await sleep(560);
-    e.pieceIds.forEach((id) => { const el = pieceEl(id); el.classList.remove('caught'); el.style.display = 'none'; });
-  },
-  async score(e) {
-    await animateScore(e);
-    // 목표의 30% 이상을 한 번에 벌면 대박 연출
-    if (e.total >= e.target * 0.3) {
-      Sound.big();
-      stampText('대박!', 'yellow', `+${e.total.toLocaleString()}`);
-      $('#board').classList.remove('shake'); void $('#board').offsetWidth; $('#board').classList.add('shake');
-      await sleep(600);
+  async keyCard(e) {
+    Sound.bundle();
+    const card = document.createElement('div');
+    card.className = 'key-card';
+    card.innerHTML = `<div class="k">황금열쇠</div><b>${e.card.name}</b><span>${e.card.desc}</span>`;
+    app.appendChild(card);
+    await tween(card, [
+      { transform: 'translate(-50%,-50%) rotateY(90deg) scale(.6)', opacity: 0 },
+      { transform: 'translate(-50%,-50%) rotateY(0) scale(1.06)', opacity: 1, offset: 0.6 },
+      { transform: 'translate(-50%,-50%) rotateY(0) scale(1)', opacity: 1 }
+    ], { duration: 420 });
+    await sleep(900);
+    tween(card, [{ opacity: 1 }, { opacity: 0, transform: 'translate(-50%,-70%)' }], { duration: 260, fill: 'forwards' }).then(() => card.remove());
+    if (e.bonus) { drawScore(e.score); Sound.score(); }
+    if (e.card.id === 'coins') { Sound.coin(); await coinsFly(nodeApp(e.node), 3); }
+    if (e.card.id === 'heung') drawHeung(null, e.heung);
+    if (e.victimIds?.length) {
+      Sound.capture();
+      await Promise.all(e.victimIds.map((id) => knockOut(pieceEl(id), 1)));
+      e.victimIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; });
     }
   },
-  async again() { await sleep(150); },
+  async escape(e) {
+    const at = nodeApp(e.node);
+    Sound.whoosh();
+    FX.pow(at[0], at[1] - 50, '토끼의 꾀!', '#FFFDF7', '#E0533D', 6);
+    FX.sparkle(at[0], at[1] - 20, 10, '#F2B33D');
+    e.pieceIds.forEach((id) => { const el = pieceEl(id); el.style.display = ''; squish(el, 0.7); act(el, 'cheer', 1200); });
+    e.attackerIds.forEach((id) => act(pieceEl(id), 'sad'));
+    await sleep(260);
+    await Promise.all(e.attackerIds.map((id) => knockOut(pieceEl(id), nodeXY(e.node)[0] < canvasSize().w / 2 ? -1 : 1)));
+    e.attackerIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
+    toast('토끼가 꾀를 내어 도깨비를 출발로 돌려보냈다');
+  },
+  async again() { await sleep(120); },
   async roundOver() { /* play() 이 끝난 뒤 처리 */ }
 };
 
-function hideCalc() { $('#calc').classList.remove('show'); $('#score').classList.remove('calcing'); }
+/** 엽전이 날아가 위쪽 엽전 표시에 꽂힌다. */
+async function coinsFly(from, n) {
+  const pill = $('#coinPill');
+  if (!pill) return;
+  const pb = pill.getBoundingClientRect(), ab = app.getBoundingClientRect(), k = pb.width / pill.offsetWidth;
+  const to = [(pb.left - ab.left) / k + 20, (pb.top - ab.top) / k + 16];
+  const flights = [];
+  for (let i = 0; i < Math.min(6, n); i++) {
+    const c = document.createElement('div');
+    c.className = 'fly-coin';
+    c.innerHTML = coin(22);
+    $('#fx').appendChild(c);
+    flights.push(fly(c, [from[0] + (Math.random() - 0.5) * 20, from[1] - 20], to, { duration: 560, arc: 90, delay: i * 70 }));
+  }
+  await Promise.all(flights);
+  tween(pill, [{ transform: 'scale(1)' }, { transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 260 });
+}
+
+function hideCalc() { $('#calc')?.classList.remove('show'); $('#score')?.classList.remove('calcing'); }
 
 /** 칩 × 배수 를 한 줄씩 쌓아 보여주고, 점수판 숫자를 굴려 올린다. */
 async function animateScore(e) {
@@ -544,20 +754,19 @@ async function animateScore(e) {
     chipsEl.textContent = chips;
     multEl.textContent = mul;
     const target = line.chips != null ? chipsEl : multEl;
-    target.classList.remove('bump'); void target.offsetWidth; target.classList.add('bump');
+    tween(target, [{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-3deg)' }, { transform: 'scale(1)' }], { duration: 280 });
     if (line.chips != null) Sound.chip(step); else Sound.mult(step);
     const ci = G.run.charms.findIndex((id) => charmById(id).name === line.src);
     if (ci >= 0) {
       const card = $('#charms').querySelector(`[data-i="${ci}"]`);
-      card?.classList.remove('fire'); void card?.offsetWidth; card?.classList.add('fire');
+      if (card) tween(card, [{ transform: 'translateY(0)' }, { transform: 'translateY(-14px) scale(1.12) rotate(-4deg)' }, { transform: 'translateY(0)' }], { duration: 420 });
     }
     showSrc(line.src, target);
     step++;
-    await sleep(line === e.lines[0] ? 260 : 300);
+    await sleep(line === e.lines[0] ? 240 : 270);
   }
   Sound.score();
   const from = e.score - e.total;
-  // requestAnimationFrame 은 탭이 가려지면 멈춰서 연출이 끝나지 않는다. 타이머로 돌려 항상 끝나게 한다.
   const t0 = performance.now(), dur = 420;
   await new Promise((done) => {
     const id = setInterval(() => {
@@ -566,28 +775,19 @@ async function animateScore(e) {
       if (k >= 1) { clearInterval(id); done(); }
     }, 16);
   });
-  $('#scoreNow').classList.remove('bump'); void $('#scoreNow').offsetWidth; $('#scoreNow').classList.add('bump');
-  await sleep(250);
+  tween($('#scoreNow'), [{ transform: 'scale(1)' }, { transform: 'scale(1.18) rotate(-3deg)' }, { transform: 'scale(1)' }], { duration: 320 });
+  await sleep(200);
 }
 
 function showSrc(text, anchor) {
   const s = document.createElement('div');
-  s.className = 'calc src';
-  s.style.position = 'absolute';
   const box = $('#score').getBoundingClientRect(), a = anchor.getBoundingClientRect();
-  const k = box.width / $('#score').offsetWidth; // 화면 맞춤 배율
-  s.style.left = (a.left - box.left + a.width / 2) / k + 'px';
-  s.style.top = (a.top - box.top) / k + 'px';
-  s.style.opacity = '1';
-  s.style.transform = 'translate(-50%, -22px)';
-  s.style.height = 'auto';
-  s.style.fontSize = '11.5px';
-  s.style.fontWeight = '800';
-  s.style.color = 'var(--ink-2)';
-  s.style.animation = 'floatup .9s ease-out forwards';
+  const k = box.width / $('#score').offsetWidth;
+  s.style.cssText = `position:absolute;left:${(a.left - box.left + a.width / 2) / k}px;top:${(a.top - box.top) / k}px;` +
+    'transform:translate(-50%,-22px);font-size:11.5px;font-weight:800;color:var(--ink-2);white-space:nowrap;pointer-events:none';
   s.textContent = text;
   $('#score').appendChild(s);
-  setTimeout(() => s.remove(), 900);
+  tween(s, [{ opacity: 0, transform: 'translate(-50%,-14px)' }, { opacity: 1, transform: 'translate(-50%,-24px)', offset: 0.3 }, { opacity: 0, transform: 'translate(-50%,-40px)' }], { duration: 900 }).then(() => s.remove());
 }
 
 // ── 라운드 앞뒤 ──────────────────────────────────────────────
@@ -599,17 +799,38 @@ function sheet(html) {
 }
 function closeSheet() { app.querySelectorAll('.sheet, .sheet-back').forEach((n) => n.remove()); }
 
+/** 새 판에 들어설 때: 판이 미끄러져 들어오고, 이동 방식을 알려준다. */
+function boardIntro() {
+  const b = B();
+  tween($('#board'), [
+    { transform: 'translateY(60px) scale(.85) rotate(-4deg)', opacity: 0 },
+    { transform: 'translateY(-8px) scale(1.02)', opacity: 1, offset: 0.7 },
+    { transform: 'translateY(0) scale(1)' }
+  ], { duration: 650, easing: 'cubic-bezier(.3,.7,.4,1)' });
+  Sound.whoosh();
+  const s = sheet(`
+    <span class="kind">새 판</span>
+    <h2 style="margin-top:8px">${b.name}</h2>
+    <p>${b.blurb}</p>
+    <div class="board-preview"><div class="roller-mini" id="mini"></div>
+      <div style="font-size:13px;font-weight:700;line-height:1.5">${b.id === 'chess' ? '폰·킹은 짧게, 비숍·룩·퀸은 미끄러지듯, 나이트는 뛰어넘는다' : b.id === 'marble' ? '축제·보물섬·황금열쇠 칸을 노리고 함정은 피하라' : '모서리와 가운데에 멈추면 지름길을 탄다'}</div></div>
+    <div class="row"><button class="btn" id="go">좋아!</button></div>`);
+  Roller.idle(s.querySelector('#mini'), b);
+  s.querySelector('#go').onclick = () => { Sound.click(); roundIntro(); };
+}
+
 function roundIntro() {
   const r = R();
   const boss = r.boss ? `<div class="boss-card">${character('dokkaebiRed', 56)}<div><b>도깨비 대장 — ${r.boss.name}</b><span>${r.boss.desc}</span></div></div>` : '';
   const s = sheet(`
-    <h2>${r.number}라운드</h2>
-    <p>던질 기회 <b>${r.throwsLeft}번</b> 안에 <b>${r.target.toLocaleString()}점</b>을 넘겨라. 도깨비 ${r.pieces.filter((p) => p.owner === 'opp').length}마리가 같은 판을 돈다.</p>
+    <h2>${r.number}라운드 · ${B().name}</h2>
+    <p>기회 <b>${r.throwsLeft}번</b> 안에 <b>${r.target.toLocaleString()}점</b>을 넘겨라. 도깨비 ${r.pieces.filter((p) => p.owner === 'opp').length}마리가 같은 판을 돈다.</p>
     <div class="legend">
       <div>${character('dokkaebiRed', 34)}<span><b>빨간 도깨비</b><br>내 말을 잡으러 온다</span></div>
-      <div>${character('dokkaebiBlue', 34)}<span><b>파란 도깨비</b><br>골인하면 던질 기회 −1</span></div>
+      <div>${character('dokkaebiBlue', 34)}<span><b>파란 도깨비</b><br>골인하면 기회 −1</span></div>
     </div>
     <p style="font-size:12.5px">잡기·업기·골인·보따리로 <b>흥</b>이 오르면 모든 이동에 배수가 붙는다. 내 말이 잡히면 흥이 꺼진다.</p>
+    <div class="mini-roster">${HERO_SKILLS.map((h, i) => `<div>${character(HEROES[i], 34)}<span>${h.skill}</span></div>`).join('')}</div>
     ${boss}
     <div class="row"><button class="btn" id="go">시작!</button></div>`);
   if (r.boss) Sound.boss();
@@ -623,7 +844,8 @@ async function roundOver() {
   if (r.outcome === 'win') {
     stampText('통과!', 'green');
     Sound.win();
-    await sleep(1100);
+    FX.confetti(195, 300, 50, 1.6);
+    await sleep(1200);
     const payout = settleRound(G.run);
     drawTop();
     if (G.run.status === 'won') { victory(); return; }
@@ -639,6 +861,7 @@ async function roundOver() {
   } else {
     stampText('실패…', 'ink');
     Sound.lose();
+    shake(app, 8, 500);
     await sleep(1100);
     settleRound(G.run);
     gameOver();
@@ -647,10 +870,12 @@ async function roundOver() {
 
 function openShop() {
   const run = G.run;
+  const next = ROUNDS[run.roundNo];
+  const nextBoard = BOARDS[next.board];
   const art = (o) => o.kind === 'charm' ? charmCard(o.id) : o.kind === 'tile' ? tileArt(o.id) : stickArt(o.id);
   const info = (o) => {
     if (o.kind === 'charm') { const c = charmById(o.id); return { kind: '부적', name: c.name, desc: c.desc }; }
-    if (o.kind === 'tile') { const t = TILES.find((x) => x.id === o.id); return { kind: '칸 개조', name: t.name, desc: t.desc }; }
+    if (o.kind === 'tile') { const t = TILES.find((x) => x.id === o.id); return { kind: '칸 개조', name: t.name, desc: `${t.desc} (${nextBoard.name})` }; }
     const st = STICKS.find((x) => x.id === o.id);
     return { kind: '윷가락', name: st.name, desc: st.desc + (run.stick ? ' (지금 윷과 바꾼다)' : '') };
   };
@@ -658,7 +883,7 @@ function openShop() {
     <div style="display:flex;align-items:center;justify-content:space-between">
       <h2>장터</h2><span class="pill">${coin()} ${run.coins}</span>
     </div>
-    <p>다음은 ${run.roundNo + 1}라운드 · 목표 ${ROUNDS[run.roundNo].target.toLocaleString()}점${ROUNDS[run.roundNo].boss ? ' · <b style="color:var(--red)">도깨비 대장</b>' : ''}</p>
+    <p>다음은 ${run.roundNo + 1}라운드 · <b>${nextBoard.name}</b> · 목표 ${next.target.toLocaleString()}점${next.boss ? ' · <b style="color:var(--red)">도깨비 대장</b>' : ''}</p>
     <div class="offers">${run.shop.offers.map((o, i) => {
       const d = info(o);
       return `<div class="offer ${o.sold ? 'sold' : ''}">
@@ -681,7 +906,7 @@ function openShop() {
       const res = buy(run, Number(b.dataset.buy));
       if (!res.ok) { Sound.deny(); toast(res.reason); return; }
       Sound.coin();
-      if (res.node) { drawBoard(); toast('판 위에 새 칸이 놓였다'); }
+      if (res.node) toast(`${BOARDS[res.board].name}에 새 칸이 놓였다`);
       drawTop();
       openShop();
     };
@@ -691,12 +916,7 @@ function openShop() {
     Sound.click();
     closeSheet();
     nextRound(run);
-    G.throwsMax = R().throwsLeft;
-    clearStamp();
-    hideCalc();
-    $('#layer').innerHTML = '';
-    refresh();
-    roundIntro();
+    enterRound();
   };
 }
 
@@ -704,7 +924,8 @@ function gameOver() {
   const run = G.run;
   const s = sheet(`
     <h2>판이 뒤집혔다</h2>
-    <p>${run.roundNo}라운드에서 ${R().score.toLocaleString()}점 — 목표 ${R().target.toLocaleString()}점에 못 미쳤다.</p>
+    <p>${run.roundNo}라운드(${B().name})에서 ${R().score.toLocaleString()}점 — 목표 ${R().target.toLocaleString()}점에 못 미쳤다.</p>
+    <div class="cast" style="justify-content:center;margin:10px 0 4px">${HEROES.map((k) => character(k, 56, 'sad')).join('')}${character('dokkaebiRed', 56, 'dance')}</div>
     <div class="payout">
       <div><span>버틴 라운드</span><b>${run.roundNo - 1} / ${ROUNDS.length}</b></div>
       <div><span>한 번에 가장 많이 번 점수</span><b>${R().lastMoveBest.toLocaleString()}</b></div>
@@ -716,18 +937,19 @@ function gameOver() {
   s.querySelector('#again').onclick = () => {
     closeSheet();
     G.run = createRun(Date.now() & 0x7fffffff);
+    G.boardId = null;
     startRound(G.run);
-    buildGame();
-    roundIntro();
+    enterRound();
   };
 }
 
 function victory() {
   const run = G.run;
+  FX.confetti(195, 400, 80, 2);
   const s = sheet(`
-    <h2>도깨비 대장을 이겼다!</h2>
-    <p>6라운드를 모두 넘겼다. 마지막 점수 ${R().score.toLocaleString()}점.</p>
-    <div class="cast" style="justify-content:center;margin:16px 0 4px">${HEROES.map((k) => character(k)).join('')}</div>
+    <h2>${GAME_TITLE.main} ${GAME_TITLE.accent}, 귀환!</h2>
+    <p>윷판·주사위판·체스판을 모두 넘겼다. 마지막 점수 ${R().score.toLocaleString()}점.</p>
+    <div class="cast" style="justify-content:center;margin:16px 0 4px">${HEROES.map((k) => character(k, 64, 'dance')).join('')}</div>
     <div class="payout">
       <div><span>모은 부적</span><b>${run.charms.map((id) => charmById(id).name).join(', ') || '없음'}</b></div>
       <div><span>시드</span><b>${run.seed}</b></div>
@@ -752,11 +974,9 @@ document.addEventListener('keyup', (e) => {
   if (!G.run || !R() || G.busy || app.querySelector('.sheet')) return;
   if (e.key === ' ' || e.key === 'Enter') onThrow();
   if (e.key === 'r') onReroll();
-  const n = Number(e.key);
-  if (n >= 1 && n <= 9 && R().phase === 'move') doMove(n - 1);
 });
 
-// 확률표는 개발 중 콘솔에서 확인용
-window.__yut = { distribution, get run() { return G.run; } };
+// 개발 중 콘솔 확인용
+window.__yut = { get run() { return G.run; } };
 
 title();

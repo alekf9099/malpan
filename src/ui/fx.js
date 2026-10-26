@@ -71,6 +71,10 @@ export function ring(x, y, color = '#FFFDF7') {
 /** 만화 스티커("퍽!", "골인!", "업었다!") */
 export function pow(x, y, text, color = '#F2B33D', ink = '#22201D', rot = -10) {
   const p = spawn('fx-pow', x, y, text);
+  // 화면 가장자리에서 글자가 잘리지 않게 안쪽으로 당긴다(돌림 때문에 여유를 조금 더 둔다)
+  const half = p.offsetWidth / 2 + 14, W = layer.clientWidth;
+  if (W > 2 * half) p.style.left = Math.min(W - half, Math.max(half, x)) + 'px';
+  p.style.top = Math.max(p.offsetHeight / 2 + 30, y) + 'px';
   p.style.background = color;
   p.style.color = ink;
   return tween(p, [

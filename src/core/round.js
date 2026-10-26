@@ -7,6 +7,7 @@ import { charmById } from './items.js';
 import { boardOf } from './boards/index.js';
 import { KEY_CARDS } from './boards/marble.js';
 import { HEROES, heroOf } from './heroes.js';
+import { eventById } from './events.js';
 
 export const CAPTURE_CHIPS = 50;
 export const HOME_CHIPS = 100;
@@ -22,7 +23,8 @@ export const TREASURE_COINS = 2;
 export const OPP_HOME_PENALTY = 1;
 
 /**
- * cfg: { number, target, throws, rerolls, myPieces, oppPieces, charms: [id], tiles: {node: tileId}, pFlat, boss, board }
+ * cfg: { number, target, throws, rerolls, myPieces, oppPieces, charms: [id], tiles: {node: tileId}, pFlat, boss, board, events }
+ * events: 돌발 사건 계획 [{ at, id }] (events.js planEvents). 없으면 사건이 없다.
  */
 export function createRound(cfg) {
   const pieces = [];
@@ -48,6 +50,7 @@ export function createRound(cfg) {
     boss: cfg.boss || null,
     coins: 0,
     escapeUsed: false,
+    eventPlan: (cfg.events || []).map((e) => ({ ...e, done: false })),
     pending: null,
     phase: 'throw',
     outcome: null,
@@ -328,6 +331,7 @@ function moveGroup(r, owner, opt, roll) {
 function afterMyMove(r, rng) {
   const events = opponentTurn(r, rng);
   events.push(...tickTreasures(r, rng));
+  if (r.throwsLeft > 0 || r.extra > 0) events.push(...fireEvent(r, rng));
   if (r.throwsLeft <= 0 && r.extra <= 0) return events.concat(finish(r, 'outOfThrows'));
   r.phase = 'throw';
   return events;
@@ -348,6 +352,55 @@ function tickTreasures(r, rng) {
       r.treasures.push({ node, ttl: TREASURE_TTL });
       events.push({ type: 'treasureSpawn', node, ttl: TREASURE_TTL });
     }
+  }
+  return events;
+}
+
+/** 다음 사건까지 남은 내 차례 수. 사건이 더 없으면 null. */
+export function nextEventIn(r) {
+  const due = r.eventPlan.find((e) => !e.done);
+  return due ? Math.max(0, r.throwsLeft - due.at) : null;
+}
+
+/** 내 차례가 시작될 때 예정된 사건이 있으면 터뜨린다. */
+function fireEvent(r, rng) {
+  const due = r.eventPlan.find((e) => !e.done && r.throwsLeft <= e.at);
+  if (!due) return [];
+  due.done = true;
+  const info = eventById(due.id);
+  const board = boardFor(r);
+  const events = [{ type: 'event', id: info.id, name: info.name, desc: info.desc, good: info.good }];
+  const free = () => {
+    const taken = new Set(r.pieces.map((p) => p.node));
+    return board.nodes.filter((n) => n !== board.entry && !taken.has(n) && !board.tile(n) && !r.tiles[n] && !treasureAt(r, n));
+  };
+  const pickFree = () => { const f = free(); return f.length ? f[Math.floor(rng.next() * f.length)] : null; };
+  if (due.id === 'treasureRain') {
+    for (let i = 0; i < 3; i++) {
+      const node = pickFree();
+      if (!node) break;
+      r.treasures.push({ node, ttl: TREASURE_TTL });
+      events.push({ type: 'treasureSpawn', node, ttl: TREASURE_TTL });
+    }
+  } else if (due.id === 'goldRush') {
+    const nodes = [];
+    for (let i = 0; i < 2; i++) { const node = pickFree(); if (node) { r.tiles[node] = 'gold'; nodes.push(node); } }
+    events.push({ type: 'goldRush', nodes });
+  } else if (due.id === 'gust') {
+    const blown = theirs(r).filter(onBoard);
+    for (const p of blown) { p.node = START; p.prev = null; }
+    events.push({ type: 'gust', pieceIds: blown.map((p) => p.id) });
+  } else if (due.id === 'feast') {
+    r.heung = Math.min(HEUNG_MAX, r.heung + 2);
+    events.push({ type: 'heung', value: r.heung });
+  } else if (due.id === 'tailwind') {
+    r.throwsLeft += 1;
+    events.push({ type: 'tailwind', throwsLeft: r.throwsLeft });
+  } else if (due.id === 'market') {
+    r.coins += 3;
+    events.push({ type: 'eventCoins', amount: 3 });
+  } else if (due.id === 'raid') {
+    events.push(...opponentTurn(r, rng));
   }
   return events;
 }

@@ -29,10 +29,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const params = new URLSearchParams(location.search);
 const SAVE = params.has('save');
-const FRAME = 160;          // 한 프레임 크기(px)
-const FRAMES = 8;           // 동작당 프레임 수
+// ?icon 이면 앱 아이콘용으로 호랑이 환호 한 장만 크게 찍는다(tools/make-icons.py 가 쓴다)
+const ICON = params.has('icon');
+const FRAME = ICON ? 512 : 160; // 한 프레임 크기(px)
+const FRAMES = ICON ? 1 : 8;    // 동작당 프레임 수
 const INK = '#22201D';
-const OUTLINE = 6;          // 먹선 두께(px, FRAME 기준)
+const OUTLINE = 6 * FRAME / 160; // 먹선 두께(px)
 const ELEV = Math.asin(0.58);
 const AZIM = Math.PI / 4;
 
@@ -138,6 +140,7 @@ async function renderCast(kind, spec) {
   const mixer = new THREE.AnimationMixer(root);
   const sheets = {};
   for (const [act, clipName] of Object.entries(ACTIONS)) {
+    if (ICON && act !== 'cheer') continue;
     const clip = gltf.animations.find((a) => a.name === clipName);
     const sheet = document.createElement('canvas');
     sheet.width = FRAME * FRAMES; sheet.height = FRAME;
@@ -166,6 +169,7 @@ const out = document.getElementById('out');
 const only = params.get('only');
 for (const [kind, spec] of Object.entries(CAST)) {
   if (only && !only.split(',').includes(kind)) continue;
+  if (ICON && kind !== 'tiger') continue;
   document.getElementById('status').textContent = kind + ' 렌더링…';
   const sheets = await renderCast(kind, spec);
   // 한 캐릭터의 동작을 세로로 이어 붙인 시트 하나로 저장한다(행 순서 = ACTIONS 순서)
@@ -177,6 +181,7 @@ for (const [kind, spec] of Object.entries(CAST)) {
   img.src = all.toDataURL();
   img.width = all.width / 2;
   out.append(kind, img);
+  if (SAVE && ICON) { await save('tiger-icon.png', all); continue; }
   if (SAVE) await save(`${kind.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}.webp`, all);
 }
 document.getElementById('status').textContent = '끝';

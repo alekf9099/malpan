@@ -3,8 +3,8 @@
 //   roller      윷가락·주사위·기물 주사위
 //   anim / fx   점프·찌그러짐·날려 보내기 / 먼지·폭죽·스티커
 
-import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, ROUNDS, MAX_CHARMS, SHOP_REROLL_COST, pFlatOf } from '../core/run.js';
-import { throwYut, reroll, applyMove, legalMoves, threats, boardFor, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
+import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, ROUNDS, BOARD_RUNS, MAX_CHARMS, SHOP_REROLL_COST, pFlatOf } from '../core/run.js';
+import { throwYut, reroll, applyMove, legalMoves, threats, boardFor, nextEventIn, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
 import { START, HOME } from '../core/board.js';
 import { TILES, STICKS, charmById } from '../core/items.js';
 import { BOARDS } from '../core/boards/index.js';
@@ -48,22 +48,39 @@ function title() {
       </div>
       <div class="logo2"><span class="l1">${GAME_TITLE.main}</span><span class="l2">${GAME_TITLE.accent}</span></div>
       <div class="sub">${GAME_TITLE.sub}</div>
-      <div class="boards-line"><span>윷놀이판</span><i></i><span>주사위판</span><i></i><span>체스판</span></div>
       <div class="roster">${cards}</div>
       <div class="villain">${character('dokkaebiRed', 46)}<span>판마다 마지막엔 <b>도깨비 대장</b>이 기다린다</span>${character('dokkaebiBlue', 46)}</div>
-      <button class="btn" id="start" style="width:100%;height:62px;font-size:28px">원정 떠나기</button>
+      <button class="btn" id="start" style="width:100%;height:62px;font-size:26px">원정 떠나기<small class="btn-sub">윷놀이판 → 주사위판 → 체스판 · 6라운드</small></button>
+      <div class="pick-title"><i></i><span>판 하나만 골라 짧게</span><i></i></div>
+      <div class="board-pick">${PICKS.map((p) => `
+        <button class="pick" data-board="${p.id}">
+          <span class="pick-art">${p.art()}</span>
+          <b>${BOARDS[p.id].name}</b>
+          <span>${p.line}</span>
+          <em>2라운드 · ${BOARD_RUNS[p.id][0].target.toLocaleString()}점~</em>
+        </button>`).join('')}</div>
     </div>`;
-  $('#start').onclick = () => {
-    Sound.unlock(); Sound.click();
-    const q = new URLSearchParams(location.search);
-    const fixed = parseInt(q.get('seed'), 10);
-    G.run = createRun(Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed);
-    // 개발·테스트용: ?round=3 이면 그 라운드(주사위판)부터 시작한다
-    const startAt = parseInt(q.get('round'), 10);
-    if (startAt >= 1 && startAt <= ROUNDS.length) G.run.roundNo = startAt;
-    startRound(G.run);
-    enterRound();
-  };
+  $('#start').onclick = () => begin(null);
+  app.querySelectorAll('.pick').forEach((b) => { b.onclick = () => begin(b.dataset.board); });
+}
+
+const PICKS = [
+  { id: 'yut', art: () => Roller.stickBundle(), line: '윷가락 · 지름길' },
+  { id: 'marble', art: () => Roller.dieIcon(5), line: '주사위 · 칸 이벤트' },
+  { id: 'chess', art: () => Roller.chessDieIcon('knight'), line: '기물 주사위 · 점프' }
+];
+
+/** 원정 시작. board 가 있으면 그 판의 2라운드만 한다. */
+function begin(board) {
+  Sound.unlock(); Sound.click();
+  const q = new URLSearchParams(location.search);
+  const fixed = parseInt(q.get('seed'), 10);
+  G.run = createRun(Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed, { board });
+  // 개발·테스트용: ?round=3 이면 그 라운드(주사위판)부터 시작한다
+  const startAt = parseInt(q.get('round'), 10);
+  if (!board && startAt >= 1 && startAt <= ROUNDS.length) G.run.roundNo = startAt;
+  startRound(G.run);
+  enterRound();
 }
 
 // ── 게임 화면 골격 ───────────────────────────────────────────
@@ -118,7 +135,7 @@ function enterRound() {
   G.boardId = r.boardId;
   useBoard(B());
   if (newBoard || !$('#board')) buildGame();
-  app.className = 'app board-' + r.boardId;
+  app.className = 'app game board-' + r.boardId;
   G.throwsMax = r.throwsLeft;
   G.picked = null;
   clearStamp();
@@ -147,13 +164,25 @@ function refresh() {
 function drawTop() {
   const r = R();
   $('#top').innerHTML = `
-    <span class="pill">${r.number} / ${ROUNDS.length}</span>
-    <span class="pill">${B().name}</span>
-    ${r.boss ? `<span class="pill boss">대장 · ${r.boss.name}</span>` : ''}
+    <span class="pill">${r.number} / ${G.run.rounds.length}<span class="wide-only">&nbsp;</span><span class="phone-only"> · </span>${B().name}</span>
+    <span class="pill omen" id="omen" hidden></span>
+    ${r.boss ? `<span class="pill boss" title="${r.boss.desc}">대장<span class="wide-only"> · ${r.boss.name}</span></span>` : ''}
     <span style="flex:1"></span>
     <span class="pill" id="coinPill">${coin()} ${G.run.coins}</span>
     <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button>`;
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); drawTop(); };
+  drawOmen();
+}
+
+/** 돌발 사건 예고: 무슨 사건인지는 숨기고 언제 오는지만 */
+function drawOmen() {
+  const el = $('#omen');
+  if (!el) return;
+  const n = nextEventIn(R());
+  el.hidden = n === null || R().phase === 'over';
+  el.classList.toggle('soon', n === 0 || n === 1);
+  el.textContent = n === 0 ? '사건!' : n === 1 ? '곧 사건' : `사건 ${n}번 뒤`;
+  el.title = '돌발 사건 예고 — 무슨 일이 생길지는 그때 알 수 있다';
 }
 
 function drawScore(value) {
@@ -246,6 +275,31 @@ function syncPieces() {
     if (warn) warn.hidden = !(danger[p.node] >= 0.15) || list[list.length - 1] !== p;
   }
   if (r.phase === 'move' && !G.busy) showOptions();
+}
+
+/** 돌발 사건 카드: 판 한가운데에 떨어졌다가 사라진다. 좋은 사건은 원정대가, 나쁜 사건은 도깨비가 들고 온다. */
+async function eventCard(e) {
+  if (e.good) Sound.big(); else Sound.boss();
+  const who = e.good ? HEROES[(e.name.length + R().throwsLeft) % HEROES.length] : 'dokkaebiRed';
+  const card = document.createElement('div');
+  card.className = 'event-card' + (e.good ? '' : ' bad');
+  card.innerHTML = `<div class="ev-head">돌발 사건</div>${character(who, 74, e.good ? 'cheer' : 'dance')}
+    <div class="ev-name">${e.name}</div><div class="ev-desc">${e.desc}</div>`;
+  $('#board').appendChild(card);
+  flash(app);
+  await tween(card, [
+    { transform: 'translate(-50%, -50%) translateY(-160px) rotate(-14deg) scale(.6)', opacity: 0 },
+    { transform: 'translate(-50%, -50%) translateY(10px) rotate(3deg) scale(1.04)', opacity: 1, offset: 0.6 },
+    { transform: 'translate(-50%, -50%) rotate(-2deg) scale(1)', opacity: 1 }
+  ], { duration: 520, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
+  const [x, y] = [card.offsetLeft + $('#board').offsetLeft, card.offsetTop + $('#board').offsetTop];
+  FX.confetti(x, y - 40, e.good ? 26 : 10, 1.2);
+  await sleep(1300);
+  await tween(card, [
+    { transform: 'translate(-50%, -50%) rotate(-2deg) scale(1)', opacity: 1 },
+    { transform: 'translate(-50%, -50%) translateY(40px) rotate(6deg) scale(.8)', opacity: 0 }
+  ], { duration: 280, easing: 'ease-in', fill: 'forwards' });
+  card.remove();
 }
 
 /** 묶음(같은 칸에 업힌 말들)의 맨 위 말 요소 */
@@ -341,6 +395,7 @@ function drawControls() {
   rb.disabled = G.busy || r.phase !== 'move' || r.rerolls <= 0;
   rb.innerHTML = `다시 굴리기<br><span style="font-family:var(--display);font-size:20px">×${r.rerolls}</span>`;
   const used = G.throwsMax - r.throwsLeft;
+  drawOmen();
   $('#pips').innerHTML = Array.from({ length: G.throwsMax }, (_, i) => `<i class="${i < used ? 'used' : ''}"></i>`).join('') +
     Array.from({ length: r.extra }, () => '<i class="extra"></i>').join('');
   const many = r.phase === 'move' && legalMoves(r).length > 6;
@@ -569,7 +624,7 @@ const HANDLERS = {
       return;
     }
     stampText(e.roll.label + '!', TIER_COLOR[e.roll.tier] ?? '', extra);
-    if (e.bonus) FX.sparkle(320, $('#sticks').offsetTop + 40, 8, '#F2B33D');
+    if (e.bonus) FX.sparkle($('#sticks').offsetLeft + $('#sticks').offsetWidth - 70, $('#sticks').offsetTop + 40, 8, '#F2B33D');
     await sleep(380);
   },
   async noMove(e) {
@@ -594,7 +649,7 @@ const HANDLERS = {
     FX.pow(at[0], at[1] - 46, e.who === 'me' ? '퍽! 잡았다' : '앗, 잡혔다', e.who === 'me' ? '#F2B33D' : '#E0533D', e.who === 'me' ? '#22201D' : '#FFFDF7');
     shake($('#board'), 9, 420);
     if (e.who === 'opp') Sound.caught();
-    const dir = nodeXY(e.node)[0] < 195 ? -1 : 1;
+    const dir = nodeXY(e.node)[0] < canvasSize().w / 2 ? -1 : 1;
     await Promise.all(e.victimIds.map((id) => { const el = pieceEl(id); el.style.display = ''; return knockOut(el, dir); }));
     e.victimIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
   },
@@ -716,6 +771,37 @@ const HANDLERS = {
     await Promise.all(e.attackerIds.map((id) => knockOut(pieceEl(id), nodeXY(e.node)[0] < canvasSize().w / 2 ? -1 : 1)));
     e.attackerIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
     toast('토끼가 꾀를 내어 도깨비를 출발로 돌려보냈다');
+  },
+  async event(e) {
+    await eventCard(e);
+  },
+  async goldRush(e) {
+    drawBoard();
+    Sound.coin();
+    for (const n of e.nodes) { const [x, y] = nodeApp(n); FX.sparkle(x, y - 10, 10, '#F2B33D'); FX.ring(x, y); }
+    toast('황금 칸이 생겼다 — 멈추면 배수 +2');
+    await sleep(700);
+  },
+  async gust(e) {
+    Sound.whoosh();
+    shake($('#board'), 6, 500);
+    if (!e.pieceIds.length) { toast('바람만 시원하게 불었다'); await sleep(500); return; }
+    await Promise.all(e.pieceIds.map((id, i) => sleep(i * 90).then(() => { act(pieceEl(id), 'sad'); return knockOut(pieceEl(id), i % 2 ? 1 : -1); })));
+    e.pieceIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
+    toast(`도깨비 ${e.pieceIds.length}마리가 출발로 날아갔다`);
+    await sleep(400);
+  },
+  async tailwind() {
+    Sound.home();
+    G.throwsMax += 1;
+    drawControls();
+    tween($('#pips'), [{ transform: 'scale(1)' }, { transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 420 });
+    await sleep(500);
+  },
+  async eventCoins(e) {
+    Sound.coin();
+    const b = $('#board');
+    await coinsFly([b.offsetLeft + b.offsetWidth / 2, b.offsetTop + b.offsetHeight / 2], e.amount);
   },
   async again() { await sleep(120); },
   async roundOver() { /* play() 이 끝난 뒤 처리 */ }
@@ -844,7 +930,7 @@ async function roundOver() {
   if (r.outcome === 'win') {
     stampText('통과!', 'green');
     Sound.win();
-    FX.confetti(195, 300, 50, 1.6);
+    FX.confetti(app.clientWidth / 2, 300, 50, 1.6);
     await sleep(1200);
     const payout = settleRound(G.run);
     drawTop();
@@ -870,7 +956,7 @@ async function roundOver() {
 
 function openShop() {
   const run = G.run;
-  const next = ROUNDS[run.roundNo];
+  const next = run.rounds[run.roundNo];
   const nextBoard = BOARDS[next.board];
   const art = (o) => o.kind === 'charm' ? charmCard(o.id) : o.kind === 'tile' ? tileArt(o.id) : stickArt(o.id);
   const info = (o) => {
@@ -927,7 +1013,7 @@ function gameOver() {
     <p>${run.roundNo}라운드(${B().name})에서 ${R().score.toLocaleString()}점 — 목표 ${R().target.toLocaleString()}점에 못 미쳤다.</p>
     <div class="cast" style="justify-content:center;margin:10px 0 4px">${HEROES.map((k) => character(k, 56, 'sad')).join('')}${character('dokkaebiRed', 56, 'dance')}</div>
     <div class="payout">
-      <div><span>버틴 라운드</span><b>${run.roundNo - 1} / ${ROUNDS.length}</b></div>
+      <div><span>버틴 라운드</span><b>${run.roundNo - 1} / ${run.rounds.length}</b></div>
       <div><span>한 번에 가장 많이 번 점수</span><b>${R().lastMoveBest.toLocaleString()}</b></div>
       <div><span>모은 부적</span><b>${run.charms.length ? run.charms.map((id) => charmById(id).name).join(', ') : '없음'}</b></div>
       <div><span>시드</span><b>${run.seed}</b></div>
@@ -945,10 +1031,10 @@ function gameOver() {
 
 function victory() {
   const run = G.run;
-  FX.confetti(195, 400, 80, 2);
+  FX.confetti(app.clientWidth / 2, 400, 80, 2);
   const s = sheet(`
     <h2>${GAME_TITLE.main} ${GAME_TITLE.accent}, 귀환!</h2>
-    <p>윷판·주사위판·체스판을 모두 넘겼다. 마지막 점수 ${R().score.toLocaleString()}점.</p>
+    <p>${run.board ? `${B().name}을 되찾았다` : '윷판·주사위판·체스판을 모두 넘겼다'}. 마지막 점수 ${R().score.toLocaleString()}점.</p>
     <div class="cast" style="justify-content:center;margin:16px 0 4px">${HEROES.map((k) => character(k, 64, 'dance')).join('')}</div>
     <div class="payout">
       <div><span>모은 부적</span><b>${run.charms.map((id) => charmById(id).name).join(', ') || '없음'}</b></div>
@@ -960,11 +1046,27 @@ function victory() {
 
 // ── 시작 ─────────────────────────────────────────────────────
 
+// 화면 틀: 세로(폰) 390×844 고정, 가로가 긴 창(PC)에서는 높이 780 에 창 비율만큼 넓힌다.
+const PHONE = { w: 390, h: 844 };
+const WIDE_H = 780;
+const isWide = () => document.body.classList.contains('wide');
+
 function fit() {
-  const k = Math.min(1, window.innerHeight / 844, window.innerWidth / 390);
+  const W = window.innerWidth, H = window.innerHeight;
+  const wide = W / H >= 1.15 && W >= 820;
+  const was = isWide();
+  document.body.classList.toggle('wide', wide);
+  const sh = wide ? WIDE_H : PHONE.h;
+  const sw = wide ? Math.round(Math.min(1800, Math.max(1100, (W / H) * sh))) : PHONE.w;
+  const k = wide ? Math.min(H / sh, W / sw) : Math.min(1, H / sh, W / sw);
+  const root = document.documentElement.style;
+  root.setProperty('--sw', sw + 'px');
+  root.setProperty('--sh', sh + 'px');
   const stage = document.getElementById('stage');
   stage.style.transform = `scale(${k})`;
-  stage.style.marginBottom = 844 * (k - 1) + 'px';
+  stage.style.marginBottom = sh * (k - 1) + 'px';
+  // 판 화면 크기가 바뀌었으니 카메라를 다시 맞춘다
+  if (G.run && $('#board')) { if (was !== wide) Camera.overview(0); else Camera.refit(); drawZoom(); }
 }
 window.addEventListener('resize', fit);
 fit();

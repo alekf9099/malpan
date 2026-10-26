@@ -1,10 +1,12 @@
 // 런 전체: 윷놀이판 2라운드 → 주사위판 2라운드 → 체스판 2라운드. 판마다 두 번째 라운드가 보스.
+// 판 하나만 고르면 그 판의 2라운드만 한다(BOARD_RUNS). 처음부터 부적 없이 시작하므로 목표가 낮다.
 
 import { createRng } from './rng.js';
 import { createRound } from './round.js';
 import { boardOf } from './boards/index.js';
 import { DEFAULT_P_FLAT } from './sticks.js';
 import { CHARMS, TILES, STICKS, BOSS_RULES, charmById } from './items.js';
+import { planEvents } from './events.js';
 
 export const ROUNDS = [
   { board: 'yut', target: 400, opp: 2 },
@@ -14,6 +16,11 @@ export const ROUNDS = [
   { board: 'chess', target: 1450, opp: 2 },
   { board: 'chess', target: 1800, opp: 3, boss: true }
 ];
+export const BOARD_RUNS = {
+  yut: ROUNDS.filter((r) => r.board === 'yut'),
+  marble: [{ board: 'marble', target: 900, opp: 2 }, { board: 'marble', target: 1250, opp: 3, boss: true }],
+  chess: [{ board: 'chess', target: 360, opp: 2 }, { board: 'chess', target: 600, opp: 3, boss: true }]
+};
 export const THROWS_PER_ROUND = 7;
 export const REROLLS_PER_ROUND = 2;
 export const MY_PIECES = 4;
@@ -21,9 +28,12 @@ export const MAX_CHARMS = 5;
 export const SHOP_REROLL_COST = 2;
 export const START_COINS = 4;
 
-export function createRun(seed) {
+/** board 를 주면 그 판만 하는 짧은 원정 */
+export function createRun(seed, { board = null } = {}) {
   return {
     seed,
+    board,
+    rounds: board ? BOARD_RUNS[board] : ROUNDS,
     rng: createRng(seed),
     roundNo: 1,
     coins: START_COINS,
@@ -45,7 +55,7 @@ export function pFlatOf(run) {
 }
 
 export function startRound(run) {
-  const spec = ROUNDS[run.roundNo - 1];
+  const spec = run.rounds[run.roundNo - 1];
   const boss = spec.boss ? run.rng.pick(BOSS_RULES) : null;
   run.round = createRound({
     number: run.roundNo,
@@ -58,7 +68,8 @@ export function startRound(run) {
     tiles: run.tiles[spec.board] || {},
     pFlat: pFlatOf(run),
     boss,
-    board: spec.board
+    board: spec.board,
+    events: planEvents(run.rng, THROWS_PER_ROUND)
   });
   run.status = 'round';
   return run.round;
@@ -84,7 +95,7 @@ export function settleRound(run) {
   }
   run.lastPayout = payout.filter((p) => p.amount > 0);
 
-  if (run.roundNo >= ROUNDS.length) { run.status = 'won'; return run.lastPayout; }
+  if (run.roundNo >= run.rounds.length) { run.status = 'won'; return run.lastPayout; }
   run.shop = makeShop(run);
   run.status = 'shop';
   return run.lastPayout;
@@ -103,7 +114,7 @@ function makeShop(run) {
 
 /** 칸 개조는 다음 라운드의 판에 놓는다. 출발점·판 고유 이벤트 칸은 피한다. */
 function nextBoard(run) {
-  return boardOf(ROUNDS[Math.min(run.roundNo, ROUNDS.length - 1)].board);
+  return boardOf(run.rounds[Math.min(run.roundNo, run.rounds.length - 1)].board);
 }
 function freeNodes(run) {
   const b = nextBoard(run);

@@ -31,9 +31,9 @@ body {
   overflow: hidden;
   user-select: none;
 }
-#stage { width: 390px; height: 844px; transform-origin: top center; flex: none; }
+#stage { width: var(--sw, 390px); height: var(--sh, 844px); transform-origin: top center; flex: none; }
 .app {
-  position: relative; width: 390px; height: 844px; overflow: hidden;
+  position: relative; width: var(--sw, 390px); height: var(--sh, 844px); overflow: hidden;
   background:
     radial-gradient(circle at 20% 10%, rgba(255,255,255,.55), transparent 40%),
     radial-gradient(circle at 80% 90%, rgba(201,180,140,.35), transparent 45%),
@@ -239,7 +239,8 @@ body {
 .tip p { margin: 4px 0 8px; font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
 .toast {
   position: absolute; left: 50%; top: 150px; z-index: 32; transform: translateX(-50%); pointer-events: none;
-  padding: 6px 12px; border: 2.5px solid var(--ink); border-radius: 12px; background: var(--white); font-weight: 900; font-size: 14px; white-space: nowrap;
+  padding: 6px 12px; border: 2.5px solid var(--ink); border-radius: 12px; background: var(--white); font-weight: 900; font-size: 14px;
+  width: max-content; max-width: calc(100% - 32px); text-align: center; line-height: 1.35; word-break: keep-all;
   animation: toast 1.4s ease-out forwards;
 }
 @keyframes toast { 0% { opacity: 0; transform: translate(-50%, 8px); } 15%, 75% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -8px); } }
@@ -346,6 +347,7 @@ body {
 /* 굴림 장치는 왼쪽, 결과 도장은 오른쪽 — 서로 가리지 않게 */
 #roller { position: absolute; left: 8px; top: 0; bottom: 0; width: 210px; display: flex; align-items: center; justify-content: center; perspective: 520px; }
 .throw-zone .stamp { right: 4px; }
+.throw-zone .stamp.opp { right: auto; left: 4px; }
 
 /* 점수 라벨: 고리와 분리해 맨 위에 띄우되 클릭은 통과시킨다 */
 .target-tag { position: absolute; width: 0; height: 0; pointer-events: none; }
@@ -418,3 +420,73 @@ body {
 .char[data-act="sad"] { --row: 3; --dur: 1s; }
 .char[data-act="dance"] { --row: 4; --dur: .8s; }
 @keyframes char-frames { from { background-position-x: 0%; } to { background-position-x: 114.2857%; } }
+
+/* ── v0.5: PC 가로 화면 — 판은 왼쪽을 가득, 점수·굴림·버튼은 오른쪽 패널 ── */
+body.wide .app.game {
+  display: grid; grid-template-columns: minmax(0, 1fr) 400px;
+  grid-template-rows: repeat(7, auto) 1fr; align-content: start;
+}
+body.wide .app.game > * { grid-column: 2; }
+body.wide .app.game > #board {
+  grid-column: 1; grid-row: 1 / -1; width: auto !important; height: auto !important;
+  margin: 14px 0 14px 14px !important; border: 3px solid var(--ink); border-radius: 26px;
+  background: radial-gradient(ellipse at 50% 42%, rgba(255,255,255,.65), rgba(236,224,200,.6) 75%), var(--paper-2);
+  box-shadow: inset 0 0 0 6px rgba(255,255,255,.35), 0 5px 0 var(--ink);
+}
+body.wide .app.game > .charms { align-self: end; margin-top: 0; }
+body.wide .app.game > .throw-zone { height: 120px !important; }
+body.wide .app.game > .scoreboard { margin-top: 12px !important; }
+body.wide .app.game .zoom-btn { right: 16px; bottom: 16px; }
+body.wide .toast { left: calc((100% - 400px) / 2 + 7px); top: 34px; }
+body.wide .tip { left: auto; right: 16px; width: 368px; }
+body.wide .sheet { left: 50%; right: auto; width: 480px; margin-left: -240px; bottom: auto; top: 50%; translate: 0 -50%; max-height: calc(100% - 60px); }
+body.wide .title2 { width: 760px; margin: 0 auto; }
+
+/* ── v0.5: 판 고르기 ── */
+.btn-sub { display: block; margin-top: 3px; font-family: var(--body); font-size: 12px; font-weight: 800; letter-spacing: 0; opacity: .9; }
+#start { flex-direction: column; gap: 0; line-height: 1.05; }
+.pick-title { display: flex; align-items: center; gap: 10px; width: 100%; margin: 16px 0 10px; font-size: 13px; font-weight: 900; color: var(--ink-2); }
+.pick-title i { flex: 1; height: 2px; background: var(--ink-3); opacity: .45; border-radius: 2px; }
+.board-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
+.pick {
+  appearance: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 6px 9px; background: var(--white); color: var(--ink); font-family: var(--body);
+  border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink);
+  transition: transform .08s, box-shadow .08s;
+}
+.pick:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
+.pick:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+.pick-art { height: 58px; display: flex; align-items: center; justify-content: center; }
+.pick-art .bundle-sticks .stick { width: 10px; height: 46px; }
+.pick b { font-family: var(--display); font-weight: 400; font-size: 18px; }
+.pick span:not(.pick-art) { white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--ink-2); text-align: center; line-height: 1.3; word-break: keep-all; }
+.pick em { white-space: nowrap; font-style: normal; font-size: 10.5px; font-weight: 900; color: var(--red); }
+.pick[data-board="marble"] { background: #EAF2FF; }
+.pick[data-board="chess"] { background: #FFF5D6; }
+body:not(.wide) .title2 { padding-top: 14px; }
+body:not(.wide) .title2 .title-boards { height: 56px; }
+body:not(.wide) .title2 .logo2 .l1, body:not(.wide) .title2 .logo2 .l2 { font-size: 54px; }
+body:not(.wide) .title2 .hero-card { padding-top: 4px; padding-bottom: 4px; }
+body:not(.wide) .title2 .villain { margin: 8px 0 10px; }
+
+/* ── v0.5: 돌발 사건 ── */
+.pill.omen { background: var(--ink); color: var(--yellow); }
+.pill.omen.soon { background: var(--red); color: var(--white); animation: pulse .9s ease-in-out infinite; }
+.pill.omen[hidden] { display: none; }
+.event-card {
+  position: absolute; left: 50%; top: 46%; z-index: 2100; width: 260px; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: 12px 16px 16px; background: var(--yellow); border: 3.5px solid var(--ink); border-radius: 22px;
+  box-shadow: 0 7px 0 var(--ink); transform: translate(-50%, -50%);
+}
+.event-card.bad { background: var(--ink); color: var(--white); }
+.event-card .ev-head { padding: 2px 10px; border-radius: 999px; background: var(--ink); color: var(--yellow); font-size: 12px; font-weight: 900; letter-spacing: 1px; }
+.event-card.bad .ev-head { background: var(--red); color: var(--white); }
+.event-card .ev-name { margin-top: 2px; font-family: var(--display); font-size: 34px; line-height: 1.05; }
+.event-card .ev-desc { margin-top: 6px; font-size: 13.5px; font-weight: 800; line-height: 1.4; word-break: keep-all; }
+body.wide .event-card { width: 320px; }
+body.wide .event-card .ev-name { font-size: 40px; }
+.top .pill { white-space: nowrap; flex: none; }
+body:not(.wide) .top { gap: 6px; padding-left: 12px; padding-right: 12px; }
+body:not(.wide) .top .pill { font-size: 12.5px; padding-left: 9px; padding-right: 9px; }
+body.wide .phone-only, body:not(.wide) .wide-only { display: none; }

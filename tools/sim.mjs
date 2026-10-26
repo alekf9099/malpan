@@ -1,5 +1,5 @@
 // 밸런스 시뮬레이터: 정책별로 N 런을 돌려 라운드별 통과율과 클리어율을 본다.
-//   node tools/sim.mjs [런 수=2000] [시작 시드=1]
+//   node tools/sim.mjs [런 수=2000] [시작 시드=1] [판 하나만: yut|marble|chess]
 //
 // 정책
 //   random  아무 수나 둔다. 상점은 안 쓴다
@@ -7,12 +7,14 @@
 //   shopper greedy + 상점에서 살 수 있는 부적 중 가장 비싼 것부터 산다(부적 순서는 ×2 를 맨 뒤로)
 //   careful shopper 와 같되, 잡힐 위험이 큰 칸은 점수를 깎아 본다(위험 표시가 쓸모 있는 정보인지 확인용)
 
-import { createRun, startRound, settleRound, nextRound, buy, ROUNDS } from '../src/core/run.js';
+import { createRun, startRound, settleRound, nextRound, buy, ROUNDS as ALL_ROUNDS, BOARD_RUNS } from '../src/core/run.js';
 import { throwYut, applyMove, reroll, legalMoves } from '../src/core/round.js';
 import { charmById } from '../src/core/items.js';
 
 const runs = Number(process.argv[2] || 2000);
 const seed0 = Number(process.argv[3] || 1);
+const only = process.argv[4] || null;
+const ROUNDS = only ? BOARD_RUNS[only] : ALL_ROUNDS;
 
 const policies = {
   random(r, rng) { return rng.int(legalMoves(r).length); },
@@ -57,7 +59,7 @@ function simulate(policy) {
   const reached = new Array(ROUNDS.length + 1).fill(0);
   let clears = 0, scoreSum = new Array(ROUNDS.length).fill(0), scoreN = new Array(ROUNDS.length).fill(0);
   for (let k = 0; k < runs; k++) {
-    const run = createRun(seed0 + k);
+    const run = createRun(seed0 + k, { board: only });
     startRound(run);
     while (true) {
       reached[run.roundNo]++;

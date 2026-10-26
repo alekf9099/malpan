@@ -229,3 +229,68 @@ test('앵무새가 주운 보따리는 엽전 두 배', () => {
   applyMove(r, legalMoves(r).findIndex((m) => m.kind === 'stack'), rngAlways(0.99));
   assert.equal(r.coins, 4);
 });
+
+// ── 돌발 사건 · 판 하나만 하기 ──
+import { EVENTS, planEvents } from '../src/core/events.js';
+import { nextEventIn } from '../src/core/round.js';
+import { BOARD_RUNS } from '../src/core/run.js';
+import { createRng } from '../src/core/rng.js';
+
+test('사건 계획: 라운드마다 서로 다른 사건 2개, 첫 두 번과 마지막 한 번은 비운다', () => {
+  for (let s = 1; s <= 200; s++) {
+    const plan = planEvents(createRng(s), 7);
+    assert.equal(plan.length, 2);
+    assert.notEqual(plan[0].id, plan[1].id);
+    assert.ok(plan[0].at > plan[1].at);
+    for (const p of plan) { assert.ok(p.at >= 2 && p.at <= 5); assert.ok(EVENTS.some((e) => e.id === p.id)); }
+  }
+});
+
+/** 도 한 번 두고 도깨비 차례가 끝난 직후의 이벤트 목록 */
+function afterOneMove(r) {
+  r.throwsLeft -= 1;
+  give(r, { value: 1, tier: 1, label: '도', faces: [], bonus: false, chips: 10, back: false });
+  return applyMove(r, 0, createRng(3));
+}
+
+test('순풍: 예정된 차례가 오면 던질 기회 +1, 사건은 한 번만', () => {
+  const r = round('yut', { events: [{ at: 6, id: 'tailwind' }] });
+  assert.equal(nextEventIn(r), 1);
+  const ev = afterOneMove(r);
+  assert.ok(ev.some((e) => e.type === 'event' && e.id === 'tailwind'));
+  assert.equal(r.throwsLeft, 7);
+  assert.equal(nextEventIn(r), null);
+  assert.ok(!afterOneMove(r).some((e) => e.type === 'event'));
+});
+
+test('보따리 소나기는 빈 칸에 보따리 3개, 황금 칸은 이번 라운드 칸에만', () => {
+  const r = round('marble', { events: [{ at: 6, id: 'treasureRain' }, { at: 5, id: 'goldRush' }] });
+  afterOneMove(r);
+  assert.ok(r.treasures.length >= 3);
+  afterOneMove(r);
+  const golds = Object.values(r.tiles).filter((t) => t === 'gold');
+  assert.equal(golds.length, 2);
+});
+
+test('회오리바람: 판 위 도깨비가 모두 출발로', () => {
+  const r = round('yut', { events: [{ at: 6, id: 'gust' }] });
+  r.pieces.find((p) => p.id === 'd0').node = 'o9';
+  const ev = afterOneMove(r);
+  const gust = ev.find((e) => e.type === 'gust');
+  assert.ok(gust);
+  assert.ok(r.pieces.filter((p) => p.owner === 'opp').every((p) => p.node === START || p.node === HOME || !gust.pieceIds.includes(p.id)));
+});
+
+test('판 하나만: 그 판의 두 라운드로 끝나고 두 번째가 보스', () => {
+  for (const id of Object.keys(BOARD_RUNS)) {
+    const run = createRun(5, { board: id });
+    assert.equal(run.rounds.length, 2);
+    assert.ok(run.rounds.every((x) => x.board === id));
+    assert.ok(run.rounds[1].boss && run.rounds[1].target > run.rounds[0].target);
+    run.roundNo = 2;
+    startRound(run);
+    Object.assign(run.round, { phase: 'over', outcome: 'win', score: 99999 });
+    settleRound(run);
+    assert.equal(run.status, 'won');
+  }
+});

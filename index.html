@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>말판 원정대</title>
+<!-- PWA: 홈 화면에 설치하면 주소창 없이 앱처럼 열린다 -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#F4EADB">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="말판 원정대">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="assets/icons/favicon-64.png">
 <!-- 글꼴: Gasoek One(제목·결과 도장) · Pretendard(본문) — 둘 다 SIL OFL, 상업 이용 무료 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gasoek+One&display=swap">
@@ -13,5 +22,11 @@
 <body>
 <div id="stage"><div class="app" id="app"></div></div>
 <script type="module" src="src/ui/app.js"></script>
+<script>
+  // 오프라인 캐시(sw.js). 개발 서버(localhost)에서는 캐시가 수정 확인을 방해하지 않게 등록하지 않는다.
+  if ('serviceWorker' in navigator && !/^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    addEventListener('load', () => navigator.serviceWorker.register('sw.js'));
+  }
+</script>
 </body>
 </html>

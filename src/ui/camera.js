@@ -41,6 +41,13 @@ function apply(ms = 450) {
   cam.style.setProperty('--inv', 1 / state.s);
 }
 
+/** 화면 크기가 바뀌었을 때: 보던 곳은 그대로, 배율만 화면에 맞게 다시 제한한다. */
+export function refit() {
+  if (!view) return;
+  state.s = Math.max(state.s, fitScale());
+  apply(0);
+}
+
 export function overview(ms) {
   state.s = fitScale();
   state.cx = size.w / 2;

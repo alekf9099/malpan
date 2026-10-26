@@ -173,3 +173,24 @@ export function boardSvg(tiles) {
     <text x="${sx - 26}" y="${sy - 18}" text-anchor="middle" font-family="Pretendard Variable, sans-serif" font-weight="900" font-size="11" fill="${INK}">출발</text>
   </svg>`;
 }
+
+/** 보따리 — 붉은 보자기에 노란 매듭. 판 위에 잠깐 나타나는 보상. */
+export function bundle(size = 34) {
+  return `<svg viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">
+    <path d="M6 22q0-10 14-10t14 10q0 12-14 12T6 22z" fill="#E0533D" ${S}/>
+    <path d="M10 22q4 2 6 7M30 22q-4 2-6 7" stroke="#A93524" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <circle cx="14" cy="25" r="1.6" fill="#F2B33D"/><circle cx="26" cy="26" r="1.6" fill="#F2B33D"/><circle cx="20" cy="30" r="1.6" fill="#F2B33D"/>
+    <path d="M13 13q-4-8 3-8q4 1 4 7q0-6 4-7q7 0 3 8" fill="#F2B33D" ${S} stroke-width="2.4"/>
+    <circle cx="20" cy="13" r="3" fill="#F2B33D" ${S} stroke-width="2.4"/>
+  </svg>`;
+}
+
+/** 도깨비 성격 표식: 사냥꾼은 발톱 자국, 도망꾼은 달리는 화살표. */
+export function traitBadge(trait) {
+  if (trait === 'hunter') {
+    return `<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="#FFFDF7" stroke="${INK}" stroke-width="2"/>
+      <path d="M6.5 13.5l3-7M9.5 14l3-7M12.5 14.5l2-5" stroke="#E0533D" stroke-width="2.2" stroke-linecap="round"/></svg>`;
+  }
+  return `<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="#FFFDF7" stroke="${INK}" stroke-width="2"/>
+    <path d="M5.5 6.5l4 3.5-4 3.5M10.5 6.5l4 3.5-4 3.5" stroke="#2F6BD8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
+}

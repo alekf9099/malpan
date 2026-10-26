@@ -70,5 +70,11 @@ export const Sound = {
   deny() { tone(150, 0.15, { type: 'square', vol: 0.05 }); },
   win() { [0, 1, 2, 4, 5, 7].forEach((n, i) => tone(PENTA[n], 0.22, { vol: 0.11, delay: i * 0.09 })); },
   lose() { [5, 4, 2, 0].forEach((n, i) => tone(PENTA[n] / 2, 0.36, { vol: 0.1, delay: i * 0.18 })); },
+  heung(level = 1) { tone(PENTA[Math.min(9, 3 + level)], 0.12, { type: 'square', vol: 0.06 }); tone(PENTA[Math.min(9, 5 + level)], 0.16, { type: 'triangle', vol: 0.08, delay: 0.06 }); },
+  heungLost() { tone(PENTA[7], 0.5, { type: 'sawtooth', vol: 0.05, to: 120 }); knock(300, { vol: 0.3, dur: 0.25, q: 1 }); },
+  bundle() { tone(PENTA[6], 0.08, { vol: 0.07 }); tone(PENTA[8], 0.12, { vol: 0.07, delay: 0.07 }); },
+  bundleGone() { knock(600, { vol: 0.12, dur: 0.2, q: 1 }); },
+  big() { [0, 2, 4, 5, 7, 9].forEach((n, i) => tone(PENTA[n], 0.14, { type: 'square', vol: 0.05, delay: i * 0.05 })); knock(140, { vol: 0.5, dur: 0.3, q: 1 }); },
+  penalty() { tone(220, 0.25, { type: 'square', vol: 0.06, to: 110 }); },
   boss() { tone(110, 0.6, { type: 'sawtooth', vol: 0.08, to: 82 }); knock(120, { vol: 0.5, dur: 0.4, q: 1 }); }
 };

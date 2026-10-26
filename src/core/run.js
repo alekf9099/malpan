@@ -7,12 +7,12 @@ import { DEFAULT_P_FLAT } from './sticks.js';
 import { CHARMS, TILES, STICKS, BOSS_RULES, charmById } from './items.js';
 
 export const ROUNDS = [
-  { target: 300, opp: 2 },
-  { target: 500, opp: 2 },
-  { target: 650, opp: 3, boss: true },
-  { target: 900, opp: 2 },
-  { target: 1200, opp: 3 },
-  { target: 1450, opp: 3, boss: true }
+  { target: 350, opp: 2 },
+  { target: 650, opp: 2 },
+  { target: 850, opp: 3, boss: true },
+  { target: 1250, opp: 2 },
+  { target: 1650, opp: 3 },
+  { target: 2000, opp: 3, boss: true }
 ];
 export const THROWS_PER_ROUND = 7;
 export const REROLLS_PER_ROUND = 2;

@@ -77,22 +77,23 @@ test('빽도는 판 위 말만, 출발 안 한 말은 못 낸다', () => {
   assert.equal(legalMoves(r).length, 0);
 });
 
-test('내 말 위에 멈추면 업히고 배수가 오른다', () => {
+test('내 말 위에 멈추면 업히고 배수가 오른다 (업기 +1, 흥 +1)', () => {
   const r = fixedRound();
   r.pieces[0].node = 'o2'; r.pieces[0].prev = 'o1';
   give(r, GAE); // 새 말이 o2 로
   const idx = legalMoves(r).findIndex((m) => m.kind === 'new');
   const ev = applyMove(r, idx, rngAlways(0.99));
   const score = ev.find((e) => e.type === 'score');
-  assert.equal(score.mult, 2);
+  assert.equal(score.mult, 3);
   assert.ok(ev.some((e) => e.type === 'stack'));
+  assert.equal(r.heung, 1);
   // 업힌 둘이 같이 움직인다
   give(r, DO);
   const stackMove = legalMoves(r).find((m) => m.kind === 'stack');
   assert.equal(stackMove.pieceIds.length, 2);
 });
 
-test('도깨비를 잡으면 칩 +50·배수 +1, 잡힌 도깨비는 출발로, 한 번 더', () => {
+test('도깨비를 잡으면 칩 +50·배수 +1(+흥 1), 잡힌 도깨비는 출발로, 한 번 더', () => {
   const r = fixedRound();
   const opp = r.pieces.find((p) => p.owner === 'opp');
   opp.node = 'o3'; opp.prev = 'o2';
@@ -101,20 +102,20 @@ test('도깨비를 잡으면 칩 +50·배수 +1, 잡힌 도깨비는 출발로, 
   const ev = applyMove(r, idx, rngAlways(0.99));
   const score = ev.find((e) => e.type === 'score');
   assert.equal(score.chips, 30 + 50);
-  assert.equal(score.mult, 2);
+  assert.equal(score.mult, 3);
   assert.equal(opp.node, START);
   assert.equal(r.phase, 'throw');
   assert.equal(r.extra, 1);
 });
 
-test('골인하면 칩 +100·배수 +2', () => {
+test('골인하면 칩 +100·배수 +2(+흥 1)', () => {
   const r = fixedRound();
   r.pieces[0].node = 'o19'; r.pieces[0].prev = 'o18';
   give(r, DO);
   const ev = applyMove(r, legalMoves(r).findIndex((m) => m.kind === 'stack'), rngAlways(0.99));
   const score = ev.find((e) => e.type === 'score');
   assert.equal(score.chips, 10 + 100);
-  assert.equal(score.mult, 3);
+  assert.equal(score.mult, 4);
   assert.equal(r.pieces[0].node, HOME);
 });
 
@@ -215,4 +216,112 @@ test('목표 점수에 닿는 순간 라운드가 끝나고 남은 던질 기회
   assert.equal(r.outcome, 'win');
   assert.equal(r.throwsLeft, 5);
   assert.equal(ev.at(-1).reason, 'target');
+});
+
+import { dangerAt, chooseOpp, HEUNG_MAX, TREASURE_CHIPS, TREASURE_COINS } from '../src/core/round.js';
+
+test('위험도: 도깨비가 한 번 던져 닿을 수 있는 칸의 확률', () => {
+  const r = fixedRound();
+  const d = r.pieces.find((p) => p.owner === 'opp');
+  d.node = 'o3'; d.prev = 'o2';
+  const dist = distribution(0.55);
+  // o3 에서 도(1)로 o4, 개(2)로 o5. 출발 대기 도깨비는 도로 o1, 개로 o2 …
+  assert.ok(Math.abs(dangerAt(r, 'o4') - (dist[1] + 0)) < 1e-9 || dangerAt(r, 'o4') >= dist[1]);
+  assert.ok(Math.abs(dangerAt(r, 'o5') - (dist[2] + dist[5])) < 1e-9); // o3+개, 출발+모
+  assert.equal(dangerAt(r, 'C'), 0);
+});
+
+test('미리보기는 위험도를 보여 준다: 도깨비 바로 앞 칸은 위험하다', () => {
+  const r = fixedRound();
+  const d = r.pieces.find((p) => p.owner === 'opp');
+  d.node = 'o6'; d.prev = 'o5';
+  r.pieces.find((p) => p.id === 'd1').node = 'home'; // 대기 도깨비 없애서 계산 단순화
+  r.pieces[0].node = 'o5'; r.pieces[0].prev = 'o4';
+  give(r, GAE);
+  const m = legalMoves(r).find((x) => x.kind === 'stack');
+  assert.equal(m.preview.dest, 'a2'); // 모서리에서 지름길
+  assert.equal(m.preview.danger, 0);
+  const n = legalMoves(r).find((x) => x.kind === 'new');
+  assert.equal(n.preview.dest, 'o2');
+});
+
+test('흥은 최대 5, 내 말이 잡히면 꺼진다', () => {
+  const r = fixedRound();
+  r.heung = HEUNG_MAX;
+  const base = { result: GAE, stack: 1, captured: 1, homed: 0, waiting: 0, onDiagonal: false, tile: null, treasure: false, heung: HEUNG_MAX };
+  assert.equal(scoreMove(r, base).mult, 1 + 1 + HEUNG_MAX);
+  // 도깨비가 내 말을 잡는 상황
+  const me = r.pieces[0]; me.node = 'o2'; me.prev = 'o1';
+  for (const p of r.pieces.filter((q) => q.owner === 'opp')) { p.node = 'o1'; p.prev = 'o0'; }
+  r.pieces.find((p) => p.id === 'd1').node = 'home';
+  r.throwsLeft = 3;
+  give(r, MO);
+  // 내 새 말을 모로 o5 에 두면 도깨비 차례 — 도(평평 1개=표시 아님)가 나오게 rng 를 맞춘다
+  const seq = [0.99, 0.01, 0.99, 0.99, 0.99]; // 보따리 굴림은 마지막
+  let i = 0;
+  const rng = { next: () => seq[Math.min(i++, seq.length - 1)] };
+  r.extra = 0; r.pending.granted = 0;
+  const ev = applyMove(r, legalMoves(r).findIndex((m) => m.kind === 'new'), rng);
+  assert.ok(ev.some((e) => e.type === 'capture' && e.who === 'opp'));
+  assert.ok(ev.some((e) => e.type === 'heungLost'));
+  assert.equal(r.heung, 0);
+});
+
+test('보따리를 밟으면 칩 +40·엽전 +2·흥 +1, 도깨비가 밟으면 사라진다', () => {
+  const r = fixedRound();
+  r.treasures = [{ node: 'o2', ttl: 3 }];
+  give(r, GAE);
+  const m = legalMoves(r).find((x) => x.kind === 'new');
+  assert.ok(m.preview.treasure);
+  assert.equal(m.preview.score.chips, 20 + TREASURE_CHIPS);
+  applyMove(r, legalMoves(r).findIndex((x) => x.kind === 'new'), rngAlways(0.99));
+  assert.equal(r.coins, TREASURE_COINS);
+  assert.equal(r.heung, 1);
+  assert.equal(r.treasures.length, 0);
+});
+
+test('보따리는 내 차례 3번이 지나면 사라진다', () => {
+  const r = fixedRound();
+  r.treasures = [{ node: 'C', ttl: 3 }];
+  const rng = rngAlways(0.99); // 도깨비는 모(전부 엎어짐)… 보따리 새로 생기지 않게 0.99
+  for (let k = 0; k < 3; k++) {
+    give(r, DO);
+    r.pending.granted = 0; r.extra = 0;
+    applyMove(r, 0, rng);
+    if (r.phase === 'over') break;
+  }
+  assert.ok(!r.treasures.some((t) => t.node === 'C'));
+});
+
+test('도깨비 성격: 사냥꾼은 잡기, 도망꾼은 골인을 고른다', () => {
+  const r = fixedRound();
+  const [hunter, runner] = r.pieces.filter((p) => p.owner === 'opp');
+  assert.equal(hunter.trait, 'hunter');
+  assert.equal(runner.trait, 'runner');
+  r.pieces[0].node = 'o4'; // 내 말
+  const optCapture = { kind: 'stack', from: 'o2', pieceIds: [hunter.id], path: ['o3', 'o4'] };
+  const optHome = { kind: 'stack', from: 'o18', pieceIds: [hunter.id], path: ['o19', 'home'] };
+  hunter.node = 'o2';
+  assert.equal(chooseOpp(r, [optHome, optCapture]), optCapture);
+  const rCapture = { ...optCapture, pieceIds: [runner.id] };
+  const rHome = { ...optHome, pieceIds: [runner.id] };
+  assert.equal(chooseOpp(r, [rCapture, rHome]), rHome);
+});
+
+test('도깨비가 골인하면 내 던질 기회가 하나 준다', () => {
+  const r = fixedRound();
+  const runner = r.pieces.find((p) => p.id === 'd1');
+  runner.node = 'o19'; runner.prev = 'o18';
+  r.pieces.find((p) => p.id === 'd0').node = 'home';
+  r.throwsLeft = 4;
+  give(r, GEOL);
+  r.pending.granted = 0; r.extra = 0;
+  // 도깨비가 도(평평 1개, 표시 아닌 가락)를 던지게: 가락0 엎어짐, 가락1 평평, 나머지 엎어짐
+  const seq = [0.99, 0.01, 0.99, 0.99, 0.99];
+  let i = 0;
+  const ev = applyMove(r, legalMoves(r).findIndex((m) => m.kind === 'new'), { next: () => seq[Math.min(i++, seq.length - 1)] });
+  const home = ev.find((e) => e.type === 'home' && e.who === 'opp');
+  assert.ok(home);
+  assert.equal(home.throwsLost, 1);
+  assert.equal(r.throwsLeft, 3);
 });

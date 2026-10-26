@@ -1,11 +1,11 @@
 // 화면 컨트롤러. 규칙은 core 가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 순서대로 연출한다.
 
 import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, ROUNDS, MAX_CHARMS, SHOP_REROLL_COST, pFlatOf } from '../core/run.js';
-import { throwYut, reroll, applyMove, legalMoves } from '../core/round.js';
-import { START, HOME } from '../core/board.js';
+import { throwYut, reroll, applyMove, legalMoves, threats, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
+import { START, HOME, COORDS } from '../core/board.js';
 import { NAMES, BACKDO, DO, GAE, GEOL, YUT, MO, distribution } from '../core/sticks.js';
 import { TILES, STICKS, charmById } from '../core/items.js';
-import { character, kindOf, stick, charmCard, tileArt, stickArt, coin, boardSvg, nodeXY, HEROES } from './art.js';
+import { character, kindOf, stick, charmCard, tileArt, stickArt, coin, boardSvg, nodeXY, HEROES, bundle, traitBadge } from './art.js';
 import { Sound } from './sound.js';
 
 const app = document.getElementById('app');
@@ -45,6 +45,7 @@ function buildGame() {
     <div class="scoreboard" id="score">
       <div class="score-row"><div class="score-now" id="scoreNow">0</div><div class="score-goal">목표<b id="target">0</b></div></div>
       <div class="bar" id="bar"><i style="width:0%"></i></div>
+      <div class="heung" id="heung"></div>
       <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
     </div>
     <div class="board-wrap" id="board"><div id="mat"></div><div id="layer"></div></div>
@@ -65,6 +66,8 @@ function buildGame() {
 }
 
 function refresh() {
+  drawHeung();
+  drawBundles();
   drawTop();
   drawScore(R().score);
   drawBoard();
@@ -83,6 +86,31 @@ function drawTop() {
     <span class="pill">${coin()} ${G.run.coins}</span>
     <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button>`;
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); drawTop(); };
+}
+
+/** 흥 게이지: 칸 5개. 켜진 만큼 모든 이동에 배수가 더해진다. */
+function drawHeung(flash, h = R().heung) {
+  const el = $('#heung');
+  el.className = 'heung' + (h >= HEUNG_MAX ? ' max' : '') + (flash === 'lost' ? ' lost' : '');
+  el.innerHTML = `<span class="lbl">흥</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
+    `<span class="val">${h ? `배수 +${h}` : '잡기·업기·골인·보따리로 오른다'}</span>`;
+  if (!h) el.querySelector('.val').style.color = 'var(--ink-3)';
+  $('#score').classList.toggle('hot', h >= HEUNG_MAX);
+}
+
+function drawBundles() {
+  $('#layer').querySelectorAll('.bundle').forEach((b) => b.remove());
+  for (const t of R().treasures) addBundle(t.node, t.ttl, false);
+}
+
+function addBundle(node, ttl, animate) {
+  const b = document.createElement('div');
+  b.className = 'bundle';
+  b.dataset.node = node;
+  if (!animate) b.style.animation = 'none';
+  b.innerHTML = bundle(34) + `<span class="ttl">${ttl}</span>`;
+  place(b, node);
+  $('#layer').appendChild(b);
 }
 
 function drawScore(value) {
@@ -106,7 +134,9 @@ function pieceEl(id) {
     el = document.createElement('div');
     el.className = 'piece';
     el.dataset.piece = id;
-    el.innerHTML = character(kindOf(id)) + '<span class="count" hidden></span>';
+    const p = R().pieces.find((q) => q.id === id);
+    el.innerHTML = character(kindOf(id)) + '<span class="count" hidden></span>' +
+      (p?.trait ? `<span class="trait">${traitBadge(p.trait)}</span>` : '<span class="warn" hidden>!</span>');
     $('#layer').appendChild(el);
   }
   return el;
@@ -140,6 +170,12 @@ function syncPieces() {
       badge.textContent = '×' + list.length;
     });
   }
+  // 다음 도깨비 차례에 잡힐 수 있는 내 말에 경고(15% 이상)
+  const danger = threats(r);
+  for (const p of r.pieces.filter((q) => q.owner === 'me')) {
+    const warn = pieceEl(p.id).querySelector('.warn');
+    if (warn) warn.hidden = !(danger[p.node] >= 0.15);
+  }
   if (r.phase === 'move' && !G.busy) showOptions();
 }
 
@@ -162,8 +198,15 @@ function showOptions() {
     const off = (used[dest] = (used[dest] || 0) + 1) - 1;
     t.style.left = x + off * 18 + 'px';
     t.style.top = y + 'px';
-    const label = m.preview.dest === HOME ? '골인 ' : m.preview.captured ? '잡기 ' : m.preview.stack > 1 ? '업기 ' : '';
-    t.innerHTML = `<span class="gain ${m.preview.score.total === best ? 'hot' : ''}">${label}+${m.preview.score.total}</span>`;
+    const pv = m.preview;
+    const label = pv.dest === HOME ? '골인 ' : pv.captured ? '잡기 ' : pv.treasure ? '보따리 ' : pv.joined ? '업기 ' : '';
+    const risk = pv.dest === HOME ? '' : pv.danger >= 0.05
+      ? `<i class="risk">${Math.round(pv.danger * 100)}%</i>`
+      : '<i class="risk safe">안전</i>';
+    // 라벨은 판 바깥쪽으로 비켜 띄운다 — 오른쪽 변의 칸이면 왼쪽에, 위 변이면 아래에
+    const [cx, cy] = COORDS[dest];
+    const side = cx > 0.9 ? 'left' : cx < 0.1 ? 'right' : cy < 0.1 ? 'below' : 'above';
+    t.innerHTML = `<span class="gain ${side} ${pv.score.total === best ? 'hot' : ''}">${label}+${pv.score.total}${risk}</span>`;
     t.onclick = () => doMove(i);
     $('#layer').appendChild(t);
   });
@@ -207,7 +250,7 @@ function drawControls() {
   const used = G.throwsMax - r.throwsLeft;
   $('#pips').innerHTML = Array.from({ length: G.throwsMax }, (_, i) => `<i class="${i < used ? 'used' : ''}"></i>`).join('') +
     Array.from({ length: r.extra }, () => '<i class="extra"></i>').join('');
-  $('#hint').textContent = G.busy ? '' : r.phase === 'move' ? '움직일 말이나 노란 칸을 누르세요 — 숫자는 예상 점수'
+  $('#hint').textContent = G.busy ? '' : r.phase === 'move' ? '노란 칸을 누르세요 — 숫자는 예상 점수, 빨간 %는 잡힐 확률'
     : r.phase === 'throw' ? `던질 기회 ${r.throwsLeft}번${r.extra ? ` + 한 번 더 ${r.extra}` : ''}` : '';
 }
 
@@ -292,6 +335,8 @@ async function play(events) {
   G.busy = false;
   if (R().phase === 'over') { await roundOver(); return; }
   syncPieces();
+  drawBundles();
+  drawHeung();
   drawTrays();
   drawControls();
   drawTop();
@@ -414,9 +459,49 @@ const HANDLERS = {
   },
   async home(e) {
     Sound.home();
-    floater(`골인! ×${e.pieceIds.length}`, 'o0', '#3E9B6A');
-    if (e.who === 'opp') toast('도깨비가 골인했다');
+    floater(`골인! ×${e.pieceIds.length}`, 'o0', e.who === 'opp' ? '#2F6BD8' : '#3E9B6A');
+    if (e.who === 'opp') {
+      if (e.throwsLost) {
+        Sound.penalty();
+        toast(`도깨비 골인 — 던질 기회 −${e.throwsLost}`);
+        $('#pips').classList.add('hurt');
+        G.throwsMax = Math.max(G.throwsMax - e.throwsLost, R().throwsLeft);
+        setTimeout(() => $('#pips')?.classList.remove('hurt'), 600);
+        drawControls();
+      } else toast('도깨비가 골인했다');
+    }
+    await sleep(520);
+  },
+  async heung(e) {
+    Sound.heung(e.value);
+    drawHeung(null, e.value);
+    const pip = $('#heung').querySelectorAll('.pips i')[e.value - 1];
+    pip?.classList.add('bump');
+    if (e.value >= HEUNG_MAX) toast('흥이 넘친다! 배수 +5');
+    await sleep(260);
+  },
+  async heungLost(e) {
+    Sound.heungLost();
+    toast(`흥이 꺼졌다… (배수 +${e.value} 사라짐)`);
+    drawHeung('lost', 0);
+    await sleep(520);
+  },
+  async treasureSpawn(e) {
+    Sound.bundle();
+    addBundle(e.node, e.ttl, true);
+    floater('보따리!', e.node, '#FFFDF7');
     await sleep(420);
+  },
+  async treasureGone(e) {
+    const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
+    if (b) { b.classList.add('gone'); Sound.bundleGone(); await sleep(350); b.remove(); }
+  },
+  async treasureTake(e) {
+    const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
+    if (b) { b.classList.add('gone'); setTimeout(() => b.remove(), 350); }
+    if (e.who === 'me') { Sound.coin(); floater(`+${TREASURE_COINS} 엽전`, e.node, '#F2B33D'); }
+    else { Sound.penalty(); toast('도깨비가 보따리를 가로챘다'); }
+    await sleep(380);
   },
   async coin(e) {
     Sound.coin();
@@ -430,7 +515,16 @@ const HANDLERS = {
     await sleep(560);
     e.pieceIds.forEach((id) => { const el = pieceEl(id); el.classList.remove('caught'); el.style.display = 'none'; });
   },
-  async score(e) { await animateScore(e); },
+  async score(e) {
+    await animateScore(e);
+    // 목표의 30% 이상을 한 번에 벌면 대박 연출
+    if (e.total >= e.target * 0.3) {
+      Sound.big();
+      stampText('대박!', 'yellow', `+${e.total.toLocaleString()}`);
+      $('#board').classList.remove('shake'); void $('#board').offsetWidth; $('#board').classList.add('shake');
+      await sleep(600);
+    }
+  },
   async again() { await sleep(150); },
   async roundOver() { /* play() 이 끝난 뒤 처리 */ }
 };
@@ -511,6 +605,11 @@ function roundIntro() {
   const s = sheet(`
     <h2>${r.number}라운드</h2>
     <p>던질 기회 <b>${r.throwsLeft}번</b> 안에 <b>${r.target.toLocaleString()}점</b>을 넘겨라. 도깨비 ${r.pieces.filter((p) => p.owner === 'opp').length}마리가 같은 판을 돈다.</p>
+    <div class="legend">
+      <div>${character('dokkaebiRed', 34)}<span><b>빨간 도깨비</b><br>내 말을 잡으러 온다</span></div>
+      <div>${character('dokkaebiBlue', 34)}<span><b>파란 도깨비</b><br>골인하면 던질 기회 −1</span></div>
+    </div>
+    <p style="font-size:12.5px">잡기·업기·골인·보따리로 <b>흥</b>이 오르면 모든 이동에 배수가 붙는다. 내 말이 잡히면 흥이 꺼진다.</p>
     ${boss}
     <div class="row"><button class="btn" id="go">시작!</button></div>`);
   if (r.boss) Sound.boss();

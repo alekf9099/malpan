@@ -5,6 +5,7 @@
 //   random  아무 수나 둔다. 상점은 안 쓴다
 //   greedy  예상 점수가 가장 큰 수. 다시 던지기는 도·빽도일 때. 상점은 안 쓴다
 //   shopper greedy + 상점에서 살 수 있는 부적 중 가장 비싼 것부터 산다(부적 순서는 ×2 를 맨 뒤로)
+//   careful shopper 와 같되, 잡힐 위험이 큰 칸은 점수를 깎아 본다(위험 표시가 쓸모 있는 정보인지 확인용)
 
 import { createRun, startRound, settleRound, nextRound, buy, ROUNDS } from '../src/core/run.js';
 import { throwYut, applyMove, reroll, legalMoves } from '../src/core/round.js';
@@ -21,6 +22,13 @@ const policies = {
     let best = 0;
     moves.forEach((m, i) => { if (m.preview.score.total > moves[best].preview.score.total) best = i; });
     return best;
+  },
+  careful(r) {
+    const moves = legalMoves(r);
+    const v = (m) => m.preview.score.total - m.preview.danger * (40 + 30 * r.heung) * m.preview.stack;
+    let best = 0;
+    moves.forEach((m, i) => { if (v(m) > v(moves[best])) best = i; });
+    return best;
   }
 };
 
@@ -31,7 +39,8 @@ function playRound(run, policy) {
     if (r.phase === 'throw') { throwYut(r, run.rng); continue; }
     const res = r.pending.result;
     if (policy !== 'random' && r.rerolls > 0 && (res === DO || res === BACKDO)) { reroll(r, run.rng); continue; }
-    applyMove(r, policies[policy === 'random' ? 'random' : 'greedy'](r, run.rng), run.rng);
+    const pick = policy === 'random' ? 'random' : policy === 'careful' ? 'careful' : 'greedy';
+    applyMove(r, policies[pick](r, run.rng), run.rng);
   }
 }
 
@@ -58,7 +67,7 @@ function simulate(policy) {
       settleRound(run);
       if (run.status === 'lost') break;
       if (run.status === 'won') { clears++; break; }
-      if (policy === 'shopper') shop(run);
+      if (policy === 'shopper' || policy === 'careful') shop(run);
       nextRound(run);
     }
   }
@@ -70,7 +79,7 @@ console.log(`런 ${runs}개 · 시드 ${seed0}~${seed0 + runs - 1}`);
 console.log('라운드 목표: ' + ROUNDS.map((r, i) => `R${i + 1} ${r.target}${r.boss ? '(보스)' : ''}`).join(' · '));
 console.log('');
 console.log('정책      ' + ROUNDS.map((_, i) => `R${i + 1}통과`.padStart(8)).join('') + '   클리어   R별 평균점수');
-for (const p of ['random', 'greedy', 'shopper']) {
+for (const p of ['random', 'greedy', 'shopper', 'careful']) {
   const { reached, clears, avg } = simulate(p);
   const pass = ROUNDS.map((_, i) => pct(i + 1 < ROUNDS.length ? reached[i + 2] : clears, reached[i + 1]).padStart(8)).join('');
   console.log(p.padEnd(9) + ' ' + pass + '   ' + pct(clears, runs) + '   ' + avg.join(' / '));

@@ -1,0 +1,12 @@
+{
+  "name": "yut-rogue",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "윷판을 뒤집어라 — 윷놀이 점수 쌓기 로그라이크 (웹 시제품)",
+  "scripts": {
+    "test": "node --test tests/",
+    "sim": "node tools/sim.mjs",
+    "serve": "python -m http.server 7373"
+  }
+}

@@ -5,7 +5,7 @@
 
 import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, dailySeed, routeFor, networkGrowth, DAYS, MAX_CHARMS, SHOP_REROLL_COST } from '../core/run.js';
 import {
-  depart, reroll, applyMove, legalMoves, threats, boardFor, nextEventAt, useSkill, skillBlocked,
+  depart, reroll, applyMove, legalMoves, threats, boardFor, useSkill, skillBlocked,
   placeBlockade, blockadeBlocked, timeOf, minutesLeft, hhmm, CLOCK, BLOCKADE, buyStation, tollFor
 } from '../core/round.js';
 import { START, HOME } from '../core/board.js';
@@ -315,7 +315,6 @@ function drawTop() {
   const r = R();
   $('#top').innerHTML = `
     <span class="pill">${dayLabel(r)}${G.run.daily ? '' : `<span class="phone-only"> · </span><span class="wide-only">&nbsp;</span>${r.number}/${G.run.rounds.length}`}</span>
-    <button class="pill omen" id="omen" data-guide="event" hidden></button>
     ${r.boss ? '<button class="pill boss" data-guide="boss">차장</button>' : ''}
     <span style="flex:1"></span>
     <button class="pill" id="coinPill" data-guide="coin">${coin()} ${G.run.coins}</button>
@@ -324,20 +323,6 @@ function drawTop() {
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); drawTop(); };
   $('#help').onclick = () => openGuide();
   $('#top').querySelectorAll('[data-guide]').forEach((el) => { el.onclick = () => openGuide(el.dataset.guide); });
-  drawOmen();
-}
-
-/** 돌발 사건 예고: 무슨 사건인지는 숨기고 언제 오는지만 */
-function drawOmen() {
-  const el = $('#omen');
-  if (!el) return;
-  const at = nextEventAt(R());
-  el.hidden = at === null || R().phase === 'over';
-  if (at === null) return;
-  const soon = at - R().clock <= 60;
-  el.classList.toggle('soon', soon);
-  el.textContent = R().clock >= at ? '사건!' : `사건 ${hhmm(at)}`;
-  el.title = '돌발 사건 예고 — 무슨 일이 생길지는 그때 알 수 있다';
 }
 
 /** 운행 시계: 06:00 → 막차. 러시아워·심야 구간을 색으로, 지금 시각을 바늘로 */
@@ -505,29 +490,84 @@ async function skillCutin(e) {
   c.remove();
 }
 
-/** 돌발 사건 카드: 노선도 한가운데에 떨어졌다가 사라진다. 좋은 사건은 원정대가, 나쁜 사건은 도깨비가 들고 온다. */
+/**
+ * 사건 카드 — 모두의 마블 찬스 카드처럼. 카드 더미에서 한 장이 날아와 화면 가운데서 뒤집힌다.
+ *   tone  'good' 행운 카드(금빛·빛살·폭죽) · 'bad' 도깨비 카드(보랏빛·흔들림) · 'warn' 역 사건(주황)
+ *   to    역 이름을 주면 다 읽은 뒤 카드가 그 역으로 날아가 꽂힌다(역 사건)
+ * 화면을 누르면 바로 넘어간다.
+ */
+const CARD_DECK = { good: '행운 카드', bad: '도깨비 카드', warn: '역 사건 카드' };
+async function drawCard({ tone, title, short, art, place = null, to = null }) {
+  const stage = document.createElement('div');
+  stage.className = `card-stage tone-${tone}`;
+  stage.innerHTML = `
+    <div class="chance">
+      <div class="rays"></div>
+      <div class="inner">
+        <div class="face back"><div class="back-frame"><b>?</b><span>${CARD_DECK[tone]}</span></div></div>
+        <div class="face front">
+          <div class="cf-head">${CARD_DECK[tone]}<i>${hhmm(R().clock)}</i></div>
+          <div class="cf-art">${art}</div>
+          ${place ? `<div class="cf-place">${place}역</div>` : ''}
+          <div class="cf-title">${title}</div>
+          <div class="cf-short">${short}</div>
+          <div class="cf-tap">누르면 계속</div>
+        </div>
+      </div>
+    </div>`;
+  app.appendChild(stage);
+  const card = stage.querySelector('.chance'), inner = stage.querySelector('.inner');
+  let skip = null;
+  const tapped = new Promise((done) => { skip = done; });
+  stage.onclick = () => skip();
+  // 1) 오른쪽 위 카드 더미에서 빙글 돌며 날아온다
+  const W = app.clientWidth, H = app.clientHeight;
+  Sound.whoosh();
+  await tween(card, [
+    { transform: `translate(${W / 2 - 30}px, ${-H / 2 + 50}px) scale(.18) rotate(28deg)`, opacity: 0 },
+    { transform: 'translate(0, 12px) scale(1.06) rotate(-6deg)', opacity: 1, offset: 0.75 },
+    { transform: 'translate(0, 0) scale(1) rotate(0deg)', opacity: 1 }
+  ], { duration: 560, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'forwards' });
+  // 2) 뒤집기
+  Sound.stamp();
+  await tween(inner, [
+    { transform: 'rotateY(0deg) scale(1)' },
+    { transform: 'rotateY(100deg) scale(1.12)', offset: 0.5 },
+    { transform: 'rotateY(180deg) scale(1)' }
+  ], { duration: 520, easing: 'cubic-bezier(.4,.1,.3,1.3)', fill: 'forwards' });
+  stage.classList.add('open');
+  const r = card.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / card.offsetWidth;
+  const cx = (r.left - a.left) / k + card.offsetWidth / 2, cy = (r.top - a.top) / k + card.offsetHeight / 2;
+  if (tone === 'good') { Sound.big(); FX.confetti(cx, cy - 60, 34, 1.4); FX.sparkle(cx, cy - 120, 12, '#F2B33D'); }
+  else if (tone === 'bad') { Sound.boss(); shake(card, 10, 420); flash(app); }
+  else { Sound.penalty(); shake(card, 6, 300); }
+  // 3) 읽을 시간(누르면 바로)
+  await Promise.race([sleep(1700), tapped]);
+  // 4) 역 사건이면 그 역으로 날아가 꽂히고, 아니면 위로 사라진다
+  if (to) {
+    Camera.follow(nodeXY(to), 360);
+    drawZoom();
+    await sleep(360);
+    const [tx, ty] = nodeApp(to);
+    stage.classList.add('leaving');
+    await tween(card, [
+      { transform: 'translate(0, 0) scale(1) rotate(0deg)', opacity: 1 },
+      { transform: `translate(${tx - cx}px, ${ty - cy - 30}px) scale(.12) rotate(-20deg)`, opacity: 0.9 }
+    ], { duration: 420, easing: 'cubic-bezier(.5,0,.8,.6)', fill: 'forwards' });
+  } else {
+    stage.classList.add('leaving');
+    await tween(card, [
+      { transform: 'translate(0, 0) scale(1)', opacity: 1 },
+      { transform: 'translate(0, -80px) scale(.7) rotate(8deg)', opacity: 0 }
+    ], { duration: 300, easing: 'ease-in', fill: 'forwards' });
+  }
+  stage.remove();
+}
+
+/** 돌발 사건(구간 전체): 좋은 일은 행운 카드에 원정대가, 나쁜 일은 도깨비 카드에 도깨비가 */
 async function eventCard(e) {
-  if (e.good) Sound.big(); else Sound.boss();
   const who = e.good ? HEROES[(e.name.length + R().moves) % HEROES.length] : 'dokkaebiRed';
-  const card = document.createElement('div');
-  card.className = 'event-card' + (e.good ? '' : ' bad');
-  card.innerHTML = `<div class="ev-head">${hhmm(R().clock)} 돌발 사건</div>${character(who, 74, e.good ? 'cheer' : 'dance')}
-    <div class="ev-name">${e.name}</div><div class="ev-desc">${e.desc}</div>`;
-  $('#board').appendChild(card);
-  flash(app);
-  await tween(card, [
-    { transform: 'translate(-50%, -50%) translateY(-160px) rotate(-14deg) scale(.6)', opacity: 0 },
-    { transform: 'translate(-50%, -50%) translateY(10px) rotate(3deg) scale(1.04)', opacity: 1, offset: 0.6 },
-    { transform: 'translate(-50%, -50%) rotate(-2deg) scale(1)', opacity: 1 }
-  ], { duration: 520, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
-  const [x, y] = [card.offsetLeft + $('#board').offsetLeft, card.offsetTop + $('#board').offsetTop];
-  FX.confetti(x, y - 40, e.good ? 26 : 10, 1.2);
-  await sleep(1300);
-  await tween(card, [
-    { transform: 'translate(-50%, -50%) rotate(-2deg) scale(1)', opacity: 1 },
-    { transform: 'translate(-50%, -50%) translateY(40px) rotate(6deg) scale(.8)', opacity: 0 }
-  ], { duration: 280, easing: 'ease-in', fill: 'forwards' });
-  card.remove();
+  await drawCard({ tone: e.good ? 'good' : 'bad', title: e.name, short: e.short || e.desc, art: character(who, 96, e.good ? 'cheer' : 'dance') });
 }
 
 /** 묶음(같은 역에 함께 탄 말들)의 맨 위 말 요소 */
@@ -640,7 +680,6 @@ function drawControls() {
   bb.disabled = G.busy || r.phase !== 'throw' || r.blockadesLeft <= 0;
   bb.classList.toggle('on', G.blockMode);
   bb.innerHTML = G.blockMode ? '봉쇄 취소' : `봉쇄 테이프 <b>×${r.blockadesLeft}</b>`;
-  drawOmen();
   const many = r.phase === 'move' && legalMoves(r).length > 6;
   $('#hint').textContent = r.offer && r.phase === 'throw' && !G.busy && r.score >= r.offer.price ? '멈춘 역을 인수할 수 있다 — 카드를 보거나 그냥 출발'
     : G.blockMode ? '테이프를 칠 역을 누르세요 · 3시간 동안 도깨비 열차가 못 지나간다'
@@ -754,17 +793,11 @@ function addIncident(i) {
   return el;
 }
 
-/** 역 사건 속보: 위에 뉴스 띠가 지나가고, 카메라가 그 역으로 가서 사건이 터진다 */
+/** 역 사건: 카드를 뒤집어 보여 주고, 카드가 그 역으로 날아가 꽂히면 사건 표시가 튀어나온다 */
 async function incidentAlert(e) {
   const info = INCIDENTS[e.kind];
-  const news = document.createElement('div');
-  news.className = `news-flash kind-${e.kind}`;
-  news.innerHTML = `<b>속보</b><span>${hhmm(R().clock)} <strong>${e.node}역</strong> ${info.name} — ${info.desc}</span>`;
-  $('#board').appendChild(news);
-  tween(news, [{ transform: 'translateX(110%)' }, { transform: 'translateX(-3%)', offset: 0.75 }, { transform: 'translateX(0)' }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
-  Camera.follow(nodeXY(e.node), 480);
-  drawZoom();
-  await sleep(480);
+  const good = !!(info.chips || info.mult);
+  await drawCard({ tone: good ? 'good' : 'warn', title: info.name, short: info.short || info.desc, art: incidentArt(e.kind, 96), place: e.node, to: e.node });
   const el = addIncident(e);
   const [x, y] = nodeApp(e.node);
   if (e.kind === 'fire') {
@@ -778,9 +811,9 @@ async function incidentAlert(e) {
   } else {
     Sound.home(); FX.sparkle(x, y - 20, 10, '#E2337A'); FX.pow(x, y - 56, '버스킹!', '#E2337A', '#FFFDF7', 4);
   }
+  FX.ring(x, y, '#FFFDF7');
   await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.35)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
-  await sleep(900);
-  tween(news, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-14px)' }], { duration: 300, fill: 'forwards' }).then(() => news.remove());
+  await sleep(350);
 }
 
 /**
@@ -1586,7 +1619,6 @@ function openGuide(focus = null, then = null) {
           <div class="g-swatch"><span><i class="rush"></i>러시아워</span><span><i class="night"></i>심야</span><span><i class="last"></i>막차</span><span><i class="done"></i>지난 시간</span></div>`,
         '시각 · 막차까지', `지금 시각과 막차까지 남은 시간. 한 번 달릴 때마다 시간이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>${hhmm(r.end)} 막차</b> 전에 목표를 넘겨야 한다.<br>러시아워 이동 칩 +50% · 심야 할증 이동 칩 +25% · 막차 골인 배수 +3`)}
       <h3>위쪽 알약</h3>
-      ${item('event', '<span class="pill omen">사건 11:00</span>', '돌발 사건 예고', '이 시각이 되면 돌발 사건이 터진다. 무슨 일인지는 그때 안다. 1시간 안으로 다가오면 빨갛게 깜빡인다.')}
       ${item('boss', '<span class="pill boss">차장</span>', '도깨비 차장', boss)}
       ${item('coin', `<span class="pill">${coin()} ${G.run.coins}</span>`, '토큰', '하루를 마치면 <b>역 매점</b>에서 정기권·노선 연장권을 사는 돈. 일찍 끝내 남긴 운행 시간만큼 더 받는다.')}
       <h3>노선도 위</h3>
@@ -1594,8 +1626,10 @@ function openGuide(focus = null, then = null) {
         '오늘 구간', '진한 선과 역이 오늘 달릴 수 있는 길이다. 옅은 선은 오늘 구간 밖. 초록 <b>출발역</b>에서 나와 빨간 <b>종착역</b>을 지나면 골인. 큰 동그라미는 <b>환승역</b>(칩 +8) — 다른 호선으로 갈아탈 수 있다.')}
       ${item('estate', `<span class="g-flags"><span class="flag kind-own g-flag">${ownerFlag(30)}<span class="flag-tag">+12</span></span><span class="flag kind-own mono g-flag">${ownerFlag(30)}<span class="flag-tag">+36 ×3</span></span><span class="flag kind-goblin g-flag">${goblinFlag(30)}<span class="flag-tag">−12</span></span></span>`,
         '역 인수 · 통행료', `내 말이 멈춘 역은 출발 전에 <b>점수로 인수</b>할 수 있다(일반역 ${PRICE[1]} · 환승역 ${PRICE[2]} · 세 호선 ${PRICE[3]}). 금빛 깃발이 내 역 — 도깨비 열차가 서면 <b>통행료</b>(값의 4분의 1)가 들어오고, 같은 호선에서 이어서 사면 <b>연결 배수</b>가 오른다 — 통행료 2역 ×2 · 3역 ×3 · 4역 이상 ×4, 내 말이 연결된 내 역에 서면 점수 배수 +1(2역)·+2(3역 이상). 노선망이 클수록 승객이 늘어 그날 목표도 조금씩 오른다. 산 역은 원정이 끝나도 계속 내 것. 보랏빛 깃발은 <b>도깨비 역</b>(수·금) — 내 말이 서면 내가 낸다.`)}
+      ${item('cards', `<span class="g-cards"><span class="g-card tone-good">행운 카드</span><span class="g-card tone-warn">역 사건 카드</span><span class="g-card tone-bad">도깨비 카드</span></span>`,
+        '사건 카드', '운행 중에 일이 터지면 모두의 마블 찬스 카드처럼 카드가 날아와 뒤집힌다. <b>행운 카드</b>는 좋은 일, <b>도깨비 카드</b>는 나쁜 일, <b>역 사건 카드</b>는 그 역으로 날아가 꽂힌다. 화면을 누르면 바로 넘어간다.')}
       ${item('incidents', `<span class="g-incidents">${Object.values(INCIDENTS).map((i) => `<span class="incident kind-${i.id} g-inc">${incidentArt(i.id)}<span class="inc-tag">${i.name}</span></span>`).join('')}</span>`,
-        '역 사건', `운행 중에 역에서 일이 터지면 <b>속보</b>가 뜨고 그 역에 표시가 생긴다. <b>화재</b>: 연기가 걷힐 때까지 아무도 못 지나간다 · <b>신호 장애</b>: 지나가거나 서면 ${INCIDENTS.delay.delay}분 더 · <b>인파 몰림</b>: 서면 칩 +${INCIDENTS.crowd.chips} · <b>역 버스킹</b>: 서면 배수 +${INCIDENTS.busk.mult}`)}
+        '역 사건', `역 사건 카드가 꽂힌 역에는 표시가 남는다. <b>화재</b>: 연기가 걷힐 때까지 아무도 못 지나간다 · <b>신호 장애</b>: 지나가거나 서면 ${INCIDENTS.delay.delay}분 더 · <b>인파 몰림</b>: 서면 칩 +${INCIDENTS.crowd.chips} · <b>역 버스킹</b>: 서면 배수 +${INCIDENTS.busk.mult}`)}
       ${item('target', '<span class="g-tag"><span class="gain hot">+120<i class="risk">12%</i><i class="mins">75분</i></span></span>',
         '갈 수 있는 역', '노란 고리가 갈 수 있는 역. 이름표는 <b>예상 점수 · 잡힐 확률</b>(초록 "안전"이면 걱정 없음) <b>· 걸리는 시간</b>. 고리를 누르면 그 역으로 달린다.')}
       ${item('marks', `<span class="g-marks"><span class="g-warn">!</span><span class="g-head" style="--lc:${l0.color}">${l0.name}행</span><span class="g-tape">${tape(30)}</span></span>`,

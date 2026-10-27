@@ -862,14 +862,7 @@ button.pill { appearance: none; font-family: var(--body); color: inherit; cursor
 @keyframes note { 0% { transform: translate(0, 0) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(18px, -60px) scale(1.2) rotate(18deg); opacity: 0; } }
 @keyframes sway { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
 
-/* 속보 띠 */
-.news-flash { position: absolute; left: 8px; right: 8px; top: 52px; z-index: 2400; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px;
   border: 3px solid var(--ink); border-radius: 12px; background: #FFFDF7; box-shadow: 0 4px 0 var(--ink); font-size: 13px; font-weight: 700; line-height: 1.35; pointer-events: none; }
-.news-flash b { flex: none; padding: 3px 9px 2px; border-radius: 8px; background: #E0533D; color: #FFFDF7; font-family: var(--display); font-weight: 400; font-size: 15px; animation: pulse .7s ease-in-out infinite; }
-.news-flash strong { font-weight: 900; }
-.news-flash.kind-delay b { background: #F2B33D; color: var(--ink); }
-.news-flash.kind-crowd b { background: #2EA6DA; }
-.news-flash.kind-busk b { background: #E2337A; }
 
 /* 안내서·소개의 역 사건 견본 */
 .g-incidents { display: flex; gap: 22px; padding: 70px 18px 6px; }
@@ -951,3 +944,41 @@ body.wide .offer-card { left: auto; right: 16px; width: 420px; bottom: 60px; }
 .route-banner .rb-go { cursor: pointer; padding: 1px 6px; border-radius: 8px; }
 .route-banner .rb-go:hover { background: var(--paper-2); }
 .route-banner .rb-start { background: #DDF0E3; box-shadow: inset 0 0 0 2px #3E9B6A; }
+
+/* ── v2.2 사건 카드: 모두의 마블 찬스 카드처럼 날아와 뒤집힌다 ── */
+.card-stage { position: absolute; inset: 0; z-index: 3000; display: flex; align-items: center; justify-content: center; background: rgba(34,32,29,.38); animation: fadein .25s; cursor: pointer; }
+.card-stage.leaving { background: rgba(34,32,29,0); transition: background .35s; }
+.card-stage .chance { position: relative; width: 230px; height: 316px; perspective: 1000px; }
+.card-stage .inner { position: absolute; inset: 0; transform-style: preserve-3d; }
+.card-stage .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border: 4px solid var(--ink); border-radius: 20px; box-shadow: 0 8px 0 var(--ink); overflow: hidden; }
+.card-stage .back { background: repeating-linear-gradient(45deg, #2F3E7A 0 14px, #26336A 14px 28px); display: flex; align-items: center; justify-content: center; }
+.card-stage .back-frame { width: 78%; height: 82%; border: 4px solid #F2B33D; border-radius: 14px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; background: rgba(255,253,247,.06); }
+.card-stage .back-frame b { font-family: var(--display); font-weight: 400; font-size: 96px; line-height: 1; color: #F2B33D; text-shadow: 0 5px 0 #22201D; }
+.card-stage .back-frame span { font-weight: 900; font-size: 14px; color: #FFFDF7; letter-spacing: 2px; }
+.card-stage.tone-bad .back { background: repeating-linear-gradient(45deg, #5B2E8C 0 14px, #4C2577 14px 28px); }
+.card-stage .front { transform: rotateY(180deg); background: #FFFDF7; display: flex; flex-direction: column; align-items: center; padding: 0 14px 12px; text-align: center; }
+.card-stage .cf-head { align-self: stretch; margin: 0 -14px 6px; padding: 8px 12px 6px; display: flex; justify-content: space-between; align-items: center; font-family: var(--display); font-size: 18px; color: #FFFDF7; background: #E0A21F; border-bottom: 4px solid var(--ink); }
+.card-stage .cf-head i { font-style: normal; font-family: var(--body); font-weight: 900; font-size: 12px; padding: 1px 7px; border-radius: 8px; background: rgba(34,32,29,.75); }
+.card-stage.tone-bad .cf-head { background: #6B3FA0; }
+.card-stage.tone-warn .cf-head { background: #E0733D; }
+.card-stage .cf-art { height: 108px; display: flex; align-items: center; justify-content: center; }
+.card-stage .cf-art .inc-art { width: 96px; height: 96px; }
+.card-stage.open .cf-art { animation: cardArt .9s ease-in-out infinite alternate; }
+@keyframes cardArt { from { transform: translateY(0) rotate(-3deg); } to { transform: translateY(-6px) rotate(3deg) scale(1.05); } }
+.card-stage .cf-place { margin: 2px 0 4px; padding: 3px 12px 2px; border-radius: 999px; border: 2.5px solid var(--ink); background: var(--ink); color: #FFFDF7; font-weight: 900; font-size: 15px; }
+.card-stage .cf-title { font-family: var(--display); font-size: 30px; line-height: 1.1; margin-top: 2px; }
+.card-stage .cf-short { margin-top: 6px; padding: 6px 10px; border-radius: 12px; background: var(--paper); border: 2px dashed var(--ink-3); font-weight: 900; font-size: 15px; line-height: 1.35; }
+.card-stage .cf-tap { margin-top: auto; font-size: 11px; font-weight: 800; color: var(--ink-3); }
+/* 뒤집히면 카드 뒤로 빛살이 돈다 */
+.card-stage .rays { position: absolute; left: 50%; top: 50%; width: 520px; height: 520px; margin: -260px 0 0 -260px; border-radius: 50%; opacity: 0; pointer-events: none;
+  background: repeating-conic-gradient(rgba(242,179,61,.55) 0 10deg, rgba(242,179,61,0) 10deg 22deg); -webkit-mask: radial-gradient(closest-side, #000 35%, transparent 100%); mask: radial-gradient(closest-side, #000 35%, transparent 100%); }
+.card-stage.open .rays { opacity: 1; transition: opacity .3s; animation: raySpin 6s linear infinite; }
+.card-stage.tone-bad .rays { background: repeating-conic-gradient(rgba(107,63,160,.5) 0 10deg, rgba(107,63,160,0) 10deg 22deg); }
+.card-stage.tone-warn .rays { background: repeating-conic-gradient(rgba(224,115,61,.5) 0 10deg, rgba(224,115,61,0) 10deg 22deg); }
+.card-stage.leaving .rays { opacity: 0; }
+@keyframes raySpin { to { transform: rotate(360deg); } }
+/* 안내서 견본 */
+.g-cards { display: flex; gap: 6px; flex-wrap: wrap; }
+.g-card { padding: 16px 8px 6px; min-width: 62px; border: 2.5px solid var(--ink); border-radius: 10px; font-size: 11px; font-weight: 900; color: #FFFDF7; text-align: center; box-shadow: 0 3px 0 var(--ink); background: #E0A21F; }
+.g-card.tone-bad { background: #6B3FA0; }
+.g-card.tone-warn { background: #E0733D; }

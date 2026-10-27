@@ -1,15 +1,15 @@
 // 돌발 사건: 하루 운행 중 두 번, 미리 정해 둔 시각에 구간 전체에 일이 일어난다(역 하나의 일은 incidents.js).
-// 어떤 사건이 언제 오는지는 하루를 시작할 때 정하고(run.js), 화면은 "다음 사건 14:00" 처럼 시각만 미리 보여준다.
+// 어떤 사건이 언제 오는지는 하루를 시작할 때 정하고(run.js), 화면은 그때 카드를 뒤집어 보여 준다(모두의 마블 찬스 카드처럼).
 // 사건 효과는 round.js 가 이벤트 목록으로 풀어낸다 — 이 파일은 목록과 고르는 규칙만 안다.
 
 export const EVENTS = [
-  { id: 'sale', name: '역세권 세일', desc: '오늘 하루 역 값이 반값이다', weight: 3, good: true },
-  { id: 'boom', name: '역세권 호재', desc: '오늘 하루 내 역 통행료가 2배다', weight: 3, good: true },
-  { id: 'gust', name: '도깨비 열차 회차', desc: '노선 위의 도깨비 열차가 모두 차고로 돌아간다', weight: 2, good: true },
-  { id: 'feast', name: '역 축제', desc: '역 세 곳에서 버스킹이 열린다 (멈추면 배수 +2)', weight: 2, good: true },
-  { id: 'tailwind', name: '연장 운행', desc: '오늘 운행이 1시간 늘어난다', weight: 2, good: true },
-  { id: 'market', name: '토큰 줍기', desc: '도깨비가 토큰 3개를 흘리고 갔다', weight: 2, good: true },
-  { id: 'raid', name: '도깨비 폭주', desc: '신이 난 도깨비 열차가 한 번 더 달린다', weight: 2, good: false }
+  { id: 'sale', name: '역세권 세일', desc: '오늘 하루 역 값이 반값이다', weight: 3, good: true, short: '오늘 역 값 반값' },
+  { id: 'boom', name: '역세권 호재', desc: '오늘 하루 내 역 통행료가 2배다', weight: 3, good: true, short: '오늘 내 역 통행료 2배' },
+  { id: 'gust', name: '도깨비 열차 회차', desc: '노선 위의 도깨비 열차가 모두 차고로 돌아간다', weight: 2, good: true, short: '도깨비 열차 모두 차고로' },
+  { id: 'feast', name: '역 축제', desc: '역 세 곳에서 버스킹이 열린다 (멈추면 배수 +2)', weight: 2, good: true, short: '역 세 곳에서 버스킹' },
+  { id: 'tailwind', name: '연장 운행', desc: '오늘 운행이 1시간 늘어난다', weight: 2, good: true, short: '막차 1시간 연장' },
+  { id: 'market', name: '토큰 줍기', desc: '도깨비가 토큰 3개를 흘리고 갔다', weight: 2, good: true, short: '토큰 +3' },
+  { id: 'raid', name: '도깨비 폭주', desc: '신이 난 도깨비 열차가 한 번 더 달린다', weight: 2, good: false, short: '도깨비 열차가 한 번 더 달린다' }
 ];
 export const EVENTS_PER_DAY = 2;
 export const eventById = (id) => EVENTS.find((e) => e.id === id);

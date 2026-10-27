@@ -3,12 +3,13 @@
 //   block  : 아무도 지나가지도 서지도 못한다
 //   delay  : 지나가거나 서면 그만큼 시간이 더 든다
 //   chips·mult : 내 말이 멈추면 점수에 붙는다
+//   short  : 사건 카드에 쓰는 한 줄
 
 export const INCIDENTS = {
-  fire: { id: 'fire', name: '화재', minutes: 120, block: true, weight: 2, desc: '연기가 걷힐 때까지 아무도 지나갈 수 없다' },
-  delay: { id: 'delay', name: '신호 장애', minutes: 150, delay: 30, weight: 3, desc: '지나가거나 서면 30분 더 걸린다' },
-  crowd: { id: 'crowd', name: '인파 몰림', minutes: 120, chips: 40, weight: 3, desc: '멈추면 승객을 가득 태워 칩 +40' },
-  busk: { id: 'busk', name: '역 버스킹', minutes: 120, mult: 2, weight: 2, desc: '멈추면 흥겨운 공연에 배수 +2' }
+  fire: { id: 'fire', name: '화재', minutes: 120, block: true, weight: 2, desc: '연기가 걷힐 때까지 아무도 지나갈 수 없다', short: '2시간 동안 아무도 못 지나간다' },
+  delay: { id: 'delay', name: '신호 장애', minutes: 150, delay: 30, weight: 3, desc: '지나가거나 서면 30분 더 걸린다', short: '지나가거나 서면 30분 더' },
+  crowd: { id: 'crowd', name: '인파 몰림', minutes: 120, chips: 40, weight: 3, desc: '멈추면 승객을 가득 태워 칩 +40', short: '여기 서면 칩 +40' },
+  busk: { id: 'busk', name: '역 버스킹', minutes: 120, mult: 2, weight: 2, desc: '멈추면 흥겨운 공연에 배수 +2', short: '여기 서면 배수 +2' }
 };
 
 /** 한 번에 노선도에 있을 수 있는 사건 수 · 도깨비 차례가 끝날 때 새 사건이 생길 확률 */

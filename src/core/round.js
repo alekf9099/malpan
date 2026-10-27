@@ -299,7 +299,7 @@ function spawnIncident(r, rng, kind = null) {
   const info = INCIDENTS[k];
   const until = r.clock + info.minutes;
   r.incidents.push({ node, kind: k, until });
-  return [{ type: 'incident', node, kind: k, until, name: info.name, desc: info.desc }];
+  return [{ type: 'incident', node, kind: k, until, name: info.name, desc: info.desc, short: info.short }];
 }
 
 /** 시간이 다 된 사건은 사라지고, 확률로 새 사건이 생긴다 */
@@ -574,7 +574,7 @@ function fireEvent(r, rng) {
   if (!due) return [];
   due.done = true;
   const info = eventById(due.id);
-  const events = [{ type: 'event', id: info.id, name: info.name, desc: info.desc, good: info.good }];
+  const events = [{ type: 'event', id: info.id, name: info.name, desc: info.desc, short: info.short, good: info.good }];
   if (due.id === 'sale') {
     r.priceRate *= 0.5;
     events.push({ type: 'sale' });

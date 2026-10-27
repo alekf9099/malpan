@@ -127,7 +127,7 @@ function drawSeoul(state = {}) {
     }
     const at = LABEL_AT[n] || {};
     const name = label(x + (at.dx || 0), y + (at.dy ?? (end ? 52 : big ? 42 : 38)), at.text || n, { size: end ? 26 : 22, weight: end ? 900 : 800, anchor: at.anchor });
-    if (end) out += label(x, y - 34, n === board.S ? '출발' : '종착', { size: 19, weight: 900, fill: n === board.S ? '#2E7D52' : '#C23E2A' });
+    // '출발역 · 차고 n' / '종착역 · 골인 n' 간판은 화면(app.js 의 addBeacons)이 위에 띄운다
     return out + name;
   }).join('');
 

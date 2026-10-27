@@ -933,3 +933,21 @@ body.wide .offer-card { left: auto; right: 16px; width: 420px; bottom: 60px; }
 /* 깃발 표 자리: 옆 역 이름에 닿는 역은 왼쪽·위로(board-view 의 TAG_SIDE) */
 .flag.tag-left .flag-tag { left: auto; right: 6px; transform-origin: 100% 100%; }
 .flag.tag-up .flag-tag { left: -30px; bottom: 50px; transform-origin: 50% 100%; }
+
+/* ── 출발역·종착역 표지 ── */
+.beacon { position: absolute; width: 0; height: 0; pointer-events: none; }
+.beacon .ring { position: absolute; left: -30px; top: -30px; width: 60px; height: 60px; border-radius: 50%; border: 5px solid #3E9B6A; animation: beacon 2s ease-out infinite; }
+.beacon .ring.r2 { animation-delay: .65s; }
+.beacon .ring.r3 { animation-delay: 1.3s; }
+.beacon.goal .ring { border-color: #E0533D; border-style: dashed; animation-duration: 2.6s; }
+@keyframes beacon { 0% { transform: scale(.55); opacity: .95; } 100% { transform: scale(2.1); opacity: 0; } }
+.beacon .sign { position: absolute; left: 0; top: -96px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; white-space: nowrap;
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px 3px; border: 3px solid var(--ink); border-radius: 12px; box-shadow: 0 3px 0 var(--ink); }
+.beacon .sign::after { content: ""; position: absolute; left: 50%; bottom: -10px; margin-left: -7px; border: 7px solid transparent; border-top: 8px solid var(--ink); border-bottom: 0; }
+.beacon.start .sign { background: #3E9B6A; color: #FFFDF7; animation: bob 1.8s ease-in-out infinite; }
+.beacon.goal .sign { background: repeating-linear-gradient(45deg, #FFFDF7 0 6px, #F3D9D4 6px 12px); color: #C23E2A; }
+.beacon .sign b { font-family: var(--display); font-weight: 400; font-size: 16px; }
+.beacon .sign em { font-style: normal; font-size: 11.5px; font-weight: 900; padding: 1px 6px; border-radius: 7px; background: rgba(255,253,247,.9); color: var(--ink); }
+.route-banner .rb-go { cursor: pointer; padding: 1px 6px; border-radius: 8px; }
+.route-banner .rb-go:hover { background: var(--paper-2); }
+.route-banner .rb-start { background: #DDF0E3; box-shadow: inset 0 0 0 2px #3E9B6A; }

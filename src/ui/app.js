@@ -381,9 +381,13 @@ function drawRouteBanner() {
   const b = B();
   let el = $('#routeBanner');
   if (!el) { el = document.createElement('div'); el.id = 'routeBanner'; el.className = 'route-banner'; $('#board').appendChild(el); }
-  el.onclick = () => openGuide('route');
+  el.onclick = (ev) => {
+    const go = ev.target.closest('[data-go]');
+    if (go) { Sound.click(); showStation(go.dataset.go === 'S' ? B().S : B().G); return; }
+    openGuide('route');
+  };
   const dot = (n) => `<i style="--lc:${b.lineAt(n).color}"></i>`;
-  el.innerHTML = `<span class="rb-head">오늘 구간</span><b>${dot(b.S)}${b.S}</b><span class="rb-arrow">→</span><b>${dot(b.G)}${b.G}</b><em>최단 ${b.length}역</em>${(() => { const k = b.nodes.filter((n) => R().owned[n]).length; return k ? `<span class="rb-own">${ownerFlag(14)}내 역 ${k}</span>` : ''; })()}` +
+  el.innerHTML = `<span class="rb-head">오늘 구간</span><b class="rb-go rb-start" data-go="S" title="출발역 보기">${dot(b.S)}${b.S}</b><span class="rb-arrow">→</span><b class="rb-go" data-go="G" title="종착역 보기">${dot(b.G)}${b.G}</b><em>최단 ${b.length}역</em>${(() => { const k = b.nodes.filter((n) => R().owned[n]).length; return k ? `<span class="rb-own">${ownerFlag(14)}내 역 ${k}</span>` : ''; })()}` +
     (b.closed ? `<span class="rb-shut" style="--lc:${b.lines[b.closed].color}">${b.lines[b.closed].name} 운행 중지</span>` : '');
 }
 
@@ -714,6 +718,7 @@ function drawBundles() {
   for (const n of Object.keys(R().owned)) if (R().owned[n]) addFlag(n, 'own');
   for (const n of R().goblinStations) addFlag(n, 'goblin');
   for (const i of R().incidents) addIncident(i);
+  addBeacons();
   for (const t of R().blockades) addTape(t);
 }
 
@@ -776,6 +781,53 @@ async function incidentAlert(e) {
   await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.35)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
   await sleep(900);
   tween(news, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-14px)' }], { duration: 300, fill: 'forwards' }).then(() => news.remove());
+}
+
+/**
+ * 출발역 표지: 초록 고리가 퍼지고, 위에 "출발역 · 차고 4" 간판. 아직 차고에 있는 내 말 수를 보여 준다.
+ * 종착역 표지: 빨간 체크무늬 "종착" 간판 — 여기를 지나면 골인.
+ */
+function addBeacons() {
+  const r = R(), b = B();
+  $('#layer').querySelectorAll('.beacon').forEach((e) => e.remove());
+  const waiting = r.pieces.filter((p) => p.owner === 'me' && p.node === START).length;
+  const home = r.pieces.filter((p) => p.owner === 'me' && p.node === HOME).length;
+  const make = (node, cls, html) => {
+    const el = document.createElement('div');
+    el.className = 'beacon ' + cls;
+    el.dataset.node = node;
+    el.innerHTML = html;
+    const [x, y] = nodeXY(node);
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    el.style.zIndex = cls === 'start' ? 5 : 4;
+    $('#layer').appendChild(el);
+  };
+  make(b.S, 'start', `<i class="ring"></i><i class="ring r2"></i><i class="ring r3"></i>
+    <span class="sign"><b>출발역</b>${waiting ? `<em>차고 ${waiting}</em>` : '<em>모두 출발</em>'}</span>`);
+  make(b.G, 'goal', `<i class="ring"></i><span class="sign"><b>종착역</b><em>골인 ${home}/${r.pieces.filter((p) => p.owner === 'me').length}</em></span>`);
+}
+
+/** 그 역으로 카메라를 옮기고 표지를 한 번 크게 튕긴다 */
+function showStation(node) {
+  Camera.follow(nodeXY(node), 420);
+  drawZoom();
+  const el = $('#layer').querySelector(`.beacon[data-node="${node}"] .sign`);
+  // scale 속성은 transform(가운데 맞춤·카메라 배율 되돌리기)과 따로 곱해진다
+  if (el) setTimeout(() => tween(el, [{ scale: '1' }, { scale: '1.35' }, { scale: '1' }], { duration: 480, easing: 'cubic-bezier(.3,.7,.3,1.4)' }), 380);
+}
+
+/** 그날 첫차: 카메라가 출발역으로 가서 "여기서 출발!" */
+async function startHighlight() {
+  const b = B();
+  showStation(b.S);
+  await sleep(450);
+  const [x, y] = nodeApp(b.S);
+  FX.ring(x, y, '#3E9B6A');
+  FX.ring(x, y, '#FFFDF7');
+  FX.pow(x, y - 96, '여기서 출발!', '#3E9B6A', '#FFFDF7', -5);
+  FX.sparkle(x, y - 20, 10, '#7FD39B');
+  Sound.home();
 }
 
 /** 역 깃발: kind 'own' 내 역(금빛) · 'goblin' 도깨비 역(보랏빛). 오늘 구간의 내 역엔 통행료가 붙는다 */
@@ -1591,7 +1643,7 @@ function roundIntro() {
     ${bossInfo}
     <div class="row"><button class="btn" id="go">첫차 출발!</button></div>`);
   if (r.boss) Sound.boss();
-  s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); };
+  s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); startHighlight(); };
 }
 
 async function roundOver() {

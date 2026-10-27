@@ -53,11 +53,9 @@ export const Sound = {
     if (on) init();
     return on;
   },
-  /** 바닥에 떨어지는 소리: 윷가락은 딱딱, 주사위는 데구르르, 기물 주사위는 묵직하게 */
-  clatter(kind = 'sticks') {
-    if (kind === 'dice') { for (let i = 0; i < 7; i++) knock(2200 + Math.random() * 1400, { vol: 0.2, delay: i * 0.06 + Math.random() * 0.03, dur: 0.035, q: 14 }); return; }
-    if (kind === 'chess') { knock(700, { vol: 0.35, dur: 0.09, q: 5 }); knock(900, { vol: 0.25, delay: 0.12, dur: 0.07, q: 6 }); return; }
-    for (let i = 0; i < 5; i++) knock(1400 + Math.random() * 1600, { vol: 0.28, delay: i * 0.045 + Math.random() * 0.03, dur: 0.05, q: 9 });
+  /** 바닥에 떨어지는 소리: 열차 주사위가 데구르르 */
+  clatter() {
+    for (let i = 0; i < 7; i++) knock(2200 + Math.random() * 1400, { vol: 0.2, delay: i * 0.06 + Math.random() * 0.03, dur: 0.035, q: 14 });
   },
   toss() { knock(500, { vol: 0.12, dur: 0.18, q: 1 }); },
   /** 하늘에서 떨어지는 말 */

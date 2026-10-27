@@ -1,4 +1,4 @@
-/* 윷판을 뒤집어라 — "오방색 장난감". 한지 바탕, 먹선, 손으로 오린 스티커 같은 부품. */
+/* 도깨비 노선도 — "장난감 노선도". 종이 바탕, 먹선, 손으로 오린 스티커 같은 부품. */
 :root {
   --paper: #F4EADB;
   --paper-2: #EADCC4;
@@ -116,7 +116,7 @@ body {
 }
 @keyframes floatup { 0% { opacity: 0; transform: translate(-50%, 0) scale(.6); } 15% { opacity: 1; transform: translate(-50%, -10px) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -54px) scale(1); } }
 
-/* ── 윷판 ── */
+/* ── 노선도 판 ── */
 .board-wrap { position: relative; margin: 0 auto; width: 390px; height: var(--board-h, 306px); }
 .board-wrap #mat svg { position: absolute; left: 0; top: 0; }
 .board-wrap svg.mat { position: absolute; inset: 0; }
@@ -154,19 +154,14 @@ body {
 /* ── 대기·골인 줄 ── */
 .trays { display: flex; justify-content: space-between; align-items: center; padding: 4px 18px 0; height: 44px; }
 .tray { display: flex; align-items: center; gap: 2px; }
-.tray .label { font-size: 12px; font-weight: 800; color: var(--ink-2); margin-right: 6px; }
+.tray .label { font-size: 12px; font-weight: 800; color: var(--ink-2); margin-right: 6px; white-space: nowrap; }
 .tray .mini { width: 30px; height: 30px; filter: drop-shadow(0 2px 0 rgba(34, 32, 29, .3)); }
 .tray .mini.ready { cursor: pointer; animation: wiggle 1.1s ease-in-out infinite; }
 .tray .mini.gone { opacity: .25; filter: grayscale(1); }
 .newbtn { position: relative; }
 .newbtn .gain { position: absolute; left: 50%; top: -24px; transform: translateX(-50%); white-space: nowrap; padding: 1px 6px; border-radius: 8px; border: 2px solid var(--ink); background: var(--white); font-weight: 900; font-size: 11px; }
 
-/* ── 윷 던지기 ── */
-.throw-zone { position: relative; height: 96px; margin: 0 16px; perspective: 520px; display: flex; align-items: center; justify-content: center; gap: 10px; }
-.stick { width: 20px; height: 84px; transition: transform .5s var(--spring); }
-.stick.toss { animation: toss .55s ease-out; }
-@keyframes toss { 0% { transform: translateY(0) rotate(0); } 45% { transform: translateY(-60px) rotate(240deg); } 100% { transform: translateY(0) rotate(360deg); } }
-/* 결과 도장은 윷가락을 가리지 않게 옆에 찍는다. 내 결과는 오른쪽, 도깨비 결과는 왼쪽에 작게. */
+/* 결과 도장은 주사위를 가리지 않게 옆에 찍는다. 내 결과는 오른쪽, 도깨비 결과는 왼쪽에 작게. */
 .stamp {
   position: absolute; right: 0; top: 50%; z-index: 20; pointer-events: none;
   font-family: var(--display); font-size: 44px; line-height: 1; color: var(--white);
@@ -188,13 +183,9 @@ body {
 .controls .btn.main { flex: 1; height: 64px; font-size: 28px; }
 .controls .side { width: 92px; display: flex; flex-direction: column; gap: 6px; }
 .controls .side .btn { height: 64px; font-size: 14px; font-family: var(--body); font-weight: 900; flex-direction: column; gap: 0; padding: 4px; line-height: 1.15; }
-.throws { display: flex; justify-content: center; gap: 4px; margin-top: 8px; height: 22px; }
-.throws i { width: 7px; height: 22px; border-radius: 4px; border: 2px solid var(--ink); background: #C98A4F; }
-.throws i.used { background: var(--paper-2); border-color: var(--ink-3); }
-.throws i.extra { background: var(--yellow); }
 .hint { text-align: center; font-size: 13px; font-weight: 700; color: var(--ink-2); height: 18px; margin-top: 4px; }
 
-/* ── 부적 줄 ── */
+/* ── 정기권 줄 ── */
 .charms { display: flex; gap: 8px; justify-content: center; padding: 8px 16px 10px; margin-top: auto; }
 .slot { width: 50px; height: 68px; border: 2.5px dashed var(--ink-3); border-radius: 10px; }
 .charm { width: 50px; height: 68px; position: relative; cursor: pointer; transition: transform .2s var(--spring); }
@@ -203,7 +194,7 @@ body {
 .charm.fire { animation: fire .45s var(--spring); }
 @keyframes fire { 40% { transform: translateY(-14px) scale(1.12) rotate(-4deg); } }
 
-/* ── 겹쳐 뜨는 판(라운드 소개·상점·결과) ── */
+/* ── 겹쳐 뜨는 판(하루 소개·역 매점·결과) ── */
 .sheet-back { position: absolute; inset: 0; z-index: 40; background: rgba(34, 32, 29, .45); animation: fadein .2s; }
 @keyframes fadein { from { opacity: 0; } }
 .sheet {
@@ -256,7 +247,7 @@ body {
 .shake { animation: shake .4s; }
 @keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 
-/* ── 다이나믹 요소: 흥 · 위험 · 보따리 · 도깨비 성격 ── */
+/* ── 다이나믹 요소: 만족도 · 위험 · 분실물 · 도깨비 성격 ── */
 .heung { display: flex; align-items: center; gap: 6px; margin-top: 8px; height: 20px; }
 .heung .lbl { font-family: var(--display); font-size: 16px; line-height: 1; }
 .heung .pips { display: flex; gap: 3px; }
@@ -290,15 +281,12 @@ body {
 .bundle.gone { animation: puff .35s ease-in forwards; }
 @keyframes popin { from { transform: scale(0) rotate(-30deg); } }
 @keyframes puff { to { transform: scale(1.6); opacity: 0; } }
-.throws.hurt i:not(.used) { animation: lost .5s; background: var(--red); }
 .legend { display: flex; gap: 10px; margin-top: 10px; }
 .legend > div { flex: 1; display: flex; gap: 8px; align-items: center; padding: 8px; background: var(--white); border: 2.5px solid var(--ink); border-radius: 12px; font-size: 12px; font-weight: 700; line-height: 1.3; }
 .legend svg { flex: none; }
 
 /* ── v0.3: 여러 판 · 큰 연출 ── */
-.app.board-yut { --board-h: 306px; }
-.stick-tray { display: flex; gap: 10px; align-items: center; justify-content: center; }
-.stick-tray.opp, .dice-tray.opp { transform: scale(.72); opacity: .85; }
+.dice-tray.opp { transform: scale(.72); opacity: .85; }
 .dice-tray { display: flex; gap: 26px; align-items: center; justify-content: center; transform-style: preserve-3d; }
 .die { position: relative; width: 50px; height: 50px; transform-style: preserve-3d; }
 .die .face {
@@ -346,8 +334,6 @@ body {
 .board-preview .roller-mini { width: 120px; height: 70px; display: flex; align-items: center; justify-content: center; transform: scale(.8); perspective: 400px; }
 /* 굴림 장치는 왼쪽, 결과 도장은 오른쪽 — 서로 가리지 않게 */
 #roller { position: absolute; left: 8px; top: 0; bottom: 0; width: 210px; display: flex; align-items: center; justify-content: center; perspective: 520px; }
-.throw-zone .stamp { right: 4px; }
-.throw-zone .stamp.opp { right: auto; left: 4px; }
 
 /* 점수 라벨: 고리와 분리해 맨 위에 띄우되 클릭은 통과시킨다 */
 .target-tag { position: absolute; width: 0; height: 0; pointer-events: none; }
@@ -359,8 +345,6 @@ body {
 .target-tag .gain.hot { background: var(--yellow); }
 .target-tag .risk { font-style: normal; padding: 0 4px; border-radius: 5px; background: var(--red); color: var(--white); font-size: 10.5px; }
 .target-tag .risk.safe { background: var(--green); }
-.app.board-chess .target-tag .gain { font-size: 11px; padding: 1px 5px 0; top: -30px; }
-.app.board-chess .target-tag .risk.safe { font-size: 0; width: 8px; height: 8px; padding: 0; border-radius: 50%; }
 
 /* 도깨비는 클릭을 통과시켜 아래 도착 고리(잡기)를 누를 수 있게 */
 .piece[data-piece^="d"] { pointer-events: none; }
@@ -375,7 +359,6 @@ body {
 .score-now { font-size: 34px !important; }
 .heung { margin-top: 6px !important; }
 .trays { height: 40px !important; padding-top: 2px !important; }
-.throw-zone { height: 86px !important; }
 .charms { padding: 6px 16px 8px !important; }
 .slot, .charm { width: 46px !important; height: 62px !important; }
 
@@ -386,8 +369,6 @@ body {
 .title-boards .tb1 { left: 26px; transform: rotate(-10deg); }
 .title-boards .tb2 { left: 50%; margin-left: -40px; top: 6px; animation-delay: .5s; }
 .title-boards .tb3 { right: 30px; transform: rotate(12deg); animation-delay: 1s; }
-.bundle-sticks { display: inline-flex; gap: 4px; transform: rotate(-8deg); }
-.bundle-sticks .stick { width: 13px; height: 56px; }
 @keyframes bob { 50% { translate: 0 -8px; } }
 .logo2 { display: flex; align-items: baseline; gap: 6px; margin-top: 4px; font-family: var(--display); line-height: 1; }
 .logo2 .l1 { font-size: 64px; letter-spacing: -2px; }
@@ -447,24 +428,6 @@ body.wide .title2 { width: 760px; margin: 0 auto; }
 /* ── v0.5: 판 고르기 ── */
 .btn-sub { display: block; margin-top: 3px; font-family: var(--body); font-size: 12px; font-weight: 800; letter-spacing: 0; opacity: .9; }
 #start { flex-direction: column; gap: 0; line-height: 1.05; }
-.pick-title { display: flex; align-items: center; gap: 10px; width: 100%; margin: 16px 0 10px; font-size: 13px; font-weight: 900; color: var(--ink-2); }
-.pick-title i { flex: 1; height: 2px; background: var(--ink-3); opacity: .45; border-radius: 2px; }
-.board-pick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; }
-.pick {
-  appearance: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 10px 6px 9px; background: var(--white); color: var(--ink); font-family: var(--body);
-  border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink);
-  transition: transform .08s, box-shadow .08s;
-}
-.pick:hover { transform: translateY(-2px); box-shadow: 0 6px 0 var(--ink); }
-.pick:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
-.pick-art { height: 58px; display: flex; align-items: center; justify-content: center; }
-.pick-art .bundle-sticks .stick { width: 10px; height: 46px; }
-.pick b { font-family: var(--display); font-weight: 400; font-size: 18px; }
-.pick span:not(.pick-art) { white-space: nowrap; font-size: 11px; font-weight: 700; color: var(--ink-2); text-align: center; line-height: 1.3; word-break: keep-all; }
-.pick em { white-space: nowrap; font-style: normal; font-size: 10.5px; font-weight: 900; color: var(--red); }
-.pick[data-board="marble"] { background: #EAF2FF; }
-.pick[data-board="chess"] { background: #FFF5D6; }
 body:not(.wide) .title2 { padding-top: 14px; }
 body:not(.wide) .title2 .title-boards { height: 56px; }
 body:not(.wide) .title2 .logo2 .l1, body:not(.wide) .title2 .logo2 .l2 { font-size: 54px; }
@@ -574,11 +537,10 @@ img.roll3d { object-fit: contain; }
 .roller-mini.as3d, .roller-mini { overflow: visible; }
 .title-boards .tb.as3d { width: 92px; height: 70px; top: -4px; }
 .title-boards .tb2.as3d { margin-left: -46px; width: 104px; }
-.pick-art.as3d { width: 100%; height: 62px; }
 
 /* ── v0.6: 굴림 칸 없음 — 던지기는 판 위에서, 결과 도장은 판 오른쪽 위 ── */
 .stamp-spot { position: absolute; right: 16px; top: 48px; width: 0; height: 0; z-index: 2300; pointer-events: none; }
-.stamp-spot .stamp { right: 0; font-size: 38px; }
+.stamp-spot .stamp { right: 0; font-size: 38px; white-space: nowrap; }
 .stamp-spot .stamp.opp { left: auto; right: 0; font-size: 22px; }
 .roller-float { position: absolute; left: 50%; top: 50%; width: 300px; height: 110px; margin: -55px 0 0 -150px; z-index: 2150;
   display: flex; align-items: center; justify-content: center; perspective: 520px; pointer-events: none; opacity: 0; transition: opacity .25s; }
@@ -681,11 +643,6 @@ body:not(.wide) .app.game > #board { flex: 1 1 auto; height: auto !important; mi
 .dock .controls { padding: 0; gap: 8px; }
 .dock .throw-wrap { position: relative; flex: 1; display: flex; }
 .dock .controls .btn.main { flex: 1; height: 60px; padding-bottom: 16px; }
-.dock .throws { position: absolute; left: 0; right: 0; bottom: 9px; margin: 0; height: 10px; gap: 3px; pointer-events: none; }
-.dock .throws i { width: 14px; height: 8px; border-width: 1.5px; border-radius: 4px; background: var(--yellow); }
-.dock .throws i.used { background: rgba(255,255,255,.35); border-color: rgba(34,32,29,.45); }
-.dock .throws i.extra { background: var(--white); }
-.dock .controls .btn.main:disabled + .throws { opacity: .6; }
 .dock .controls .side { width: 84px; }
 .dock .controls .side .btn { height: 60px; }
 .dock .charms { padding: 6px 0 0 !important; margin: 0; border-top: 2px dashed var(--paper-2); justify-content: space-between; }
@@ -704,6 +661,131 @@ body.wide .hud .score-now { font-size: 40px !important; }
 body.wide .dock { gap: 12px; padding: 12px; }
 body.wide .dock .hero-chip { width: 52px; height: 52px; }
 body.wide .dock .hero-chip .char { width: 44px !important; height: 44px !important; }
-body.wide .dock .controls .btn.main, body.wide .dock .controls .side .btn { height: 72px; }
+body.wide .dock .controls .btn.main { height: 72px; }
+body.wide .dock .controls .side { width: 128px; }
+body.wide .dock .controls .side .btn { height: 33px; font-size: 13.5px; }
 body.wide .dock .slot, body.wide .dock .charm { width: 60px !important; height: 80px !important; }
 body.wide .tip { bottom: 300px; }
+
+/* ── v0.7: 손맛 게이지 ── */
+.power {
+  position: absolute; left: 6px; right: 6px; top: -26px; height: 20px; z-index: 5; pointer-events: none;
+  border: 2.5px solid var(--ink); border-radius: 999px; background: var(--paper-2); overflow: hidden; box-shadow: 0 2px 0 var(--ink);
+}
+.power[hidden] { display: none; }
+.power i { position: absolute; top: 0; bottom: 0; }
+.power .good { background: #8FD1A8; }
+.power .perfect { background: var(--yellow); }
+.power .slip { background: #8C846F; }
+.power .needle { position: absolute; top: -2px; bottom: -2px; width: 5px; margin-left: -2.5px; background: var(--red); border: 1.5px solid var(--ink); border-radius: 3px; }
+.power span { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 10.5px; font-weight: 900; color: var(--ink-2); }
+.throw-wrap .btn.main { touch-action: none; }
+
+/* ── v0.7: 랭킹 ── */
+.my-rank {
+  appearance: none; display: flex; align-items: center; gap: 8px; margin: 10px 0 0; padding: 5px 12px; cursor: pointer;
+  border: 2.5px solid var(--ink); border-radius: 999px; background: var(--ink); color: var(--white); font: inherit; box-shadow: 0 3px 0 rgba(34,32,29,.35);
+}
+.my-rank b { color: var(--yellow); font-size: 13px; font-weight: 900; }
+.my-rank span { font-size: 12px; font-weight: 700; opacity: .9; }
+.my-rank i { font-style: normal; font-size: 11.5px; font-weight: 900; color: var(--yellow); }
+.points-line { display: flex; align-items: baseline; gap: 8px; margin-top: 10px; padding: 8px 12px; border-radius: 14px; background: var(--ink); color: var(--white); }
+.points-line span { font-size: 12.5px; font-weight: 900; color: var(--yellow); }
+.points-line b { font-family: var(--display); font-weight: 400; font-size: 24px; }
+.points-line em { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 700; opacity: .85; }
+.points-final { margin-top: 12px; padding: 10px 12px; border-radius: 16px; background: var(--ink); color: var(--white); }
+.pf-main { display: flex; align-items: baseline; gap: 8px; }
+.pf-main span { font-size: 12.5px; font-weight: 900; color: var(--yellow); }
+.pf-main b { font-family: var(--display); font-weight: 400; font-size: 30px; }
+.pf-main em { margin-left: auto; font-style: normal; font-size: 13px; font-weight: 900; }
+.pf-main em.best { color: var(--yellow); animation: pulse .9s ease-in-out infinite; }
+.pf-sub { margin-top: 4px; font-size: 12.5px; font-weight: 700; opacity: .92; }
+.pf-sub b { color: var(--yellow); }
+.pf-sub i { font-style: normal; color: #8FD1A8; font-weight: 900; }
+.rank-me { margin-top: 12px; padding: 12px 14px; background: var(--white); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 4px 0 var(--ink); }
+.rank-me h3 { margin: 6px 0 0; font-family: var(--display); font-weight: 400; font-size: 30px; line-height: 1; }
+.rank-total { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; }
+.rank-total b { font-family: var(--display); font-weight: 400; font-size: 34px; color: var(--red); }
+.rank-total span { font-size: 12.5px; font-weight: 800; color: var(--ink-2); }
+.rank-bar { margin-top: 8px; }
+.rank-me p { margin: 6px 0 0; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+.rank-rule { margin: 10px 2px 8px; font-size: 11.5px; font-weight: 700; color: var(--ink-3); line-height: 1.5; word-break: keep-all; }
+.rank-list { display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 0; }
+.rank-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--white); border: 2.5px solid var(--ink); border-radius: 14px; }
+.rank-row .no { width: 26px; height: 26px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--paper-2); font-weight: 900; font-size: 13px; }
+.rank-row.top1 .no { background: var(--yellow); } .rank-row.top2 .no { background: #D9DEE6; } .rank-row.top3 .no { background: #E8B48A; }
+.rank-row .what { flex: 1; display: flex; flex-direction: column; }
+.rank-row .what b { font-size: 14px; font-weight: 900; }
+.rank-row .what span { font-size: 11.5px; font-weight: 700; color: var(--ink-3); }
+.rank-row .pts { font-family: var(--display); font-weight: 400; font-size: 22px; }
+.rank-empty { margin: 16px 4px; font-size: 13px; font-weight: 700; color: var(--ink-2); line-height: 1.6; }
+
+/* ── v0.8: 지하철판 — 호선·깃발·승객·행선지·시간대 ── */
+.line-legend { position: absolute; left: 8px; top: 8px; z-index: 2250; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 120px); pointer-events: auto; }
+.line-legend .ll { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 4px; border: 2px solid var(--ink); border-radius: 999px; background: rgba(255,253,247,.94); font-size: 11px; font-weight: 800; }
+.line-legend .ll i { width: 12px; height: 12px; border-radius: 50%; background: var(--lc); border: 2px solid var(--ink); }
+.line-legend .ll em { font-style: normal; color: var(--ink-2); }
+.line-legend .ll.done { background: var(--yellow); }
+.line-legend .ll.shut { opacity: .6; text-decoration: line-through; }
+.passenger { position: absolute; z-index: 6; width: 26px; height: 31px; margin: -36px 0 0 -13px; pointer-events: none; filter: drop-shadow(0 2px 0 rgba(34,32,29,.3)); animation: popin .4s var(--spring); }
+.passenger svg { display: block; }
+.passenger .want { position: absolute; left: 50%; top: -15px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; white-space: nowrap; padding: 0 5px; border-radius: 999px; background: var(--lc); color: #FFFDF7; border: 1.5px solid var(--ink); font-size: 9.5px; font-weight: 900; }
+.piece .rider { position: absolute; right: -6px; top: -4px; width: 20px; height: 24px; z-index: 3; pointer-events: none; }
+.piece .rider svg { width: 100%; height: 100%; display: block; }
+.piece .heading { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); white-space: nowrap; padding: 0 6px; border-radius: 999px; background: var(--lc); color: #FFFDF7; border: 2px solid var(--ink); font-size: 10px; font-weight: 900; z-index: 3; pointer-events: none; }
+.target-tag .gain.mystery { background: #6E6A5E; color: #FFFDF7; }
+.pill.time-rush { background: #F2A13D; } .pill.time-night { background: #2E3A5C; color: #FFFDF7; } .pill.time-last { background: #E0533D; color: #FFFDF7; }
+.metro-intro { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.metro-intro .mi-time { padding: 6px 10px; border-radius: 12px; border: 2px solid var(--ink); font-size: 12.5px; font-weight: 700; background: var(--white); }
+.metro-intro .mi-time b { margin-right: 6px; font-weight: 900; }
+.metro-intro .mi-time.time-night { background: #2E3A5C; color: #FFFDF7; } .metro-intro .mi-time.time-rush { background: #FFE2B8; } .metro-intro .mi-time.time-last { background: #FBD3CB; }
+.mi-lines { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+.mi-lines span { display: flex; align-items: center; gap: 5px; padding: 4px 6px; border-radius: 10px; background: var(--white); border: 2px solid var(--ink); font-size: 11px; font-weight: 700; }
+.mi-lines span i { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--lc); border: 2px solid var(--ink); }
+.mi-lines span b { font-weight: 900; margin-right: 2px; white-space: nowrap; }
+.mi-lines span.shut { opacity: .55; }
+.metro-intro p { margin: 0; font-size: 12px; }
+.event-card.line-card { background: var(--lc); color: #FFFDF7; }
+.event-card.line-card .ev-head { background: var(--ink); color: var(--yellow); }
+.event-card.line-card .ev-name { -webkit-text-stroke: 2px var(--ink); text-shadow: 0 4px 0 var(--ink); }
+
+/* ── v1.0 도깨비 노선도: 운행 시계 · 봉쇄 테이프 ── */
+.title-lines { display: flex; gap: 6px; width: 72%; margin: 0 auto 8px; }
+.title-lines i { flex: 1; height: 9px; border-radius: 5px; background: var(--lc); border: 2px solid var(--ink); }
+.daily-btn { width: 100%; margin-top: 10px; flex-direction: column; gap: 1px; line-height: 1.1; padding: 9px 12px 8px; }
+.daily-btn b { font-family: var(--display); font-weight: 400; font-size: 20px; }
+.daily-btn span { font-family: var(--body); font-size: 12px; font-weight: 800; color: var(--ink-2); }
+.day-no { font-family: var(--body); font-size: 14px; color: var(--ink-2); }
+
+.clock { display: flex; align-items: center; gap: 8px; margin-top: 6px; height: 18px; }
+.clock .now { font-family: var(--display); font-size: 16px; line-height: 1; min-width: 46px; font-variant-numeric: tabular-nums; }
+.clock .track { position: relative; flex: 1; height: 10px; border: 2px solid var(--ink); border-radius: 6px; background: var(--paper-2); }
+.clock .track i { position: absolute; top: 0; bottom: 0; }
+.clock .track i.rush { background: rgba(242, 161, 61, .75); }
+.clock .track i.night { background: rgba(46, 58, 92, .65); }
+.clock .track i.last { background: rgba(224, 83, 61, .8); border-radius: 0 4px 4px 0; }
+.clock .track i.done { left: 0; background: rgba(34, 32, 29, .22); border-radius: 4px 0 0 4px; transition: width .3s; }
+.clock .track .hand { position: absolute; top: -5px; bottom: -5px; width: 5px; margin-left: -2.5px; border-radius: 3px; background: var(--ink); transition: left .3s; }
+.clock .left { white-space: nowrap; font-size: 11.5px; font-weight: 900; color: var(--ink-2); }
+.clock.late .left { color: var(--red); }
+.clock.hurt .track { animation: lost .5s; }
+.hud .clock { margin-top: 5px; }
+.clock .band { white-space: nowrap; padding: 1px 6px 0; border-radius: 7px; border: 1.5px solid var(--ink); font-size: 10.5px; font-weight: 900; line-height: 1.4; }
+.clock .band.time-rush { background: #F2A13D; } .clock .band.time-night { background: #2E3A5C; color: #FFFDF7; } .clock .band.time-last { background: #E0533D; color: #FFFDF7; }
+
+.dock .controls .btn.main { flex-direction: column; gap: 2px; padding-bottom: 4px; line-height: 1; }
+.dock .controls .btn.main small { font-family: var(--body); font-size: 12px; font-weight: 800; opacity: .9; letter-spacing: 0; }
+.dock .controls .side { width: 108px; gap: 6px; }
+.dock .controls .side .btn { height: 27px; flex-direction: row; gap: 4px; font-size: 12.5px; padding: 0 6px; white-space: nowrap; }
+.dock .controls .side .btn b { font-family: var(--display); font-weight: 400; font-size: 13px; }
+#blockBtn.on { background: var(--yellow); }
+
+.target.block { width: 34px; height: 22px; margin: -11px 0 0 -17px; border-style: solid; border-color: rgba(34, 32, 29, .6);
+  background: repeating-linear-gradient(45deg, rgba(242, 179, 61, .75) 0 5px, rgba(34, 32, 29, .55) 5px 10px); animation-duration: 1.4s; }
+.tape { position: absolute; width: 0; height: 0; pointer-events: none; }
+.tape svg { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%) scale(var(--inv, 1)); filter: drop-shadow(0 2px 0 rgba(34, 32, 29, .35)); }
+.tape .until { position: absolute; left: 0; top: 12px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 0; white-space: nowrap;
+  padding: 0 5px; border-radius: 6px; background: var(--ink); color: var(--yellow); font-size: 10px; font-weight: 900; }
+.target-tag .mins { font-style: normal; padding: 0 4px; border-radius: 5px; background: var(--blue); color: var(--white); font-size: 10.5px; }
+.target-tag .mins.free { background: #F7B7C8; color: var(--ink); }
+.metro-intro .mi-time.tape-line { background: #FFF1C9; }

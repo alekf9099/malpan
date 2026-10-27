@@ -1,17 +1,17 @@
-// 3D 굴림 도구 (three.js). 윷가락 4개 · 주사위 2개 · 기물 주사위를 입체로 그린다.
+// 3D 굴림 도구 (three.js). 열차 주사위를 입체로 그린다.
 //
 //   load()                            three.js 를 불러온다. 실패하면(오프라인 첫 실행 등) false — 화면은 2D 굴림으로 돌아간다
 //   toss(overlay, board, roll, who)   판 위 캔버스에 던져서 튀고 굴러 결과 면으로 멈춘다
 //   still(container, board, roll)     굴림 칸에 놓인 모습(결과 또는 대기)을 그림 한 장으로 그린다
 //
-// 그림체는 판·캐릭터와 맞춘다: 2D 윷가락·주사위와 같은 팔레트, 캐릭터 렌더(tools/render-chars.html)와 같은 조명,
+// 그림체는 판·캐릭터와 맞춘다: 2D 그림과 같은 팔레트, 캐릭터 렌더(tools/render-chars.html)와 같은 조명,
 // 윤곽에 먹선, 그림자는 판 위 말처럼 납작한 타원. 사실적인 나뭇결·흐린 그림자는 쓰지 않는다.
 //
 // 결과는 규칙(core)이 이미 정해 두었다. 정해진 면이 위로 오는 끝 자세를 먼저 정하고,
 // 거기로 날아가 떨어지는 궤적(포물선 + 잦아드는 튕김 + 회전)을 맞춘다. 물리 엔진은 쓰지 않는다.
 
-import { PIECE_SVG } from './roller.js';
-import { FACES } from '../core/boards/chess.js';
+import { METRO_FACES } from '../core/boards/metro.js';
+import { TRAIN_SVG } from './roller.js';
 
 let THREE = null, RoundedBox = null;
 let renderer = null;
@@ -19,9 +19,8 @@ const tex = {};
 
 const INK = '#22201D';
 const SHADOW = 'rgba(34, 32, 29, .28)';
-// 2D 그림(art.js 윷가락, roller.js 주사위)과 같은 색
-const WOOD = { flat: '#F1D9A8', flatLine: '#D9B57A', back: '#A8652F', backLine: '#C98A4F', mark: '#C8342A' };
-const DIE = { face: '#FFFDF7', pip: INK, one: '#E0533D', chess: '#F5D35E', queen: '#F08A2E' };
+// 2D 열차 주사위(roller.js)와 같은 색
+const DIE = { face: '#FFFDF7', express: '#2F6BD8', mark: '#E0533D' };
 const OUTLINE = 2.6; // 먹선 두께(CSS px)
 
 export async function load() {
@@ -54,35 +53,6 @@ function canvasTex(w, h, draw) {
   return t;
 }
 
-/** 윷가락 면: 2D 윷가락처럼 단색 바탕에 결 두 줄(밝은 면) 또는 밝은 띠 한 줄(둥근 등) */
-function stickFace(g, w, h, flat, marked) {
-  g.fillStyle = flat ? WOOD.flat : WOOD.back;
-  g.fillRect(0, 0, w, h);
-  g.lineCap = 'round';
-  if (flat) {
-    g.strokeStyle = WOOD.flatLine; g.lineWidth = h * 0.07;
-    for (const [y, a] of [[0.32, 0.05], [0.64, -0.04]]) {
-      g.beginPath(); g.moveTo(w * 0.12, h * y); g.quadraticCurveTo(w * 0.5, h * (y + a * 4), w * 0.88, h * y); g.stroke();
-    }
-  } else {
-    g.strokeStyle = WOOD.backLine; g.globalAlpha = 0.85; g.lineWidth = h * 0.16;
-    g.beginPath(); g.moveTo(w * 0.06, h * 0.5); g.lineTo(w * 0.94, h * 0.5); g.stroke();
-    g.globalAlpha = 1;
-  }
-  if (marked) {
-    // 빽도 표시: 붉은 X (2D 윷가락과 같은 자리 — 한쪽 끝)
-    g.strokeStyle = WOOD.mark; g.lineWidth = h * 0.13;
-    const cx = w * 0.86, cy = h / 2, r = h * 0.24;
-    g.beginPath(); g.moveTo(cx - r, cy - r); g.lineTo(cx + r, cy + r); g.moveTo(cx + r, cy - r); g.lineTo(cx - r, cy + r); g.stroke();
-  }
-}
-
-const PIPS = {
-  1: [[50, 50]], 2: [[28, 28], [72, 72]], 3: [[26, 26], [50, 50], [74, 74]],
-  4: [[28, 28], [72, 28], [28, 72], [72, 72]], 5: [[26, 26], [74, 26], [50, 50], [26, 74], [74, 74]],
-  6: [[28, 24], [72, 24], [28, 50], [72, 50], [28, 76], [72, 76]]
-};
-
 function svgImage(svg) {
   return new Promise((ok, no) => {
     const img = new Image();
@@ -93,54 +63,24 @@ function svgImage(svg) {
 }
 
 async function makeTextures() {
-  tex.flat = canvasTex(512, 64, (g, w, h) => stickFace(g, w, h, true, false));
-  tex.flatMarked = canvasTex(512, 64, (g, w, h) => stickFace(g, w, h, true, true));
-  tex.back = canvasTex(512, 64, (g, w, h) => stickFace(g, w, h, false, false));
-  for (let n = 1; n <= 6; n++) {
-    tex['pip' + n] = canvasTex(256, 256, (g, w) => {
+  const train = await svgImage(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="256" height="256">${TRAIN_SVG}</svg>`);
+  for (const f of METRO_FACES) {
+    tex['metro-' + f] = canvasTex(256, 256, (g, w) => {
+      if (f === 'express') { g.fillStyle = DIE.express; g.fillRect(0, 0, w, w); g.drawImage(train, w * 0.1, w * 0.06, w * 0.8, w * 0.8); return; }
       g.fillStyle = DIE.face; g.fillRect(0, 0, w, w);
-      for (const [x, y] of PIPS[n]) {
-        g.fillStyle = n === 1 ? DIE.one : DIE.pip;
-        g.beginPath(); g.arc(x * w / 100, y * w / 100, (n === 1 ? 14 : 10) * w / 100, 0, Math.PI * 2); g.fill();
-      }
-    });
-  }
-  for (const f of FACES) {
-    const img = await svgImage(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="256" height="256"><g fill="${INK}" stroke="${INK}" stroke-width="2" stroke-linejoin="round">${PIECE_SVG[f]}</g></svg>`);
-    tex['chess-' + f] = canvasTex(256, 256, (g, w) => {
-      g.fillStyle = f === 'queen' ? DIE.queen : DIE.chess; g.fillRect(0, 0, w, w);
-      g.drawImage(img, w * 0.13, w * 0.1, w * 0.74, w * 0.74);
+      g.fillStyle = INK; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `${w * 0.62}px "Gasoek One", "Pretendard Variable", sans-serif`;
+      g.fillText(String(f), w / 2, w * 0.54);
+      g.font = `900 ${w * 0.11}px "Pretendard Variable", sans-serif`;
+      g.fillStyle = DIE.mark;
+      g.fillText('역', w * 0.8, w * 0.84);
     });
   }
 }
 
 // ── 물체 ───────────────────────────────────────────────────
 
-const STICK_L = 2.6, STICK_R = 0.26;
 const mat = (map) => new THREE.MeshStandardMaterial({ map, roughness: 0.75, metalness: 0 });
-
-/** 윷가락: 반원기둥. 평평한 면이 +Y 를 보면 "젖혀진" 것(밝은 면) */
-function makeStick(i) {
-  const g = new THREE.Group();
-  // 길이 방향 X, 둥근 등이 −Y, 평평한 면이 y=0
-  const geo = new THREE.CylinderGeometry(STICK_R, STICK_R, STICK_L, 32, 1, false, Math.PI / 2, Math.PI);
-  geo.rotateZ(Math.PI / 2);
-  geo.rotateX(-Math.PI / 2);
-  const round = new THREE.Mesh(geo, mat(tex.back));
-  const flat = new THREE.Mesh(new THREE.PlaneGeometry(STICK_L, STICK_R * 2), mat(i === 0 ? tex.flatMarked : tex.flat));
-  flat.rotation.x = -Math.PI / 2;
-  const capMat = new THREE.MeshStandardMaterial({ color: WOOD.backLine, roughness: 0.8 });
-  for (const sx of [-1, 1]) {
-    const cap = new THREE.Mesh(new THREE.CircleGeometry(STICK_R, 24, Math.PI, Math.PI), capMat);
-    cap.position.x = sx * STICK_L / 2;
-    cap.rotation.y = sx * Math.PI / 2;
-    g.add(cap);
-  }
-  g.add(round, flat);
-  // 젖혀지면(평평한 면 위) 둥근 등이 바닥에 닿아 원점이 반지름만큼 뜨고, 엎어지면 평평한 면이 바닥
-  g.userData = { rest: { up: STICK_R, down: 0.01 }, shadow: [0.36, 1.25] };
-  return g;
-}
 
 function makeDie(faceTex, s = 1) {
   // BoxGeometry 재질 순서: +X −X +Y −Y +Z −Z
@@ -150,8 +90,7 @@ function makeDie(faceTex, s = 1) {
   return m;
 }
 
-// 주사위 면 배치(마주보는 면 합 7): +X=2 −X=5 +Y=1 −Y=6 +Z=3 −Z=4
-const DIE_ORDER = [2, 5, 1, 6, 3, 4];
+// BoxGeometry 면 순서: +X −X +Y −Y +Z −Z — 열차 주사위는 METRO_FACES 순서대로 붙인다
 const NORMALS = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
 // 그 면의 그림 "위쪽"이 물체 좌표에서 어느 방향인지(BoxGeometry 의 UV 기준, tools/roller-test.html 로 확인)
 const TEX_UP = [[0, 1, 0], [0, 1, 0], [0, 0, -1], [0, 0, 1], [0, 1, 0], [0, 1, 0]];
@@ -181,41 +120,20 @@ function scene(aspect, dist, lookY = 0) {
   return { sc, cam };
 }
 
-/** 판 종류와 결과로 물체들과 각각의 끝 자세를 만든다. roll 이 없으면 대기 모습. */
+/** 결과로 주사위와 끝 자세를 만든다. roll 이 없으면 대기 모습(급행 면). */
 function build(board, roll, rnd = Math.random) {
-  const items = [];
-  if (board.roller === 'sticks') {
-    const flats = roll?.faces?.length === 4 ? roll.faces : [true, false, true, true];
-    flats.forEach((flat, i) => {
-      const o = makeStick(i);
-      // 2D 윷가락처럼 길이 방향을 앞뒤(Z)로 눕혀 나란히 놓는다
-      const yaw = Math.PI / 2 + (rnd() - 0.5) * 0.35;
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, flat ? 0 : Math.PI, 'YXZ'));
-      const pos = new THREE.Vector3((i - 1.5) * 0.74 + (rnd() - 0.5) * 0.08, flat ? o.userData.rest.up : o.userData.rest.down, (rnd() - 0.5) * 0.5);
-      items.push({ o, q, pos });
-    });
-  } else if (board.roller === 'dice') {
-    const faces = roll?.faces?.length === 2 ? roll.faces : [5, 3];
-    faces.forEach((v, i) => {
-      const o = makeDie(DIE_ORDER.map((n) => tex['pip' + n]));
-      const q = faceUp(DIE_ORDER.indexOf(v), (rnd() - 0.5) * 0.9);
-      items.push({ o, q, pos: new THREE.Vector3(i ? 0.85 : -0.85, 0.5, (rnd() - 0.5) * 0.4) });
-    });
-  } else {
-    const face = roll?.value || 'knight';
-    const o = makeDie(FACES.map((f) => tex['chess-' + f]), 1.35);
-    const q = faceUp(FACES.indexOf(face), (rnd() - 0.5) * 0.4);
-    items.push({ o, q, pos: new THREE.Vector3(0, 0.5 * 1.35, 0) });
-  }
-  return items;
+  const face = roll?.face ?? 'express';
+  const o = makeDie(METRO_FACES.map((f) => tex['metro-' + f]), 1.35);
+  const q = faceUp(METRO_FACES.indexOf(face), (rnd() - 0.5) * 0.4);
+  return [{ o, q, pos: new THREE.Vector3(0, 0.5 * 1.35, 0) }];
 }
 
 /** 물체 높이의 가운데 — 카메라가 바닥이 아니라 물체를 보도록 */
-const midY = (board) => (board.roller === 'chess' ? 0.67 : board.roller === 'dice' ? 0.5 : 0.15);
+const midY = () => 0.67;
 
 /** 물체들이 화면 폭의 cover 만큼 차지하도록 카메라 거리를 정한다 */
 function distFor(board, aspect, cover) {
-  const [sx, sy] = board.roller === 'chess' ? [1.7, 1.7] : board.roller === 'dice' ? [2.9, 1.4] : [2.9, 2.8];
+  const [sx, sy] = [1.7, 1.7];
   // 시야각 28° 일 때 거리 d 에서 보이는 세로 폭 ≈ 0.5 · d, 가로 폭 ≈ 0.5 · d · aspect. 둘 다 넘치지 않게
   return Math.max(sx / (cover * 0.5 * aspect), sy / (Math.min(0.85, cover * 1.6) * 0.5));
 }
@@ -288,9 +206,11 @@ export async function toss(overlay, board, roll, who = 'me', at = null) {
   const items = build(board, roll);
   // 시작 자세: 화면 아래쪽 앞에서 위로 던져 올린다. 각자 다른 회전축으로 몇 바퀴 돈다
   for (const it of items) {
-    it.start = new THREE.Vector3(it.pos.x * 0.4 + (Math.random() - 0.5) * 1.5, 0.8, 2.4 + Math.random() * 0.6);
+    // 주사위 하나짜리(기물·열차)는 커서 카메라에 가까이 오면 판을 가린다 — 판 안쪽에서 출발
+    const single = true;
+    it.start = new THREE.Vector3(it.pos.x * 0.4 + (Math.random() - 0.5) * (single ? 0.8 : 1.5), 0.8, single ? 1.1 + Math.random() * 0.4 : 2.4 + Math.random() * 0.6);
     it.spin = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    it.turns = (board.roller === 'sticks' ? 3 : 2) + Math.floor(Math.random() * 2);
+    it.turns = 2 + Math.floor(Math.random() * 2);
     it.delay = Math.random() * 0.08;
     it.bounced = false;
     sc.add(it.o);
@@ -300,7 +220,7 @@ export async function toss(overlay, board, roll, who = 'me', at = null) {
   overlay.appendChild(view);
   const T = fast ? 620 : 980;
   const t0 = performance.now();
-  const peak = board.roller === 'sticks' ? 2.0 : 1.7; // 너무 높으면 카메라 쪽으로 다가와 커 보인다
+  const peak = 1.2; // 너무 높으면 카메라 쪽으로 다가와 커 보인다
   const pose = (now) => {
     let allDone = true;
     for (const it of items) {
@@ -342,7 +262,7 @@ export function still(container, board, roll) {
   const w = Math.max(120, container.clientWidth || 340), h = Math.max(60, container.clientHeight || 86);
   size(w, h);
   const ly = midY(board);
-  const { sc, cam } = scene(w / h, distFor(board, w / h, board.roller === 'chess' ? 0.4 : 0.6), ly);
+  const { sc, cam } = scene(w / h, distFor(board, w / h, 0.4), ly);
   // 굴림 칸은 납작하니 조금 더 위에서 내려다본다
   cam.position.set(0, ly + (cam.position.y - ly) * 1.08, cam.position.z * 0.62);
   cam.lookAt(0, ly, 0);

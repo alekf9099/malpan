@@ -1,8 +1,6 @@
-// 판 목록. round.js 는 판 id 만 들고 다니고, 규칙은 여기서 찾는다.
+// 판 목록. 이 게임의 판은 노선도 하나 — 날마다 시드로 새로 만든다(round.js). 여기 것은 미리보기·이름용 표본.
 
-import { yutBoard } from './yut.js';
-import { marbleBoard } from './marble.js';
-import { chessBoard } from './chess.js';
+import { makeMetro } from './metro.js';
 
-export const BOARDS = { yut: yutBoard, marble: marbleBoard, chess: chessBoard };
-export const boardOf = (id) => BOARDS[id] || yutBoard;
+export const BOARDS = { metro: makeMetro(1) };
+export const boardOf = () => BOARDS.metro;

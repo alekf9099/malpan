@@ -1,7 +1,5 @@
 // 그림은 전부 SVG 문자열로 만든다. 먹선 3px, 둥근 이음 — 손으로 오린 스티커 느낌을 통일한다.
 
-import { COORDS, EDGES, BIG_NODES } from '../core/board.js';
-
 const INK = '#22201D';
 const S = `stroke="${INK}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"`;
 
@@ -33,113 +31,69 @@ export function face(el, dx) {
   if (c && Math.abs(dx) > 0.5) c.style.setProperty('--flip', dx > 0 ? -1 : 1);
 }
 
-/** 말 id → 그림 종류. 내 말은 m0~m3, 도깨비는 d0~d2. */
+/** 말 id → 그림 종류. 내 말은 m0~m3, 도깨비 열차는 d0~d2. */
 export function kindOf(pieceId) {
   if (pieceId[0] === 'm') return HEROES[Number(pieceId.slice(1)) % HEROES.length];
   return Number(pieceId.slice(1)) % 2 ? 'dokkaebiBlue' : 'dokkaebiRed';
 }
 
-/** 윷가락 하나. flat 이면 평평한 면(밝은 나무), 아니면 둥근 등(어두운 나무). marked 는 빽도 표시. */
-export function stick(flat, marked) {
-  const face = flat
-    ? `<rect x="2" y="2" width="18" height="92" rx="9" fill="#F1D9A8" ${S}/>
-       <path d="M8 20q3 30 0 60M14 14q-2 36 1 66" stroke="#D9B57A" stroke-width="1.6" fill="none"/>
-       ${marked ? `<path d="M7 72l8 8M15 72l-8 8" stroke="#C8342A" stroke-width="3" stroke-linecap="round"/>` : ''}`
-    : `<rect x="2" y="2" width="18" height="92" rx="9" fill="#A8652F" ${S}/>
-       <rect x="6" y="8" width="4" height="78" rx="2" fill="#C98A4F" opacity=".8"/>`;
-  return `<svg class="stick" viewBox="0 0 22 96" aria-hidden="true">${face}</svg>`;
-}
-
-/** 부적 — 노란 부적 종이에 붉은 글자 하나. */
+/** 정기권 — 파란 승차권에 흰 글자 하나와 개찰 구멍. */
 export const CHARM_GLYPH = {
-  ox: '소', magpie: '까', tiger: '범', shortcut: '길', backdo: '빽', mo: '모',
-  reroll: '또', turtle: '거', goal: '끝', bat: '방', gambler: '윷', pouch: '복'
+  ox: '출', magpie: '단', tiger: '검', shortcut: '환', backdo: '완', mo: '급',
+  reroll: '시', turtle: '대', goal: '종', bat: '연', gambler: '쾌', pouch: '적', tape: '봉'
 };
+const CHARM_COLOR = { tiger: '#E0533D', gambler: '#E0533D', mo: '#F2A13D', bat: '#3E9B6A', tape: '#22201D' };
 
 export function charmCard(id) {
   const g = CHARM_GLYPH[id] || '?';
+  const c = CHARM_COLOR[id] || '#2F6BD8';
   return `<svg viewBox="0 0 58 78" aria-hidden="true">
-    <rect x="2" y="2" width="54" height="74" rx="6" fill="#F5D35E" ${S}/>
-    <rect x="7" y="7" width="44" height="64" rx="3" fill="none" stroke="#C8342A" stroke-width="2"/>
-    <path d="M12 16h34M12 62h34" stroke="#C8342A" stroke-width="1.6" stroke-dasharray="3 3"/>
-    <text x="29" y="50" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="30" fill="#C8342A">${g}</text>
+    <rect x="2" y="2" width="54" height="74" rx="8" fill="${c}" ${S}/>
+    <rect x="8" y="10" width="42" height="12" rx="3" fill="#FFFDF7" opacity=".9"/>
+    <path d="M12 16h18" stroke="${c}" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="44" cy="16" r="3" fill="${c}"/>
+    <text x="29" y="56" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="27" fill="#FFFDF7">${g}</text>
+    <path d="M10 66h38" stroke="#FFFDF7" stroke-width="2" stroke-dasharray="3 3" opacity=".8"/>
   </svg>`;
 }
 
+/** 역 개조: 역 표지판 모양 */
 export function tileArt(id) {
   const box = (fill, inner) => `<svg viewBox="0 0 58 78" aria-hidden="true"><rect x="2" y="2" width="54" height="74" rx="10" fill="#FFFDF7" ${S}/><circle cx="29" cy="39" r="17" fill="${fill}" ${S}/>${inner}</svg>`;
   if (id === 'gold') return box('#F2B33D', `<path d="M29 28l3.3 6.8 7.4 1-5.4 5.2 1.3 7.4L29 44.9l-6.6 3.5 1.3-7.4-5.4-5.2 7.4-1z" fill="#FFFDF7" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`);
-  if (id === 'luck') return box('#3E9B6A', `<circle cx="29" cy="39" r="9" fill="#E9B949" stroke="${INK}" stroke-width="2"/><rect x="26" y="36" width="6" height="6" fill="${INK}"/>`);
-  return box('#E0533D', `<path d="M22 32l14 14M36 32L22 46" stroke="#FFFDF7" stroke-width="4" stroke-linecap="round"/>`);
+  if (id === 'luck') return box('#3E9B6A', `<circle cx="29" cy="39" r="9" fill="#E9B949" stroke="${INK}" stroke-width="2"/><text x="29" y="43.5" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="12" fill="${INK}">T</text>`);
+  return box('#E0533D', `<rect x="20" y="33" width="18" height="12" rx="3" fill="#FFFDF7" stroke="${INK}" stroke-width="2"/><path d="M24 39h10" stroke="${INK}" stroke-width="2" stroke-linecap="round"/>`);
 }
 
-export function stickArt(id) {
-  const heavy = id === 'heavy';
+/** 노선 연장권: 노선도가 그려진 파란 표 */
+export function lineArt() {
   return `<svg viewBox="0 0 58 78" aria-hidden="true"><rect x="2" y="2" width="54" height="74" rx="10" fill="#FFFDF7" ${S}/>
-    <g transform="translate(12 10) rotate(${heavy ? -8 : 8} 17 29)">
-      <rect x="0" y="0" width="10" height="56" rx="5" fill="${heavy ? '#7A4A22' : '#F1D9A8'}" ${S} stroke-width="2.4"/>
-      <rect x="12" y="0" width="10" height="56" rx="5" fill="${heavy ? '#7A4A22' : '#F1D9A8'}" ${S} stroke-width="2.4"/>
-      <rect x="24" y="0" width="10" height="56" rx="5" fill="${heavy ? '#7A4A22' : '#F1D9A8'}" ${S} stroke-width="2.4"/>
-    </g></svg>`;
+    <path d="M12 58V30q0-8 8-8h10q8 0 8 8v4" fill="none" stroke="#E0533D" stroke-width="5" stroke-linecap="round"/>
+    <path d="M38 34v24" fill="none" stroke="#2F6BD8" stroke-width="5" stroke-linecap="round" stroke-dasharray="1 9"/>
+    <circle cx="12" cy="58" r="4.5" fill="#FFFDF7" ${S} stroke-width="2.4"/><circle cx="38" cy="34" r="4.5" fill="#FFFDF7" ${S} stroke-width="2.4"/>
+    <text x="40" y="66" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="16" fill="#2F6BD8">+1</text></svg>`;
 }
 
+/** 토큰 — 지하철 토큰(가운데 T) */
 export function coin(size = 18) {
-  return `<svg class="coin" viewBox="0 0 20 20" width="${size}" height="${size}" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="#E9B949" stroke="${INK}" stroke-width="2"/><rect x="7.6" y="7.6" width="4.8" height="4.8" fill="${INK}"/></svg>`;
+  return `<svg class="coin" viewBox="0 0 20 20" width="${size}" height="${size}" aria-hidden="true"><circle cx="10" cy="10" r="8.2" fill="#E9B949" stroke="${INK}" stroke-width="2"/><path d="M6.5 7h7M10 7v7" stroke="${INK}" stroke-width="2.2" stroke-linecap="round"/></svg>`;
 }
 
-// ── 윷판 ─────────────────────────────────────────────────────
-
-export const BOARD_PAD = 28;
-export const BOARD_SIZE = 328;
-
-export function nodeXY(node) {
-  const [x, y] = COORDS[node];
-  const span = BOARD_SIZE - BOARD_PAD * 2;
-  return [BOARD_PAD + x * span, BOARD_PAD + y * span];
-}
-
-const TILE_FILL = { gold: '#F2B33D', luck: '#3E9B6A', trap: '#E0533D' };
-
-/** 무명 천 위에 먹선으로 그린 윷판. tiles 는 개조된 칸. */
-export function boardSvg(tiles) {
-  const lines = EDGES.map(([a, b]) => {
-    const [x1, y1] = nodeXY(a), [x2, y2] = nodeXY(b);
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
-  }).join('');
-  const nodes = Object.keys(COORDS).map((n) => {
-    const [x, y] = nodeXY(n);
-    const big = BIG_NODES.has(n);
-    const tile = tiles[n];
-    const fill = tile ? TILE_FILL[tile] : '#FFFDF7';
-    let mark = '';
-    if (tile === 'gold') mark = `<path transform="translate(${x} ${y}) scale(${big ? 0.8 : 0.55})" d="M0-9l2.6 5.4 5.9.8-4.3 4.1 1 5.9L0 4.4l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8z" fill="#FFFDF7" stroke="${INK}" stroke-width="1.6"/>`;
-    if (tile === 'luck') mark = `<rect x="${x - 3}" y="${y - 3}" width="6" height="6" fill="#FFFDF7" stroke="${INK}" stroke-width="1.5"/>`;
-    if (tile === 'trap') mark = `<path d="M${x - 4} ${y - 4}l8 8M${x + 4} ${y - 4}l-8 8" stroke="#FFFDF7" stroke-width="2.6" stroke-linecap="round"/>`;
-    return `<circle cx="${x}" cy="${y}" r="${big ? 15 : 9}" fill="${fill}" stroke="${INK}" stroke-width="3"/>` +
-      (big && !tile ? `<circle cx="${x}" cy="${y}" r="7" fill="none" stroke="${INK}" stroke-width="2"/>` : '') + mark;
-  }).join('');
-  const [sx, sy] = nodeXY('o0');
-  return `<svg class="mat" viewBox="0 0 ${BOARD_SIZE} ${BOARD_SIZE}" aria-hidden="true">
-    <defs><pattern id="weave" width="6" height="6" patternUnits="userSpaceOnUse">
-      <path d="M0 3h6M3 0v6" stroke="#D9C7A4" stroke-width=".8" opacity=".7"/></pattern></defs>
-    <rect x="4" y="6" width="${BOARD_SIZE - 8}" height="${BOARD_SIZE - 8}" rx="22" fill="${INK}"/>
-    <rect x="4" y="2" width="${BOARD_SIZE - 8}" height="${BOARD_SIZE - 8}" rx="22" fill="#EFE2C8" stroke="${INK}" stroke-width="3"/>
-    <rect x="4" y="2" width="${BOARD_SIZE - 8}" height="${BOARD_SIZE - 8}" rx="22" fill="url(#weave)"/>
-    <rect x="12" y="10" width="${BOARD_SIZE - 24}" height="${BOARD_SIZE - 24}" rx="16" fill="none" stroke="#B8A27A" stroke-width="2" stroke-dasharray="6 5"/>
-    <g stroke="${INK}" stroke-width="3" stroke-linecap="round">${lines}</g>
-    ${nodes}
-    <text x="${sx - 26}" y="${sy - 18}" text-anchor="middle" font-family="Pretendard Variable, sans-serif" font-weight="900" font-size="11" fill="${INK}">출발</text>
+/** 분실물 — 노란 손잡이가 달린 빨간 가방. 역에 잠깐 나타나는 보상. */
+export function bundle(size = 34) {
+  return `<svg viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">
+    <path d="M14 13v-3q0-3 3-3h6q3 0 3 3v3" fill="none" stroke="${INK}" stroke-width="3" stroke-linecap="round"/>
+    <rect x="6" y="13" width="28" height="20" rx="5" fill="#E0533D" ${S}/>
+    <path d="M6 21h28" stroke="#A93524" stroke-width="2"/>
+    <rect x="17" y="18" width="6" height="6" rx="1.5" fill="#F2B33D" stroke="${INK}" stroke-width="2"/>
   </svg>`;
 }
 
-/** 보따리 — 붉은 보자기에 노란 매듭. 판 위에 잠깐 나타나는 보상. */
-export function bundle(size = 34) {
-  return `<svg viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">
-    <path d="M6 22q0-10 14-10t14 10q0 12-14 12T6 22z" fill="#E0533D" ${S}/>
-    <path d="M10 22q4 2 6 7M30 22q-4 2-6 7" stroke="#A93524" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <circle cx="14" cy="25" r="1.6" fill="#F2B33D"/><circle cx="26" cy="26" r="1.6" fill="#F2B33D"/><circle cx="20" cy="30" r="1.6" fill="#F2B33D"/>
-    <path d="M13 13q-4-8 3-8q4 1 4 7q0-6 4-7q7 0 3 8" fill="#F2B33D" ${S} stroke-width="2.4"/>
-    <circle cx="20" cy="13" r="3" fill="#F2B33D" ${S} stroke-width="2.4"/>
+/** 봉쇄 테이프 — 노랑·검정 줄무늬 띠 */
+export function tape(size = 34) {
+  return `<svg viewBox="0 0 40 28" width="${size}" height="${size * 0.7}" aria-hidden="true">
+    <defs><pattern id="tp" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="${INK}"/><rect x="4" width="4" height="8" fill="#F2B33D"/></pattern></defs>
+    <rect x="2" y="8" width="36" height="12" rx="3" fill="url(#tp)" ${S} stroke-width="2.4" transform="rotate(-8 20 14)"/>
   </svg>`;
 }
 

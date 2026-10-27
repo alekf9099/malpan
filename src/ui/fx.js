@@ -29,7 +29,7 @@ export function dust(x, y, n = 6) {
 
 const CONFETTI = ['#E0533D', '#2F6BD8', '#F2B33D', '#3E9B6A', '#FFFDF7'];
 
-/** 폭죽: 골인·라운드 통과 */
+/** 폭죽: 골인·하루 운행 완료 */
 export function confetti(x, y, n = 26, spread = 1) {
   for (let i = 0; i < n; i++) {
     const p = spawn('fx-confetti', x, y);

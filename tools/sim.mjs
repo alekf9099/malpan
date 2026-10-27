@@ -1,24 +1,24 @@
-// 밸런스 시뮬레이터: 정책별로 N 런을 돌려 라운드별 통과율과 클리어율을 본다.
-//   node tools/sim.mjs [런 수=2000] [시작 시드=1] [판 하나만: yut|marble|chess]
+// 밸런스 시뮬레이터: 정책별로 N 원정을 돌려 날마다 통과율과 완주율을 본다.
+//   node tools/sim.mjs [원정 수=2000] [시작 시드=1] [daily: 오늘의 노선만]
 //
 // 정책
-//   random  아무 수나 둔다. 상점은 안 쓴다
-//   greedy  예상 점수가 가장 큰 수. 다시 던지기는 도·빽도일 때. 상점은 안 쓴다
-//   shopper greedy + 상점에서 살 수 있는 부적 중 가장 비싼 것부터 산다(부적 순서는 ×2 를 맨 뒤로)
-//   (random 외에는 원정대 스킬도 쓴다 — 쓸 수 있으면 바로, 판다 방패는 위험한 말이 있을 때)
-//   careful shopper 와 같되, 잡힐 위험이 큰 칸은 점수를 깎아 본다(위험 표시가 쓸모 있는 정보인지 확인용)
+//   random  아무 수나 둔다. 매점·스킬·봉쇄는 안 쓴다
+//   greedy  예상 점수가 가장 큰 수. 다시 굴리기는 1역일 때. 스킬은 쓸 수 있으면 바로(스크린도어는 위험한 말이 있을 때). 매점은 안 쓴다
+//   shopper greedy + 매점에서 살 수 있는 정기권 중 비싼 것부터(×2 정기권은 맨 뒤로)
+//   careful shopper 와 같되, 잡힐 위험이 큰 역은 점수를 깎아 보고, 위험한 말이 선 역에 봉쇄 테이프를 친다
+// 손맛 게이지는 쓰지 않는다(늘 보통 던지기) — 사람이 게이지를 잘 쓰면 이보다 쉽다.
 
-import { createRun, startRound, settleRound, nextRound, buy, ROUNDS as ALL_ROUNDS, BOARD_RUNS } from '../src/core/run.js';
-import { throwYut, applyMove, reroll, legalMoves, useSkill, skillBlocked, threats } from '../src/core/round.js';
+import { createRun, startRound, settleRound, nextRound, buy, DAYS, DAILY } from '../src/core/run.js';
+import { depart, applyMove, reroll, legalMoves, useSkill, skillBlocked, threats, placeBlockade, blockadeBlocked } from '../src/core/round.js';
 import { charmById } from '../src/core/items.js';
 
 const runs = Number(process.argv[2] || 2000);
 const seed0 = Number(process.argv[3] || 1);
-const only = process.argv[4] || null;
-const ROUNDS = only ? BOARD_RUNS[only] : ALL_ROUNDS;
+const daily = process.argv[4] === 'daily';
+const ROUNDS = daily ? DAILY : DAYS;
 
 const policies = {
-  random(r, rng) { return rng.int(legalMoves(r).length); },
+  random(r, rng) { return Math.floor(rng.next() * legalMoves(r).length); },
   greedy(r) {
     const moves = legalMoves(r);
     let best = 0;
@@ -37,9 +37,8 @@ const policies = {
 function playRound(run, policy) {
   const r = run.round;
   let guard = 0;
-  while (r.phase !== 'over' && guard++ < 500) {
+  while (r.phase !== 'over' && guard++ < 600) {
     if (r.phase === 'throw') {
-      // 스킬: 무작위 정책은 안 쓴다. 나머지는 쓸 수 있으면 바로(방패는 위험한 말이 있을 때만)
       if (policy !== 'random') {
         for (const h of ['tiger', 'rabbit', 'parrot', 'panda']) {
           if (skillBlocked(r, h)) continue;
@@ -47,11 +46,15 @@ function playRound(run, policy) {
           useSkill(r, h, run.rng);
         }
       }
-      throwYut(r, run.rng);
+      if (policy === 'careful' && r.blockadesLeft > 0) {
+        const t = threats(r);
+        const worst = Object.entries(t).sort((a, b) => b[1] - a[1])[0];
+        if (worst && worst[1] >= 0.3 && !blockadeBlocked(r, worst[0])) placeBlockade(r, worst[0]);
+      }
+      depart(r, run.rng);
       continue;
     }
-    const tier = r.pending.roll.tier;
-    if (policy !== 'random' && r.rerolls > 0 && tier <= 1) { reroll(r, run.rng); continue; }
+    if (policy !== 'random' && r.rerolls > 0 && r.pending.roll.tier <= 1) { reroll(r, run.rng); continue; }
     const pick = policy === 'random' ? 'random' : policy === 'careful' ? 'careful' : 'greedy';
     applyMove(r, policies[pick](r, run.rng), run.rng);
   }
@@ -63,20 +66,21 @@ function shop(run) {
     .filter((x) => x.v > 0)
     .sort((a, b) => b.v - a.v);
   for (const { i } of order) buy(run, i);
-  // ×2 부적은 맨 뒤로
-  run.charms.sort((a, b) => (charmById(a).id === 'tiger' || charmById(a).id === 'gambler') - (charmById(b).id === 'tiger' || charmById(b).id === 'gambler'));
+  const late = (id) => (id === 'tiger' || id === 'gambler' ? 1 : 0);
+  run.charms.sort((a, b) => late(charmById(a).id) - late(charmById(b).id));
 }
 
 function simulate(policy) {
   const reached = new Array(ROUNDS.length + 1).fill(0);
-  let clears = 0, scoreSum = new Array(ROUNDS.length).fill(0), scoreN = new Array(ROUNDS.length).fill(0);
+  let clears = 0;
+  const scoreSum = new Array(ROUNDS.length).fill(0), scoreN = new Array(ROUNDS.length).fill(0), moveSum = new Array(ROUNDS.length).fill(0);
   for (let k = 0; k < runs; k++) {
-    const run = createRun(seed0 + k, { board: only });
+    const run = createRun(seed0 + k, { daily });
     startRound(run);
     while (true) {
       reached[run.roundNo]++;
       playRound(run, policy);
-      scoreSum[run.roundNo - 1] += run.round.score; scoreN[run.roundNo - 1]++;
+      scoreSum[run.roundNo - 1] += run.round.score; scoreN[run.roundNo - 1]++; moveSum[run.roundNo - 1] += run.round.moves;
       settleRound(run);
       if (run.status === 'lost') break;
       if (run.status === 'won') { clears++; break; }
@@ -84,16 +88,17 @@ function simulate(policy) {
       nextRound(run);
     }
   }
-  return { reached, clears, avg: scoreSum.map((s, i) => Math.round(s / Math.max(1, scoreN[i]))) };
+  const avg = (a) => a.map((s, i) => Math.round(s / Math.max(1, scoreN[i])));
+  return { reached, clears, avg: avg(scoreSum), moves: moveSum.map((s, i) => (s / Math.max(1, scoreN[i])).toFixed(1)) };
 }
 
 const pct = (a, b) => (b ? (100 * a / b).toFixed(1) + '%' : '—').padStart(6);
-console.log(`런 ${runs}개 · 시드 ${seed0}~${seed0 + runs - 1}`);
-console.log('라운드 목표: ' + ROUNDS.map((r, i) => `R${i + 1} ${r.board} ${r.target}${r.boss ? '(보스)' : ''}`).join(' · '));
+console.log(`원정 ${runs}개 · 시드 ${seed0}~${seed0 + runs - 1}${daily ? ' · 오늘의 노선' : ''}`);
+console.log('목표: ' + ROUNDS.map((r) => `${r.day} ${r.target}${r.boss ? '(보스)' : ''}`).join(' · '));
 console.log('');
-console.log('정책      ' + ROUNDS.map((_, i) => `R${i + 1}통과`.padStart(8)).join('') + '   클리어   R별 평균점수');
+console.log('정책      ' + ROUNDS.map((r) => `${r.day}통과`.padStart(8)).join('') + '   완주    평균점수 / 하루 이동 횟수');
 for (const p of ['random', 'greedy', 'shopper', 'careful']) {
-  const { reached, clears, avg } = simulate(p);
+  const { reached, clears, avg, moves } = simulate(p);
   const pass = ROUNDS.map((_, i) => pct(i + 1 < ROUNDS.length ? reached[i + 2] : clears, reached[i + 1]).padStart(8)).join('');
-  console.log(p.padEnd(9) + ' ' + pass + '   ' + pct(clears, runs) + '   ' + avg.join(' / '));
+  console.log(p.padEnd(9) + ' ' + pass + '   ' + pct(clears, runs) + '   ' + avg.join(' / ') + '   (' + moves.join(' / ') + ')');
 }

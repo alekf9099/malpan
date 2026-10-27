@@ -30,7 +30,7 @@ export function hop(el, from, to, { height = 26, duration = 190, squash = true }
   return tween(el, frames, { duration, easing: 'linear' });
 }
 
-/** 하늘에서 떨어져 내려앉기 — 새 말 등장, 보따리 등장 */
+/** 하늘에서 떨어져 내려앉기 — 새 말 등장, 분실물 등장 */
 export function drop(el, { height = 160, duration = 420 } = {}) {
   return tween(el, [
     { transform: `translateY(${-height}px) scale(.9, 1.15)`, opacity: 0 },
@@ -78,7 +78,7 @@ export function flash(container, color = 'rgba(255,253,247,.75)') {
   return tween(f, [{ opacity: 1 }, { opacity: 0 }], { duration: 260 }).then(() => f.remove());
 }
 
-/** 요소를 from 화면 좌표에서 to 화면 좌표로 날린다(엽전·점수 숫자). 끝나면 지운다. */
+/** 요소를 from 화면 좌표에서 to 화면 좌표로 날린다(토큰·점수 숫자). 끝나면 지운다. */
 export function fly(el, from, to, { duration = 600, arc = 60, delay = 0 } = {}) {
   el.style.position = 'absolute';
   el.style.left = to[0] + 'px';

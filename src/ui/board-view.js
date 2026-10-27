@@ -12,9 +12,7 @@ const TOPPAD = 70;   // 판 위쪽 여백(뒤쪽 말·라벨이 잘리지 않게
 
 // 판마다 크기(단위 길이당 px)·바깥 여백·말 크기
 const STYLE = {
-  yut: { scale: 290, inset: 0.07, piece: 58 },
-  marble: { scale: 330, inset: 0.06, piece: 54 },
-  chess: { scale: 270, inset: 0.0, piece: 50 }
+  metro: { scale: 340, inset: 0.05, piece: 52 }
 };
 
 let board = null;
@@ -79,110 +77,85 @@ function slab(top, sideL, sideR) {
 
 const SHOP_FILL = { gold: '#F2B33D', luck: '#3E9B6A', trap: '#E0533D' };
 
-// ── 윷놀이판 ───────────────────────────────────────────────
+// ── 노선도 ─────────────────────────────────────────────────
 
-function drawYut(tiles) {
-  const s = STYLE.yut.inset;
-  const lines = board.edges.map(([a, b]) => {
-    const [x1, y1] = unit(a), [x2, y2] = unit(b);
-    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${INK}" stroke-width="4" stroke-linecap="round" ${NS}/>`;
-  }).join('');
-  const discs = (dark) => board.nodes.map((n) => {
-    const [x, y] = unit(n);
-    const r = board.big.has(n) ? 0.042 : 0.026;
-    const fill = dark ? INK : (SHOP_FILL[tiles[n]] || '#FFFDF7');
-    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" ${dark ? '' : `stroke="${INK}" stroke-width="3" ${NS}`}/>` +
-      (!dark && board.big.has(n) && !tiles[n] ? `<circle cx="${x}" cy="${y}" r="${r * 0.48}" fill="none" stroke="${INK}" stroke-width="2.4" ${NS}/>` : '');
-  }).join('');
-  const [sx, sy] = unit('o0');
-  // 무명천 결 · 가장자리 바느질 · 모서리 매듭
-  let weave = '';
-  for (let i = 1; i < 24; i++) weave += `<line x1="${i / 24}" y1="0" x2="${i / 24}" y2="1" stroke="#DCC9A5" stroke-width="1" ${NS}/><line x1="0" y1="${i / 24}" x2="1" y2="${i / 24}" stroke="#DCC9A5" stroke-width="1" ${NS}/>`;
-  return slab('#EFE2C8', '#C9AE80', '#B39566') + `
-    <g transform="${plane()}">
-      ${weave}
-      <rect x="${s / 2}" y="${s / 2}" width="${1 - s}" height="${1 - s}" fill="none" stroke="#B8A27A" stroke-width="2.4" stroke-dasharray="7 6" ${NS}/>
-      <g>${lines}</g>
-    </g>
-    <g transform="translate(0 4)"><g transform="${plane()}">${discs(true)}</g></g>
-    <g transform="${plane()}">${discs(false)}
-      ${planeText(sx - 0.015, sy + 0.07, 0.04, '출발')}
-      ${planeText(0.5, 0.5 + 0.11, 0.032, '방', { fill: '#8C7A5A' })}
-    </g>`;
-}
-
-// ── 주사위판 ───────────────────────────────────────────────
-
-// 칸 색: 변마다 다른 색 무리(모두의 마블의 도시 색처럼)
-const SIDE_COLORS = ['#F4A7A0', '#9CC7F0', '#A7D8A0', '#F7D27A'];
-const EVENT_STYLE = {
+// 역 표시: 안개가 걷힌 역만 종류가 보인다
+const STATION_STYLE = {
+  transfer: null,
   festival: { fill: '#E0533D', text: '축제', ink: '#FFFDF7' },
-  plane: { fill: '#2F6BD8', text: '비행기', ink: '#FFFDF7' },
-  island: { fill: '#3E9B6A', text: '보물섬', ink: '#FFFDF7' },
-  key: { fill: '#F2B33D', text: '열쇠', ink: INK },
-  trap: { fill: '#22201D', text: '함정', ink: '#F2B33D' },
-  bonus: { fill: '#FFFDF7', text: '+25', ink: '#E0533D' },
-  well: { fill: '#7FC8E8', text: '우물', ink: INK },
-  market: { fill: '#C38FD9', text: '장터', ink: '#FFFDF7' }
+  bonus: { fill: '#FFFDF7', text: '+15', ink: '#E0533D' },
+  treasure: { fill: '#3E9B6A', text: '보물', ink: '#FFFDF7' },
+  cafe: { fill: '#7FC8E8', text: '카페', ink: INK },
+  trap: { fill: '#22201D', text: '공사', ink: '#F2B33D' },
+  express: { fill: '#2F6BD8', text: '급행', ink: '#FFFDF7' }
 };
 
-function drawMarble(tiles) {
-  const inner = STYLE.marble.inset;
-  const side = board.nodes.length / 4;
-  const cell = (1 - 2 * inner) / side;
-  const h = (cell / 2) * 0.93;
-  const tileRect = (n, dark) => {
+function drawMetro(tiles, revealed, state = {}) {
+  const seen = new Set(revealed || board.nodes);
+  const flags = state.flags || {}, done = new Set(state.completed || []);
+  const colorOf = (line) => board.lines[line].color;
+  // 도시 지도 바탕: 블록 격자 + 강 하나(시드마다 굽이가 다르다)
+  let blocks = '';
+  for (let i = 1; i < 12; i++) blocks += `<line x1="${i / 12}" y1="0" x2="${i / 12}" y2="1" stroke="#E2DCCB" stroke-width="1.2" ${NS}/><line x1="0" y1="${i / 12}" x2="1" y2="${i / 12}" stroke="#E2DCCB" stroke-width="1.2" ${NS}/>`;
+  const w = (board.seed % 7) / 7;
+  const river = `<path d="M ${0.15 + w * 0.5} -0.02 C ${0.35 + w * 0.2} 0.3, ${0.05 + w * 0.6} 0.62, ${0.4 + w * 0.3} 1.02" fill="none" stroke="#BFE0F0" stroke-width="22" stroke-linecap="round" ${NS}/>`;
+  const parks = [[0.18, 0.66], [0.72, 0.31], [0.47, 0.03]].map(([x, y], i) =>
+    `<rect x="${x + ((board.seed * (i + 3)) % 5) * 0.01}" y="${y}" width="0.13" height="0.08" rx="0.02" fill="#CFE6C2"/>`).join('');
+  const lit = (a, b) => seen.has(a) || seen.has(b);
+  const lineSeg = (e, under) => {
+    const [x1, y1] = unit(e.a), [x2, y2] = unit(e.b);
+    const shut = board.closed === e.line;
+    if (under) {
+      // 완성한 호선은 금빛 테두리로 빛난다
+      const glow = done.has(e.line) ? `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#F2B33D" stroke-width="21" stroke-linecap="round" opacity=".8" ${NS}/>` : '';
+      return glow + `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${INK}" stroke-width="13" stroke-linecap="round" ${NS}/>`;
+    }
+    const color = shut ? '#8C846F' : lit(e.a, e.b) ? colorOf(e.line) : '#C9C2B0';
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="8" stroke-linecap="round" ${shut ? 'stroke-dasharray="6 7"' : ''} ${NS}/>`;
+  };
+  const station = (n, dark) => {
     const [x, y] = unit(n);
     const big = board.big.has(n);
-    const hh = big ? h * 1.22 : h;
-    const i = Number(n.slice(1));
-    const ev = board.tile(n);
-    let fill = SIDE_COLORS[Math.floor(i / side) % 4];
-    if (ev) fill = EVENT_STYLE[ev.kind].fill;
-    if (n === 'm0') fill = '#FFFDF7';
+    const end = n === board.S || n === board.G;
+    const r = end ? 0.04 : big ? 0.03 : 0.021;
+    if (dark) return `<circle cx="${x}" cy="${y}" r="${r}" fill="${INK}"/>`;
+    const known = seen.has(n);
+    if (!known) {
+      return `<circle cx="${x}" cy="${y}" r="${r}" fill="#E9E4D6" stroke="#9C9482" stroke-width="2.4" stroke-dasharray="4 3" ${NS}/>` +
+        planeText(x, y + 0.009, 0.026, '?', { fill: '#8C846F' });
+    }
+    const t = board.tile(n);
+    const st = t && STATION_STYLE[t.kind];
+    let fill = end ? (n === board.S ? '#FFFDF7' : '#F2B33D') : st ? st.fill : '#FFFDF7';
     if (tiles[n]) fill = SHOP_FILL[tiles[n]];
-    if (dark) return `<rect x="${x - hh}" y="${y - hh}" width="${hh * 2}" height="${hh * 2}" rx="0.01" fill="${INK}"/>`;
-    const label = n === 'm0' ? { text: '출발', ink: '#E0533D' } : ev ? EVENT_STYLE[ev.kind] : null;
-    // 일반 칸에는 도시 깃발 띠(위쪽 1/3)를 그려 모두의 마블 칸처럼
-    const band = !ev && n !== 'm0' && !tiles[n] ? `<rect x="${x - hh}" y="${y - hh}" width="${hh * 2}" height="${hh * 0.6}" fill="rgba(34,32,29,.12)"/>` : '';
-    return `<rect x="${x - hh}" y="${y - hh}" width="${hh * 2}" height="${hh * 2}" rx="0.01" fill="${fill}" stroke="${INK}" stroke-width="2.6" ${NS}/>` + band +
-      (label ? planeText(x, y + (big ? 0.014 : 0.01), big ? 0.034 : 0.022, label.text, { fill: label.ink }) : '');
+    const line = board.lineAt(n);
+    if (board.blocked(n)) fill = '#D8D2C4';
+    let out = `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}" stroke="${line && line.id !== 1 && !st ? line.color : INK}" stroke-width="3" ${NS}/>`;
+    if (big && !end) out += `<circle cx="${x}" cy="${y}" r="${r * 0.55}" fill="none" stroke="${INK}" stroke-width="2.4" ${NS}/>`;
+    if (board.blocked(n)) out += `<path d="M ${x - r * 0.6} ${y - r * 0.6} L ${x + r * 0.6} ${y + r * 0.6} M ${x + r * 0.6} ${y - r * 0.6} L ${x - r * 0.6} ${y + r * 0.6}" stroke="#E0533D" stroke-width="3" stroke-linecap="round" ${NS}/>`;
+    if (end) out += planeText(x, y + 0.011, 0.028, n === board.S ? '출발' : '종점', { fill: n === board.S ? '#E0533D' : INK });
+    else if (st) out += planeText(x, y + 0.008, 0.019, st.text, { fill: st.ink });
+    return out;
   };
-  return slab('#2E5E4E', '#1E3F34', '#173328') + `
+  return slab('#F6F2E7', '#CFC6B1', '#B9AF97') + `
     <g transform="${plane()}">
-      <rect x="${inner + cell * 1.1}" y="${inner + cell * 1.1}" width="${1 - 2 * inner - cell * 2.2}" height="${1 - 2 * inner - cell * 2.2}" rx="0.03" fill="#3B7562" stroke="#9FD4B8" stroke-width="2.4" stroke-dasharray="6 7" ${NS}/>
-      ${planeText(0.5, 0.47, 0.075, '주사위판', { fill: '#F2B33D', weight: 400, family: 'Gasoek One, sans-serif' })}
-      ${planeText(0.5, 0.55, 0.03, '한 바퀴 돌면 골인 · 더블이면 한 번 더', { fill: '#CFE8DC', weight: 800 })}
+      ${blocks}${river}${parks}
+      <g>${board.edges.map((e) => lineSeg(e, true)).join('')}</g>
+      <g>${board.edges.map((e) => lineSeg(e, false)).join('')}</g>
     </g>
-    <g transform="translate(0 5)"><g transform="${plane()}">${board.nodes.map((n) => tileRect(n, true)).join('')}</g></g>
-    <g transform="${plane()}">${board.nodes.map((n) => tileRect(n, false)).join('')}</g>`;
+    <g transform="translate(0 4)"><g transform="${plane()}">${board.nodes.map((n) => station(n, true)).join('')}</g></g>
+    <g transform="${plane()}">${board.nodes.map((n) => station(n, false)).join('')}</g>
+    ${Object.keys(flags).map(flagMark).join('')}`;
 }
 
-// ── 체스판 ─────────────────────────────────────────────────
-
-function drawChess(tiles) {
-  const cols = 8, rows = Math.round(geo.dy * 8);
-  const c1 = 1 / cols;
-  let cells = '';
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-    const light = (c + r) % 2 === 0;
-    let fill = light ? '#F3E3C3' : '#B98A5E';
-    const id = `k${c}${r}`;
-    if (tiles[id]) fill = SHOP_FILL[tiles[id]];
-    cells += `<rect x="${c * c1}" y="${r * c1}" width="${c1}" height="${c1}" fill="${fill}"/>`;
-  }
-  return slab('#F3E3C3', '#8C6239', '#74502D') + `
-    <g transform="${plane()}">
-      ${cells}
-      <rect x="0" y="0" width="1" height="${c1}" fill="rgba(242,179,61,.38)"/>
-      <rect x="0" y="${(rows - 1) * c1}" width="1" height="${c1}" fill="rgba(224,83,61,.25)"/>
-      <rect x="0" y="0" width="1" height="${geo.dy}" fill="none" stroke="${INK}" stroke-width="3" ${NS}/>
-      ${planeText(0.5, c1 / 2 + 0.012, 0.032, '내 골인 줄', { fill: '#7A4A00' })}
-      ${planeText(0.5, (rows - 0.5) * c1 + 0.012, 0.032, '도깨비 골인 줄', { fill: '#7A2318' })}
-    </g>`;
+/** 깃발: 역 위에 꽂힌 작은 노란 깃발(화면 좌표에 세워 그린다) */
+function flagMark(n) {
+  const [x, y] = proj(...unit(n));
+  return `<g transform="translate(${x + 7} ${y - 4})"><line x1="0" y1="0" x2="0" y2="-24" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>
+    <path d="M 0 -24 L 14 -19 L 0 -13 Z" fill="#F2B33D" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/></g>`;
 }
 
-export function boardSvg(tiles = {}) {
-  const body = board.id === 'marble' ? drawMarble(tiles) : board.id === 'chess' ? drawChess(tiles) : drawYut(tiles);
+export function boardSvg(tiles = {}, revealed = null, state = {}) {
+  const body = drawMetro(tiles, revealed, state);
   return `<svg class="mat" viewBox="0 0 ${geo.w} ${geo.h}" width="${geo.w}" height="${geo.h}" aria-hidden="true">${body}</svg>`;
 }

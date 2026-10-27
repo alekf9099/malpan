@@ -36,7 +36,7 @@ git push https://github.com/alekf9099/malpan.git malpan-pages:main
 git branch -D malpan-pages
 ```
 
-새 버전을 올릴 때 `sw.js` 의 `CACHE` 이름(예: `malpan-v7` → `malpan-v8`)을 바꾸면 설치된 앱의 옛 캐시가 지워진다.
+새 버전을 올릴 때 `sw.js` 의 `CACHE` 이름(예: `malpan-v8` → `malpan-v9`)을 바꾸면 설치된 앱의 옛 캐시가 지워진다.
 
 - 안드로이드 크롬: 메뉴 → **앱 설치**(또는 홈 화면에 추가)
 - 아이폰 사파리: 공유 → **홈 화면에 추가**

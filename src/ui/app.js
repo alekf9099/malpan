@@ -172,25 +172,28 @@ function begin(board) {
 // ── 게임 화면 골격 ───────────────────────────────────────────
 
 function buildGame() {
+  // 위: 라운드·점수·흥을 한 장에(hud) / 가운데: 판 / 아래: 원정대·던지기·부적을 한 장에(dock)
   app.innerHTML = `
-    <div class="top" id="top"></div>
-    <div class="scoreboard" id="score">
-      <div class="score-row"><div class="score-now" id="scoreNow">0</div><div class="score-goal">목표<b id="target">0</b></div></div>
-      <div class="bar" id="bar"><i style="width:0%"></i></div>
-      <div class="heung" id="heung"></div>
-      <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
+    <div class="hud" id="hud">
+      <div class="top" id="top"></div>
+      <div class="scoreboard" id="score">
+        <div class="score-row"><div class="score-now" id="scoreNow">0</div><div class="bar" id="bar"><i style="width:0%"></i></div><div class="score-goal">목표<b id="target">0</b></div></div>
+        <div class="heung" id="heung"></div>
+        <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
+      </div>
     </div>
     <div class="board-wrap" id="board"><div id="cam"><div id="mat"></div><div id="layer"></div></div>
       <div class="stamp-spot" id="stampSpot"></div><div class="roller-float" id="roller"></div>
+      <div class="hint" id="hint"></div>
       <button class="btn small white zoom-btn" id="zoom" aria-label="전체 보기">전체</button></div>
-    <div class="trays" id="trays"></div>
-    <div class="controls">
-      <button class="btn main" id="throw">던지기</button>
-      <div class="side"><button class="btn small white" id="reroll"></button></div>
+    <div class="dock" id="dock">
+      <div class="trays" id="trays"></div>
+      <div class="controls">
+        <div class="throw-wrap"><button class="btn main" id="throw">던지기</button><div class="throws" id="pips"></div></div>
+        <div class="side"><button class="btn small white" id="reroll"></button></div>
+      </div>
+      <div class="charms" id="charms"></div>
     </div>
-    <div class="throws" id="pips"></div>
-    <div class="hint" id="hint"></div>
-    <div class="charms" id="charms"></div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   $('#throw').onclick = onThrow;
@@ -538,9 +541,9 @@ function drawControls() {
   $('#pips').innerHTML = Array.from({ length: G.throwsMax }, (_, i) => `<i class="${i < used ? 'used' : ''}"></i>`).join('') +
     Array.from({ length: r.extra }, () => '<i class="extra"></i>').join('');
   const many = r.phase === 'move' && legalMoves(r).length > 6;
-  $('#hint').textContent = G.busy ? '' : r.phase === 'move'
-    ? (many ? '말을 눌러 고르고, 노란 칸을 누르세요 — %는 잡힐 확률' : '노란 칸을 누르세요 — 숫자는 예상 점수, %는 잡힐 확률')
-    : r.phase === 'throw' ? `남은 기회 ${r.throwsLeft}번${r.extra ? ` + 한 번 더 ${r.extra}` : ''}` : '';
+  // 남은 기회는 던지기 단추 안의 눈금이 보여주므로, 안내는 고를 때만
+  $('#hint').textContent = G.busy || r.phase !== 'move' ? ''
+    : many ? '말을 고르고 노란 칸을 누르세요 · %는 잡힐 확률' : '노란 칸을 누르세요 · 숫자는 점수 · %는 잡힐 확률';
 }
 
 function drawCharms(container = $('#charms'), inShop = false) {

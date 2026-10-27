@@ -21,7 +21,19 @@ npm run sim -- 2000            # 밸런스 시뮬레이터: 정책별 라운드 
 
 ## 앱(PWA)으로 설치
 
+**바로 하기: https://alekf9099.github.io/malpan/** (공개 저장소 [alekf9099/malpan](https://github.com/alekf9099/malpan) 의 GitHub Pages)
+
 `manifest.webmanifest` · `sw.js` · `assets/icons/` 가 들어 있어 HTTPS 주소에 올리면 홈 화면에 설치할 수 있다.
+
+배포 갱신 — 작업 저장소의 `yut/` 폴더만 떼어 공개 저장소로 보낸다(몇 분 뒤 Pages 에 반영):
+
+```bash
+git subtree split --prefix=yut -b malpan-pages
+git push https://github.com/alekf9099/malpan.git malpan-pages:main
+git branch -D malpan-pages
+```
+
+새 버전을 올릴 때 `sw.js` 의 `CACHE` 이름(예: `malpan-v6` → `malpan-v7`)을 바꾸면 설치된 앱의 옛 캐시가 지워진다.
 
 - 안드로이드 크롬: 메뉴 → **앱 설치**(또는 홈 화면에 추가)
 - 아이폰 사파리: 공유 → **홈 화면에 추가**

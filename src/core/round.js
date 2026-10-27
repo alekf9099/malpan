@@ -50,6 +50,8 @@ export function createRound(cfg) {
     boss: cfg.boss || null,
     coins: 0,
     escapeUsed: false,
+    skillsUsed: [],
+    shield: false,
     eventPlan: (cfg.events || []).map((e) => ({ ...e, done: false })),
     pending: null,
     phase: 'throw',
@@ -117,7 +119,7 @@ export function legalMoves(r) {
  * pieces 를 넘기면 그 배치로 계산한다 — 내가 움직인 "뒤"의 판을 미리 보려고.
  */
 export function dangerAt(r, node, pieces = r.pieces) {
-  if (node === START || node === HOME) return 0;
+  if (node === START || node === HOME || r.shield) return 0;
   const board = boardFor(r);
   let p = 0;
   for (const { roll, p: pr } of board.rollsFor()) {
@@ -418,13 +420,64 @@ function opponentTurn(r, rng) {
       // 도깨비는 윷판에서 기본 윷을 쓴다(플레이어의 윷가락 개조와 무관)
       const roll = board.roll(rng, { pFlat: DEFAULT_P_FLAT });
       events.push({ type: 'throw', who: 'opp', board: r.boardId, roll, bonus: roll.bonus });
-      const opts = board.options(r.pieces, 'opp', roll);
-      if (opts.length === 0) { events.push({ type: 'noMove', who: 'opp', roll }); continue; }
+      let opts = board.options(r.pieces, 'opp', roll);
+      // 판다의 대나무 방패: 내 말을 잡는 수는 막힌다
+      if (r.shield) opts = opts.filter((o) => { const d = o.path[o.path.length - 1]; return d === HOME || !mine(r).some((p) => p.node === d); });
+      if (opts.length === 0) { events.push({ type: 'noMove', who: 'opp', roll, why: r.shield ? 'shield' : 'none' }); continue; }
       const moved = moveGroup(r, 'opp', chooseOpp(r, opts), roll);
       events.push(...moved);
       again = roll.bonus || moved.some((e) => e.type === 'capture');
       if (r.throwsLeft <= 0 && r.extra <= 0 && moved.some((e) => e.type === 'home')) break;
     }
+  }
+  if (r.shield) { r.shield = false; events.push({ type: 'shieldDown' }); }
+  return events;
+}
+
+// ── 원정대 스킬 ─────────────────────────────────────────────
+
+/** heroId 캐릭터가 지금 스킬을 쓸 수 있나. 쓸 수 없으면 이유 문자열, 쓸 수 있으면 null. */
+export function skillBlocked(r, heroId) {
+  const h = HEROES.find((x) => x.id === heroId);
+  if (!h?.active) return '스킬이 없다';
+  if (r.phase !== 'throw') return '던지기 전에만 쓸 수 있다';
+  if (r.skillsUsed.includes(heroId)) return '이번 라운드에 이미 썼다';
+  const piece = mine(r).find((p) => heroOf(p.id)?.id === heroId);
+  if (!piece || !onBoard(piece)) return '판 위에 나와 있어야 쓸 수 있다';
+  if (h.active.id === 'roar' && !theirs(r).some(onBoard)) return '쫓아낼 도깨비가 없다';
+  if (h.active.id === 'shield' && r.shield) return '이미 방패를 들었다';
+  return null;
+}
+
+/** 스킬을 쓴다. 이벤트 목록: skill(컷인) 다음에 효과 이벤트들. */
+export function useSkill(r, heroId, rng) {
+  const why = skillBlocked(r, heroId);
+  if (why) throw new Error(why);
+  const h = HEROES.find((x) => x.id === heroId);
+  const piece = mine(r).find((p) => heroOf(p.id)?.id === heroId);
+  r.skillsUsed.push(heroId);
+  const events = [{ type: 'skill', hero: heroId, pieceId: piece.id, node: piece.node, skill: h.active.id, name: h.active.name, desc: h.active.desc }];
+  const board = boardFor(r);
+  if (h.active.id === 'roar') {
+    const lead = theirs(r).filter(onBoard).sort((a, b) => board.progress(b.node, 'opp') - board.progress(a.node, 'opp'))[0];
+    const victims = theirs(r).filter((p) => p.node === lead.node);
+    for (const p of victims) { p.node = START; p.prev = null; }
+    events.push({ type: 'roar', pieceId: piece.id, from: piece.node, node: lead.node, victimIds: victims.map((p) => p.id) });
+  } else if (h.active.id === 'hop') {
+    r.extra += 1;
+    events.push({ type: 'hop', pieceId: piece.id });
+  } else if (h.active.id === 'chatter') {
+    for (let i = 0; i < 2; i++) {
+      const taken = new Set(r.pieces.map((p) => p.node));
+      const free = board.nodes.filter((n) => n !== board.entry && !taken.has(n) && !board.tile(n) && !treasureAt(r, n));
+      if (!free.length) break;
+      const node = free[Math.floor(rng.next() * free.length)];
+      r.treasures.push({ node, ttl: TREASURE_TTL });
+      events.push({ type: 'treasureSpawn', node, ttl: TREASURE_TTL });
+    }
+  } else if (h.active.id === 'shield') {
+    r.shield = true;
+    events.push({ type: 'shieldUp', pieceIds: mine(r).filter(onBoard).map((p) => p.id) });
   }
   return events;
 }

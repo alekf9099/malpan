@@ -1,4 +1,4 @@
-# 캐릭터 렌더러용 개발 서버: yut 폴더를 그대로 열고, POST /save/<이름> 을 assets/chars/ 에 저장한다.
+# 개발 서버: yut 폴더를 캐시 없이 연다(고친 파일이 바로 보인다). 캐릭터 렌더러의 POST /save/<이름> 은 assets/chars/ 에 저장한다.
 # 사용: python tools/save-server.py . 7374  → http://127.0.0.1:7374/tools/render-chars.html?save
 import sys, os, re, http.server, functools
 ROOT = os.path.abspath(sys.argv[1]); PORT = int(sys.argv[2])

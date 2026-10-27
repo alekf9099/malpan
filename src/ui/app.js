@@ -4,9 +4,9 @@
 //   anim / fx   점프·찌그러짐·날려 보내기 / 먼지·폭죽·스티커
 
 import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, ROUNDS, BOARD_RUNS, MAX_CHARMS, SHOP_REROLL_COST, pFlatOf } from '../core/run.js';
-import { throwYut, reroll, applyMove, legalMoves, threats, boardFor, nextEventIn, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
+import { throwYut, reroll, applyMove, legalMoves, threats, boardFor, nextEventIn, useSkill, skillBlocked, HEUNG_MAX, TREASURE_COINS } from '../core/round.js';
 import { START, HOME } from '../core/board.js';
-import { TILES, STICKS, charmById } from '../core/items.js';
+import { TILES, STICKS, BOSS_RULES, charmById } from '../core/items.js';
 import { BOARDS } from '../core/boards/index.js';
 import { HEROES as HERO_SKILLS, heroOf } from '../core/heroes.js';
 import { character, act, face, kindOf, charmCard, tileArt, stickArt, coin, HEROES, bundle, traitBadge } from './art.js';
@@ -15,6 +15,7 @@ import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
 import * as FX from './fx.js';
 import * as Roller from './roller.js';
+import * as Roller3D from './roller3d.js';
 import { Sound } from './sound.js';
 
 // 게임 이름은 여기 한 곳에서만 바꾼다
@@ -35,10 +36,10 @@ function title() {
   app.className = 'app';
   document.title = `${GAME_TITLE.main} ${GAME_TITLE.accent}`;
   const cards = HERO_SKILLS.map((h, i) => `
-    <div class="hero-card" style="animation-delay:${i * 90}ms">
+    <button class="hero-card" data-dex="${i}" style="animation-delay:${i * 90}ms">
       <div class="hero-art">${character(HEROES[i], 84)}</div>
-      <div class="hero-txt"><b>${h.name}</b><span class="skill">${h.skill}</span><p>${h.desc}</p></div>
-    </div>`).join('');
+      <div class="hero-txt"><b>${h.name}</b><span class="skill">${h.skill}</span><span class="skill act">스킬 · ${h.active.name}</span><p>${h.desc}</p></div>
+    </button>`).join('');
   app.innerHTML = `
     <div class="title2">
       <div class="title-boards" aria-hidden="true">
@@ -48,8 +49,9 @@ function title() {
       </div>
       <div class="logo2"><span class="l1">${GAME_TITLE.main}</span><span class="l2">${GAME_TITLE.accent}</span></div>
       <div class="sub">${GAME_TITLE.sub}</div>
+      <div class="roster-head"><b>원정대</b><span>카드를 누르면 자세히</span><button class="btn small white" id="dexBtn">캐릭터 도감</button></div>
       <div class="roster">${cards}</div>
-      <div class="villain">${character('dokkaebiRed', 46)}<span>판마다 마지막엔 <b>도깨비 대장</b>이 기다린다</span>${character('dokkaebiBlue', 46)}</div>
+      <button class="villain" data-dex="foes">${character('dokkaebiRed', 46)}<span>판마다 마지막엔 <b>도깨비 대장</b>이 기다린다</span>${character('dokkaebiBlue', 46)}</button>
       <button class="btn" id="start" style="width:100%;height:62px;font-size:26px">원정 떠나기<small class="btn-sub">윷놀이판 → 주사위판 → 체스판 · 6라운드</small></button>
       <div class="pick-title"><i></i><span>판 하나만 골라 짧게</span><i></i></div>
       <div class="board-pick">${PICKS.map((p) => `
@@ -60,8 +62,92 @@ function title() {
           <em>2라운드 · ${BOARD_RUNS[p.id][0].target.toLocaleString()}점~</em>
         </button>`).join('')}</div>
     </div>`;
+  // 3D 굴림 도구를 미리 불러 두고, 준비되면 타이틀 장식도 3D 그림으로 바꾼다
+  Roller3D.load().then((ok) => {
+    if (!ok || !app.querySelector('.title2')) return;
+    const tb = { tb1: 'chess', tb2: 'yut', tb3: 'marble' };
+    for (const [cls, id] of Object.entries(tb)) { const el = app.querySelector('.' + cls); if (el) { el.classList.add('as3d'); Roller3D.still(el, BOARDS[id], null); } }
+    app.querySelectorAll('.pick').forEach((p) => { const art = p.querySelector('.pick-art'); art.classList.add('as3d'); Roller3D.still(art, BOARDS[p.dataset.board], null); });
+  });
+  app.querySelectorAll('[data-dex]').forEach((b) => { b.onclick = () => { Sound.unlock(); Sound.click(); dex(b.dataset.dex === 'foes' ? 'foes' : Number(b.dataset.dex)); }; });
+  $('#dexBtn').onclick = () => { Sound.unlock(); Sound.click(); dex(0); };
   $('#start').onclick = () => begin(null);
   app.querySelectorAll('.pick').forEach((b) => { b.onclick = () => begin(b.dataset.board); });
+}
+
+// ── 캐릭터 도감 ─────────────────────────────────────────────
+
+/** 도감에만 쓰는 소개 글. 규칙(능력·스킬 수치)은 core/heroes.js 에서 읽는다 */
+const DEX_NOTES = {
+  tiger: { line: '앞장서는 사냥꾼', tip: '빨간 도깨비가 내 말 뒤를 쫓아오면 포효로 쫓아내자. 직접 잡으면 맹공으로 배수가 두 배가 된다.' },
+  rabbit: { line: '꾀 많은 도망꾼', tip: '깡충은 언제든 한 번 더. 꾀가 남아 있는 동안 토끼가 낀 묶음은 잡히지 않으니 위험한 칸에 과감히 서도 된다.' },
+  parrot: { line: '소문난 수다쟁이', tip: '판에 보따리가 없을 때 수다로 불러 두고, 앵무새가 직접 주우면 엽전이 두 배다.' },
+  panda: { line: '든든한 받침', tip: '여럿을 업고 위험한 칸에 섰을 때 대나무 방패를 들자. 판다가 낀 묶음은 업기 배수도 두 배다.' }
+};
+const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
+
+/** 도감 화면. which 는 원정대 번호(0~3) 또는 'foes'(도깨비) */
+function dex(which = 0) {
+  app.className = 'app dex-app';
+  const tabs = HERO_SKILLS.map((h, i) => `<button class="dex-tab ${which === i ? 'on' : ''}" data-tab="${i}">${character(HEROES[i], 40)}<span>${h.name}</span></button>`).join('') +
+    `<button class="dex-tab ${which === 'foes' ? 'on' : ''}" data-tab="foes">${character('dokkaebiRed', 40)}<span>도깨비</span></button>`;
+  const stage = (kind) => `
+    <div class="dex-stage">
+      <div class="dex-floor"></div>
+      <div class="dex-char">${character(kind, 210)}</div>
+      <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div>
+    </div>`;
+  let body;
+  if (which === 'foes') {
+    body = `${stage('dokkaebiRed')}
+      <div class="dex-info">
+        <div class="dex-name"><b>도깨비</b><span>놀이판을 빼앗아 간 장난꾸러기들</span></div>
+        <div class="dex-card"><div class="dex-row">${character('dokkaebiRed', 44)}<div><span class="kind">빨간 도깨비 · 사냥꾼</span><p>내 말을 잡는 수를 가장 좋아한다. 잡히면 흥이 꺼지고 그 말은 출발로 돌아간다.</p></div></div></div>
+        <div class="dex-card"><div class="dex-row">${character('dokkaebiBlue', 44)}<div><span class="kind">파란 도깨비 · 도망꾼</span><p>골인을 가장 좋아한다. 파란 도깨비가 골인하면 내 던질 기회가 하나 준다.</p></div></div></div>
+        <div class="dex-card boss"><span class="kind">도깨비 대장 — 판마다 두 번째 라운드</span>
+          <ul>${BOSS_RULES.map((b) => `<li><b>${b.name}</b>${b.desc}</li>`).join('')}</ul></div>
+      </div>`;
+  } else {
+    const h = HERO_SKILLS[which], n = DEX_NOTES[h.id];
+    body = `${stage(HEROES[which])}
+      <div class="dex-info">
+        <div class="dex-name"><b>${h.name}</b><span>${n.line} · ${which + 1}번째로 출발</span></div>
+        <div class="dex-card"><span class="kind">능력 · 늘 켜져 있다</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
+        <div class="dex-card skill"><span class="kind">스킬 · 눌러서 쓴다</span><h3>${h.active.name}</h3><p>${h.active.desc}</p>
+          <div class="dex-rule">라운드에 한 번 · 판 위에 나와 있을 때 · 던지기 전에</div>
+          <button class="btn small yellow" id="dexSkill">스킬 연출 보기</button></div>
+        <div class="dex-card tip"><span class="kind">이렇게 써 보자</span><p>${n.tip}</p></div>
+      </div>`;
+  }
+  app.innerHTML = `
+    <div class="dex">
+      <div class="dex-head"><button class="btn small white" id="dexBack">← 처음으로</button><b>캐릭터 도감</b></div>
+      <div class="dex-tabs">${tabs}</div>
+      <div class="dex-body">${body}</div>
+    </div>
+    <div class="fx-layer" id="fx"></div>`;
+  FX.useLayer($('#fx'));
+  $('#dexBack').onclick = () => { Sound.click(); title(); };
+  app.querySelectorAll('.dex-tab').forEach((t) => { t.onclick = () => { Sound.click(); dex(t.dataset.tab === 'foes' ? 'foes' : Number(t.dataset.tab)); }; });
+  const big = app.querySelector('.dex-char');
+  app.querySelectorAll('.dex-acts button').forEach((b) => {
+    b.onclick = () => {
+      Sound.click();
+      app.querySelectorAll('.dex-acts button').forEach((x) => x.classList.toggle('on', x === b));
+      act(big, b.dataset.act);
+      if (b.dataset.act === 'cheer' || b.dataset.act === 'dance') { const r = big.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / big.offsetWidth; FX.sparkle((r.left - a.left) / k + big.offsetWidth / 2, (r.top - a.top) / k + 40, 8, '#F2B33D'); }
+    };
+  });
+  const sk = $('#dexSkill');
+  if (sk) sk.onclick = async () => {
+    if (sk.disabled) return;
+    sk.disabled = true;
+    Sound.unlock();
+    const h = HERO_SKILLS[which];
+    await skillCutin({ pieceId: 'm' + which, hero: h.id, name: h.active.name, desc: h.active.desc });
+    act(big, 'cheer', 1200);
+    sk.disabled = false;
+  };
 }
 
 const PICKS = [
@@ -95,9 +181,9 @@ function buildGame() {
       <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
     </div>
     <div class="board-wrap" id="board"><div id="cam"><div id="mat"></div><div id="layer"></div></div>
+      <div class="stamp-spot" id="stampSpot"></div><div class="roller-float" id="roller"></div>
       <button class="btn small white zoom-btn" id="zoom" aria-label="전체 보기">전체</button></div>
     <div class="trays" id="trays"></div>
-    <div class="throw-zone" id="sticks"><div id="roller"></div></div>
     <div class="controls">
       <button class="btn main" id="throw">던지기</button>
       <div class="side"><button class="btn small white" id="reroll"></button></div>
@@ -141,12 +227,17 @@ function enterRound() {
   clearStamp();
   hideCalc();
   $('#layer').innerHTML = '';
-  Roller.idle($('#roller'), B());
+  $('#roller').innerHTML = '';
   Camera.attach($('#board'), $('#cam'), canvasSize());
   refresh();
   Camera.overview(0);
   drawZoom();
   if (newBoard) boardIntro(); else roundIntro();
+}
+
+/** 굴림 칸의 대기 모습: 3D 가 준비됐으면 3D, 아니면 2D */
+function idleRoller(el, board) {
+  if (Roller3D.ready()) Roller3D.still(el, board, null); else Roller.idle(el, board);
 }
 
 function refresh() {
@@ -277,6 +368,40 @@ function syncPieces() {
   if (r.phase === 'move' && !G.busy) showOptions();
 }
 
+const HERO_COLOR = { tiger: '#F08A2E', rabbit: '#F7B7C8', parrot: '#E0533D', panda: '#3E9B6A' };
+
+/**
+ * 스킬 컷인: 캐릭터 색 띠가 화면을 가로지르고, 큰 캐릭터가 튀어나오며 스킬 이름 도장이 찍힌다.
+ * 격투 게임의 필살기 컷인처럼 짧고 세게(1초 남짓) — 매 라운드 여러 번 보므로 길면 지친다.
+ */
+async function skillCutin(e) {
+  const h = heroOf(e.pieceId);
+  Sound.skill();
+  const c = document.createElement('div');
+  c.className = 'cutin';
+  c.style.setProperty('--hc', HERO_COLOR[e.hero]);
+  c.innerHTML = `<div class="cut-band"><div class="cut-lines"></div></div>
+    <div class="cut-hero">${character(kindOf(e.pieceId), 190, 'cheer')}</div>
+    <div class="cut-text"><span class="who">${h.name}의 스킬</span><b>${e.name}</b><span class="what">${e.desc}</span></div>`;
+  app.appendChild(c);
+  flash(app);
+  const band = c.querySelector('.cut-band'), hero = c.querySelector('.cut-hero'), text = c.querySelector('.cut-text');
+  await Promise.all([
+    tween(band, [{ transform: 'skewY(-8deg) scaleY(0)' }, { transform: 'skewY(-8deg) scaleY(1.15)', offset: 0.6 }, { transform: 'skewY(-8deg) scaleY(1)' }], { duration: 260, easing: 'ease-out', fill: 'forwards' }),
+    tween(hero, [{ transform: 'translateX(-120%) rotate(-10deg)', opacity: 0 }, { transform: 'translateX(6%) rotate(3deg)', opacity: 1, offset: 0.7 }, { transform: 'translateX(0) rotate(0)', opacity: 1 }], { duration: 380, delay: 60, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'forwards' }),
+    tween(text, [{ transform: 'translateX(120%) scale(1.6)', opacity: 0 }, { transform: 'translateX(-4%) scale(.95)', opacity: 1, offset: 0.7 }, { transform: 'translateX(0) scale(1)', opacity: 1 }], { duration: 380, delay: 140, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'forwards' })
+  ]);
+  Sound.stamp();
+  shake(c, 6, 260);
+  await sleep(700);
+  await Promise.all([
+    tween(hero, [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(140%)', opacity: 0 }], { duration: 260, easing: 'ease-in', fill: 'forwards' }),
+    tween(text, [{ transform: 'translateX(0)', opacity: 1 }, { transform: 'translateX(-140%)', opacity: 0 }], { duration: 260, easing: 'ease-in', fill: 'forwards' }),
+    tween(band, [{ transform: 'skewY(-8deg) scaleY(1)', opacity: 1 }, { transform: 'skewY(-8deg) scaleY(0)', opacity: 0 }], { duration: 260, delay: 60, easing: 'ease-in', fill: 'forwards' })
+  ]);
+  c.remove();
+}
+
 /** 돌발 사건 카드: 판 한가운데에 떨어졌다가 사라진다. 좋은 사건은 원정대가, 나쁜 사건은 도깨비가 들고 온다. */
 async function eventCard(e) {
   if (e.good) Sound.big(); else Sound.boss();
@@ -371,16 +496,30 @@ function drawTrays() {
   const mine = r.pieces.filter((p) => p.owner === 'me');
   const opp = r.pieces.filter((p) => p.owner === 'opp');
   const newIdx = r.phase === 'move' && !G.busy ? legalMoves(r).findIndex((m) => m.kind === 'new') : -1;
-  const waiting = mine.filter((p) => p.node === START);
-  const minis = waiting.map((p, i) =>
-    `<span class="mini ${i === 0 && newIdx >= 0 ? 'ready' : ''}" data-new="${i === 0 && newIdx >= 0 ? newIdx : ''}">${character(kindOf(p.id), 30)}</span>`).join('');
+  const firstWaiting = mine.find((p) => p.node === START);
+  // 원정대 줄: 넷 다 늘 보인다. 대기 중이면 새로 내보내기, 판 위에 있으면 스킬 단추
+  const chips = mine.map((p) => {
+    const h = heroOf(p.id);
+    const state = p.node === START ? 'wait' : p.node === HOME ? 'home' : 'out';
+    const used = r.skillsUsed.includes(h.id);
+    const canSkill = !G.busy && !skillBlocked(r, h.id);
+    const canNew = p === firstWaiting && newIdx >= 0;
+    const badge = state === 'home' ? '<i class="b home">골인</i>' : state === 'wait' ? '<i class="b">대기</i>' : used ? '<i class="b used">씀</i>' : canSkill ? '<i class="b skill">스킬</i>' : '';
+    return `<button class="hero-chip ${state} ${canSkill ? 'can' : ''} ${canNew ? 'ready' : ''} ${used ? 'used' : ''}" data-id="${p.id}" data-new="${canNew ? newIdx : ''}" aria-label="${h.name} · ${h.active.name}">
+      ${character(kindOf(p.id), 36)}${badge}</button>`;
+  }).join('');
   const home = mine.filter((p) => p.node === HOME).length;
   const oppWait = opp.filter((p) => p.node === START).length;
   $('#trays').innerHTML = `
-    <div class="tray"><span class="label">대기</span>${minis || '<span class="label">—</span>'}</div>
+    <div class="tray heroes">${chips}</div>
     <div class="tray"><span class="label">도깨비 대기 ${oppWait}</span><span class="label">골인</span><b style="font-family:var(--display);font-size:20px">${home}/${mine.length}</b></div>`;
-  const ready = $('#trays [data-new]:not([data-new=""])');
-  if (ready) ready.onclick = () => doMove(Number(ready.dataset.new));
+  $('#trays').querySelectorAll('.hero-chip').forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.new !== '') return doMove(Number(b.dataset.new));
+      if (b.classList.contains('can')) return onSkill(heroOf(b.dataset.id).id);
+      heroTip(b.dataset.id);
+    };
+  });
 }
 
 function drawControls() {
@@ -421,11 +560,18 @@ function heroTip(pieceId) {
   const tip = document.createElement('div');
   tip.className = 'tip';
   const used = h.escape && R().escapeUsed ? ' (이번 라운드엔 이미 썼다)' : '';
+  const why = skillBlocked(R(), h.id);
   tip.innerHTML = `<div style="display:flex;gap:10px;align-items:center">${character(kindOf(pieceId), 52)}
     <div><b>${h.name} · ${h.skill}</b><p style="margin:4px 0 0">${h.desc}${used}</p></div></div>
-    <div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn small white" data-a="close">닫기</button></div>`;
+    <div class="skill-line"><span class="kind">스킬</span><b>${h.active.name}</b><span>${h.active.desc}</span></div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px;align-items:center">
+      ${why ? `<span class="skill-why">${why}</span>` : ''}
+      <button class="btn small white" data-a="close">닫기</button>
+      ${why ? '' : `<button class="btn small yellow" data-a="skill">${h.active.name} 쓰기</button>`}</div>`;
   app.appendChild(tip);
-  tip.querySelector('[data-a]').onclick = () => tip.remove();
+  tip.querySelector('[data-a=close]').onclick = () => tip.remove();
+  const go = tip.querySelector('[data-a=skill]');
+  if (go) go.onclick = () => onSkill(h.id);
 }
 
 function charmTip(i, inShop) {
@@ -491,6 +637,13 @@ async function onThrow() {
   await play(throwYut(R(), G.run.rng));
 }
 
+async function onSkill(heroId) {
+  if (G.busy || skillBlocked(R(), heroId)) { Sound.deny(); return; }
+  Sound.unlock();
+  app.querySelector('.tip')?.remove();
+  await play(useSkill(R(), heroId, G.run.rng));
+}
+
 async function onReroll() {
   if (G.busy || R().phase !== 'move' || R().rerolls <= 0) return;
   G.picked = null;
@@ -540,7 +693,7 @@ function stampText(text, color, small) {
   const s = document.createElement('div');
   s.className = 'stamp ' + (color || '');
   s.innerHTML = text + (small ? `<small>${small}</small>` : '');
-  $('#sticks').appendChild(s);
+  $('#stampSpot').appendChild(s);
   G.stampEl = s;
   Sound.stamp();
 }
@@ -614,9 +767,22 @@ const HANDLERS = {
     clearStamp();
     hideCalc();
     Sound.toss(B().roller);
-    const anim = Roller.animate($('#roller'), B(), e.roll, e.who);
-    setTimeout(() => Sound.clatter(B().roller), B().roller === 'sticks' ? 380 : 450);
-    await anim;
+    if (Roller3D.ready()) {
+      // 판 위로 던져 튀고 굴러 멈춘다. 처음 바닥에 닿을 때 달그락
+      const board = $('#board');
+      const hit = () => { Sound.clatter(B().roller); board.removeEventListener('rollhit', hit); };
+      board.addEventListener('rollhit', hit);
+      await Roller3D.toss(board, B(), e.roll, e.who);
+      board.removeEventListener('rollhit', hit);
+    } else {
+      // three.js 를 못 불러왔을 때: 2D 굴림을 판 가운데에 잠깐 띄운다
+      const spot = $('#roller');
+      spot.classList.add('show');
+      const anim = Roller.animate(spot, B(), e.roll, e.who);
+      setTimeout(() => Sound.clatter(B().roller), B().roller === 'sticks' ? 380 : 450);
+      await anim;
+      setTimeout(() => spot.classList.remove('show'), 700);
+    }
     const extra = e.bonus ? (B().roller === 'dice' ? '더블! 한 번 더' : '한 번 더!') : e.rerolled ? '다시 굴렸다' : '';
     if (e.who === 'opp') {
       stampText('도깨비 ' + e.roll.label, 'ink opp');
@@ -624,11 +790,11 @@ const HANDLERS = {
       return;
     }
     stampText(e.roll.label + '!', TIER_COLOR[e.roll.tier] ?? '', extra);
-    if (e.bonus) FX.sparkle($('#sticks').offsetLeft + $('#sticks').offsetWidth - 70, $('#sticks').offsetTop + 40, 8, '#F2B33D');
+    if (e.bonus) { const b = $('#board'); FX.sparkle(b.offsetLeft + b.offsetWidth - 70, b.offsetTop + 50, 8, '#F2B33D'); }
     await sleep(380);
   },
   async noMove(e) {
-    toast(e.who === 'opp' ? '도깨비가 움직일 수 없다' : e.why === 'boss' ? '도깨비 대장: 약한 수는 무효!' : '움직일 말이 없다');
+    toast(e.who === 'opp' ? (e.why === 'shield' ? '대나무 방패에 막혔다!' : '도깨비가 움직일 수 없다') : e.why === 'boss' ? '도깨비 대장: 약한 수는 무효!' : '움직일 말이 없다');
     await sleep(700);
   },
   async oppTurn() {
@@ -803,6 +969,54 @@ const HANDLERS = {
     const b = $('#board');
     await coinsFly([b.offsetLeft + b.offsetWidth / 2, b.offsetTop + b.offsetHeight / 2], e.amount);
   },
+  async skill(e) { await skillCutin(e); },
+  async roar(e) {
+    const at = nodeApp(e.from);
+    Sound.roar();
+    act(pieceEl(e.pieceId), 'cheer', 1200);
+    FX.pow(at[0], at[1] - 60, '어흥!', '#F08A2E', '#22201D', -6);
+    for (let i = 0; i < 4; i++) setTimeout(() => FX.shock(at[0], at[1] - 16, 1 + i * 0.9), i * 110);
+    shake($('#board'), 12, 520);
+    await sleep(260);
+    const dir = nodeXY(e.node)[0] < canvasSize().w / 2 ? -1 : 1;
+    await Promise.all(e.victimIds.map((id, i) => sleep(i * 70).then(() => { act(pieceEl(id), 'sad'); return knockOut(pieceEl(id), dir); })));
+    e.victimIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; act(el, 'idle'); });
+    toast(`도깨비 ${e.victimIds.length}마리가 겁먹고 출발로 달아났다`);
+    await sleep(300);
+  },
+  async hop(e) {
+    const el = pieceEl(e.pieceId);
+    const [x, y] = nodeApp(R().pieces.find((p) => p.id === e.pieceId).node);
+    Sound.home();
+    act(el, 'cheer', 1100);
+    await tween(el, [
+      { transform: 'translateY(0) scale(1)' },
+      { transform: 'translateY(8px) scale(1.2, .75)', offset: 0.15 },
+      { transform: 'translateY(-130px) scale(.9, 1.15) rotate(-12deg)', offset: 0.5 },
+      { transform: 'translateY(6px) scale(1.18, .8)', offset: 0.85 },
+      { transform: 'translateY(0) scale(1)' }
+    ], { duration: 720, easing: 'cubic-bezier(.3,.6,.4,1)' });
+    FX.dust(x, y, 8);
+    FX.sparkle(x, y - 40, 10, '#F2B33D');
+    FX.pow(x, y - 70, '깡충! 한 번 더', '#F7B7C8', '#22201D', 6);
+    drawControls();
+    await sleep(350);
+  },
+  async shieldUp(e) {
+    Sound.stack();
+    for (const id of e.pieceIds) {
+      const el = pieceEl(id);
+      if (!el.querySelector('.shield-bubble')) el.insertAdjacentHTML('beforeend', '<span class="shield-bubble"></span>');
+      const [x, y] = nodeApp(R().pieces.find((p) => p.id === id).node);
+      FX.sparkle(x, y - 30, 6, '#7FD39B');
+    }
+    toast('대나무 방패! 다음 도깨비 차례 동안 잡히지 않는다');
+    await sleep(600);
+  },
+  async shieldDown() {
+    $('#layer').querySelectorAll('.shield-bubble').forEach((b) => { b.classList.add('pop'); setTimeout(() => b.remove(), 300); });
+    await sleep(200);
+  },
   async again() { await sleep(120); },
   async roundOver() { /* play() 이 끝난 뒤 처리 */ }
 };
@@ -901,7 +1115,7 @@ function boardIntro() {
     <div class="board-preview"><div class="roller-mini" id="mini"></div>
       <div style="font-size:13px;font-weight:700;line-height:1.5">${b.id === 'chess' ? '폰·킹은 짧게, 비숍·룩·퀸은 미끄러지듯, 나이트는 뛰어넘는다' : b.id === 'marble' ? '축제·보물섬·황금열쇠 칸을 노리고 함정은 피하라' : '모서리와 가운데에 멈추면 지름길을 탄다'}</div></div>
     <div class="row"><button class="btn" id="go">좋아!</button></div>`);
-  Roller.idle(s.querySelector('#mini'), b);
+  idleRoller(s.querySelector('#mini'), b);
   s.querySelector('#go').onclick = () => { Sound.click(); roundIntro(); };
 }
 

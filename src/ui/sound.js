@@ -83,5 +83,7 @@ export const Sound = {
   bundleGone() { knock(600, { vol: 0.12, dur: 0.2, q: 1 }); },
   big() { [0, 2, 4, 5, 7, 9].forEach((n, i) => tone(PENTA[n], 0.14, { type: 'square', vol: 0.05, delay: i * 0.05 })); knock(140, { vol: 0.5, dur: 0.3, q: 1 }); },
   penalty() { tone(220, 0.25, { type: 'square', vol: 0.06, to: 110 }); },
+  skill() { tone(PENTA[2], 0.5, { type: 'sawtooth', vol: 0.05, to: PENTA[9] }); [0, 3, 5, 8].forEach((n, i) => tone(PENTA[n + 1], 0.12, { type: 'square', vol: 0.05, delay: 0.12 + i * 0.05 })); knock(140, { vol: 0.5, dur: 0.3, q: 1, delay: 0.1 }); },
+  roar() { tone(140, 0.7, { type: 'sawtooth', vol: 0.12, to: 70 }); tone(210, 0.6, { type: 'square', vol: 0.05, to: 90 }); knock(90, { vol: 0.7, dur: 0.5, q: 0.8 }); },
   boss() { tone(110, 0.6, { type: 'sawtooth', vol: 0.08, to: 82 }); knock(120, { vol: 0.5, dur: 0.4, q: 1 }); }
 };

@@ -19,7 +19,7 @@ const PIPS = {
 const pipFace = (n) => `<svg viewBox="0 0 100 100">${PIPS[n].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="${n === 1 ? 13 : 10}" fill="${n === 1 ? '#E0533D' : INK}"/>`).join('')}</svg>`;
 
 /** 체스 기물 실루엣 — 먹선 스티커 화풍에 맞춘 단순한 모양 */
-const PIECE_SVG = {
+export const PIECE_SVG = {
   pawn: '<circle cx="50" cy="30" r="12"/><path d="M38 46h24l6 30H32z"/><rect x="26" y="74" width="48" height="10" rx="4"/>',
   king: '<path d="M46 12h8v8h8v8h-8v8h-8v-8h-8v-8h8z"/><path d="M34 42h32l-4 34H38z"/><rect x="26" y="74" width="48" height="10" rx="4"/>',
   knight: '<path d="M36 76l2-26-10 6-4-10 18-22 14 4 10 20-4 28z"/><circle cx="48" cy="32" r="3" fill="#FFFDF7"/><rect x="26" y="74" width="48" height="10" rx="4"/>',

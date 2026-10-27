@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>굴림 도구 확인</title>
+<!-- 개발용: 3D 굴림 도구의 결과 면이 모두 똑바로 보이는지 한눈에 확인한다 -->
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  body { margin: 0; padding: 12px; background: #F4EADB; font: 13px sans-serif; display: grid; grid-template-columns: repeat(2, 220px); gap: 8px; }
+  .cell { background: #fff8; border: 1px solid #ccc; }
+  .cell div { width: 220px; height: 110px; }
+  .cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .cell span { display: block; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<script type="module">
+import * as R3 from '../src/ui/roller3d.js';
+import { BOARDS } from '../src/core/boards/index.js';
+import { FACES } from '../src/core/boards/chess.js';
+await R3.load();
+const cases = [];
+for (const f of FACES) cases.push(['chess', { value: f }, f]);
+for (let v = 1; v <= 6; v++) cases.push(['marble', { faces: [v, 7 - v] }, `${v} · ${7 - v}`]);
+cases.push(['yut', { faces: [true, false, false, false] }, '빽도(표시 막대만 젖힘)']);
+cases.push(['yut', { faces: [false, false, false, false] }, '모(모두 엎음)']);
+cases.push(['yut', { faces: [true, true, true, true] }, '윷(모두 젖힘)']);
+cases.push(['yut', null, '대기']);
+for (const [b, roll, label] of cases) {
+  const cell = document.createElement('div');
+  cell.className = 'cell';
+  cell.innerHTML = `<div></div><span>${b} · ${label}</span>`;
+  document.body.appendChild(cell);
+  R3.still(cell.firstChild, BOARDS[b], roll);
+}
+// ?toss: 던지는 도중을 몇 순간 멈춰 그린다(판 크기 상자 위에서)
+if (new URLSearchParams(location.search).has('toss')) {
+  document.body.innerHTML = '';
+  document.body.style.gridTemplateColumns = 'repeat(2, 200px)';
+  const rolls = { yut: { faces: [true, false, true, true] }, marble: { faces: [6, 2] }, chess: { value: 'queen' } };
+  for (const b of ['yut', 'marble', 'chess']) for (const t of [0.3, 0.6, 1]) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    cell.innerHTML = `<div style="position:relative;width:200px;height:175px;background:#EADCC4"></div><span>${b} · ${Math.round(t * 100)}%</span>`;
+    document.body.appendChild(cell);
+    await R3.toss(cell.firstChild, BOARDS[b], rolls[b], 'me', t);
+  }
+}
+window.done = true;
+</script>
+</body>
+</html>

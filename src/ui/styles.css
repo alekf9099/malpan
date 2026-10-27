@@ -424,7 +424,7 @@ body {
 /* ── v0.5: PC 가로 화면 — 판은 왼쪽을 가득, 점수·굴림·버튼은 오른쪽 패널 ── */
 body.wide .app.game {
   display: grid; grid-template-columns: minmax(0, 1fr) 400px;
-  grid-template-rows: repeat(7, auto) 1fr; align-content: start;
+  grid-template-rows: repeat(6, auto) 1fr; align-content: start;
 }
 body.wide .app.game > * { grid-column: 2; }
 /* 떠 있는 층(창·안내·효과)은 오른쪽 칸이 아니라 화면 전체를 기준으로 */
@@ -492,3 +492,155 @@ body.wide .event-card .ev-name { font-size: 40px; }
 body:not(.wide) .top { gap: 6px; padding-left: 12px; padding-right: 12px; }
 body:not(.wide) .top .pill { font-size: 12.5px; padding-left: 9px; padding-right: 9px; }
 body.wide .phone-only, body:not(.wide) .wide-only { display: none; }
+
+/* ── v0.6: 원정대 줄 + 스킬 ── */
+.tray.heroes { gap: 5px; }
+.hero-chip {
+  appearance: none; position: relative; width: 42px; height: 42px; padding: 0; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--white); border: 2.5px solid var(--ink); border-radius: 12px; box-shadow: 0 3px 0 var(--ink);
+}
+.hero-chip .char { margin-top: -4px; }
+.hero-chip.wait { background: var(--paper-2); }
+.hero-chip.wait .char { opacity: .85; }
+.hero-chip.home { background: #DDEFE2; }
+.hero-chip.home .char, .hero-chip.used .char { filter: grayscale(.6); opacity: .6; }
+.hero-chip.ready { animation: wiggle 1.1s ease-in-out infinite; background: var(--yellow); }
+.hero-chip.can { background: var(--yellow); box-shadow: 0 3px 0 var(--ink), 0 0 0 3px rgba(242,179,61,.55); animation: skill-glow 1.4s ease-in-out infinite; }
+@keyframes skill-glow { 50% { box-shadow: 0 3px 0 var(--ink), 0 0 0 6px rgba(242,179,61,.25); } }
+.hero-chip .b {
+  position: absolute; left: 50%; bottom: -9px; transform: translateX(-50%); white-space: nowrap; font-style: normal;
+  padding: 0 5px; border-radius: 999px; border: 1.5px solid var(--ink); background: var(--white);
+  font-size: 9.5px; font-weight: 900; line-height: 13px;
+}
+.hero-chip .b.skill { background: var(--red); color: var(--white); }
+.hero-chip .b.used { background: var(--paper-2); color: var(--ink-3); }
+.hero-chip .b.home { background: var(--green); color: var(--white); }
+.trays { height: 52px !important; }
+.skill-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin-top: 8px; padding: 8px 10px; border-radius: 12px; background: var(--paper); border: 2px dashed var(--ink-3); }
+.skill-line b { font-family: var(--display); font-weight: 400; font-size: 18px; }
+.skill-line span:last-child { flex-basis: 100%; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
+.skill-why { font-size: 12px; font-weight: 800; color: var(--ink-3); margin-right: auto; }
+.btn.yellow { background: var(--yellow); color: var(--ink); }
+
+/* 컷인 */
+.cutin { position: absolute; inset: 0; z-index: 95; pointer-events: none; overflow: hidden; }
+.cut-band {
+  position: absolute; left: -10%; right: -10%; top: 50%; height: 190px; margin-top: -95px; overflow: hidden;
+  background: var(--hc); border-top: 5px solid var(--ink); border-bottom: 5px solid var(--ink);
+  transform: skewY(-8deg); transform-origin: 50% 50%;
+}
+.cut-lines {
+  position: absolute; inset: 0; opacity: .35;
+  background: repeating-linear-gradient(90deg, rgba(255,255,255,.9) 0 3px, transparent 3px 26px);
+  animation: cut-speed .25s linear infinite;
+}
+@keyframes cut-speed { to { transform: translateX(-26px); } }
+.cut-hero { position: absolute; left: 4%; top: 50%; margin-top: -122px; filter: drop-shadow(0 6px 0 rgba(34,32,29,.35)); }
+.cut-text { position: absolute; right: 5%; top: 50%; transform-origin: 50% 50%; margin-top: -48px; display: flex; flex-direction: column; align-items: flex-end; text-align: right; max-width: 56%; }
+.cut-text .who { padding: 2px 10px; border-radius: 999px; background: var(--ink); color: var(--yellow); font-size: 13px; font-weight: 900; }
+.cut-text b {
+  margin-top: 4px; font-family: var(--display); font-weight: 400; font-size: 50px; line-height: 1; color: var(--white);
+  -webkit-text-stroke: 2.5px var(--ink); text-shadow: 0 5px 0 var(--ink); word-break: keep-all;
+}
+.cut-text .what { margin-top: 8px; padding: 4px 10px; border-radius: 10px; background: var(--white); border: 2.5px solid var(--ink); font-size: 12.5px; font-weight: 800; word-break: keep-all; }
+body.wide .cut-band { height: 240px; margin-top: -120px; }
+body.wide .cut-hero { left: 14%; margin-top: -140px; }
+body.wide .cut-hero .char { width: 230px !important; height: 230px !important; }
+body.wide .cut-text { right: 14%; max-width: 40%; }
+body.wide .cut-text b { font-size: 72px; }
+
+/* 포효 충격파 · 대나무 방패 */
+.fx-shock { position: absolute; width: 60px; height: 34px; border-radius: 50%; border: 6px solid #F08A2E; box-shadow: 0 0 0 3px var(--ink); }
+.shield-bubble {
+  position: absolute; left: -14%; right: -14%; top: -20%; bottom: -10%; border-radius: 50%; pointer-events: none;
+  border: 3px solid #3E9B6A; background: radial-gradient(circle at 35% 30%, rgba(255,255,255,.7), rgba(127,211,155,.28) 45%, rgba(62,155,106,.18) 70%);
+  box-shadow: inset 0 0 0 2px rgba(255,255,255,.5); animation: bubble-in .35s var(--spring), bubble-bob 1.6s ease-in-out .35s infinite;
+}
+.shield-bubble.pop { animation: bubble-pop .3s ease-out forwards; }
+@keyframes bubble-in { from { transform: scale(0); } }
+@keyframes bubble-bob { 50% { transform: scale(1.05); } }
+@keyframes bubble-pop { to { transform: scale(1.5); opacity: 0; } }
+body.wide .app.game > .cutin { grid-column: auto; grid-row: auto; }
+.hero-txt .skill.act { margin-left: 4px; background: var(--red); color: var(--white); }
+/* 원정대 줄이 높아진 만큼 폰에서는 판을 조금 줄인다 */
+body:not(.wide) .board-wrap { height: 340px !important; }
+
+/* ── v0.6: 3D 굴림 도구 ── */
+#roller { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+.roll-still { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+.roll3d { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2150; pointer-events: none; transition: opacity .3s; }
+img.roll3d { object-fit: contain; }
+.roller-mini.as3d, .roller-mini { overflow: visible; }
+.title-boards .tb.as3d { width: 92px; height: 70px; top: -4px; }
+.title-boards .tb2.as3d { margin-left: -46px; width: 104px; }
+.pick-art.as3d { width: 100%; height: 62px; }
+
+/* ── v0.6: 굴림 칸 없음 — 던지기는 판 위에서, 결과 도장은 판 오른쪽 위 ── */
+.stamp-spot { position: absolute; right: 16px; top: 48px; width: 0; height: 0; z-index: 2300; pointer-events: none; }
+.stamp-spot .stamp { right: 0; font-size: 38px; }
+.stamp-spot .stamp.opp { left: auto; right: 0; font-size: 22px; }
+.roller-float { position: absolute; left: 50%; top: 50%; width: 300px; height: 110px; margin: -55px 0 0 -150px; z-index: 2150;
+  display: flex; align-items: center; justify-content: center; perspective: 520px; pointer-events: none; opacity: 0; transition: opacity .25s; }
+.roller-float.show { opacity: 1; }
+body:not(.wide) .board-wrap { height: 424px !important; }
+body.wide .stamp-spot { right: 26px; top: 60px; }
+body.wide .stamp-spot .stamp { font-size: 54px; }
+
+/* ── v0.6: 캐릭터 도감 ── */
+button.hero-card { appearance: none; font: inherit; color: inherit; cursor: pointer; width: 100%; transition: transform .08s, box-shadow .08s; }
+button.hero-card:hover { transform: translateY(-2px); box-shadow: 0 5px 0 var(--ink); }
+button.hero-card:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+button.villain { appearance: none; border: 0; background: none; font-family: inherit; font-size: 13px; font-weight: 700; color: var(--ink-2); cursor: pointer; padding: 0; white-space: nowrap; }
+.roster-head { display: flex; align-items: center; gap: 8px; width: 100%; margin: 6px 0 8px; }
+.roster-head b { font-family: var(--display); font-weight: 400; font-size: 20px; }
+.roster-head span { flex: 1; text-align: left; font-size: 11.5px; font-weight: 700; color: var(--ink-3); }
+.roster-head .btn { padding: 5px 10px 4px; font-size: 14px; }
+body:not(.wide) .title2 .roster-head { margin: 2px 0 6px; }
+
+.dex-app { display: block; }
+.dex { position: relative; z-index: 1; height: 100%; display: flex; flex-direction: column; padding: 12px 14px 14px; }
+body.wide .dex { width: 820px; margin: 0 auto; }
+.dex-head { display: flex; align-items: center; gap: 10px; }
+.dex-head b { font-family: var(--display); font-weight: 400; font-size: 26px; }
+.dex-tabs { display: flex; gap: 6px; margin: 10px 0 8px; }
+.dex-tab {
+  appearance: none; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0; padding: 4px 2px 5px; cursor: pointer;
+  background: var(--white); border: 2.5px solid var(--ink); border-radius: 14px; box-shadow: 0 3px 0 var(--ink); font: inherit; color: var(--ink);
+}
+.dex-tab span { font-size: 11.5px; font-weight: 900; }
+.dex-tab.on { background: var(--yellow); transform: translateY(2px); box-shadow: 0 1px 0 var(--ink); }
+.dex-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+body.wide .dex-body { flex-direction: row; align-items: flex-start; gap: 18px; overflow: visible; }
+.dex-stage { position: relative; flex: none; height: 250px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+  border: 3px solid var(--ink); border-radius: 22px; box-shadow: 0 4px 0 var(--ink);
+  background: radial-gradient(ellipse at 50% 30%, #FFFDF7, var(--paper-2) 80%); overflow: hidden; }
+body.wide .dex-stage { width: 340px; height: 560px; }
+.dex-floor { position: absolute; left: 50%; bottom: 52px; width: 170px; height: 34px; margin-left: -85px; border-radius: 50%; background: rgba(34,32,29,.16); }
+body.wide .dex-floor { bottom: 150px; width: 220px; margin-left: -110px; }
+.dex-char { position: absolute; left: 50%; bottom: 34px; margin-left: -105px; width: 210px; height: 210px; }
+body.wide .dex-char { bottom: 130px; transform: scale(1.35); transform-origin: 50% 100%; }
+.dex-char .char { filter: drop-shadow(0 4px 0 rgba(34,32,29,.25)); }
+.dex-acts { position: relative; display: flex; gap: 4px; margin-bottom: 10px; }
+.dex-acts button { appearance: none; padding: 4px 9px; border: 2px solid var(--ink); border-radius: 999px; background: var(--white); font: inherit; font-size: 12px; font-weight: 900; color: var(--ink); cursor: pointer; }
+.dex-acts button.on { background: var(--ink); color: var(--yellow); }
+.dex-info { display: flex; flex-direction: column; gap: 8px; flex: 1; min-width: 0; }
+.dex-name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.dex-name b { font-family: var(--display); font-weight: 400; font-size: 32px; line-height: 1; }
+.dex-name span { font-size: 12.5px; font-weight: 800; color: var(--ink-2); }
+.dex-card { padding: 10px 12px; background: var(--white); border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 0 3px 0 var(--ink); }
+.dex-card h3 { margin: 4px 0 0; font-family: var(--display); font-weight: 400; font-size: 22px; line-height: 1.1; }
+.dex-card p { margin: 4px 0 0; font-size: 13px; font-weight: 700; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
+.dex-card.skill { background: #FFF3D1; }
+.dex-card.skill .btn { margin-top: 8px; }
+.dex-card.tip { background: var(--paper); border-style: dashed; box-shadow: none; }
+.dex-rule { margin-top: 6px; display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; }
+.dex-row { display: flex; gap: 10px; align-items: center; }
+.dex-card.boss { background: var(--ink); color: var(--white); }
+.dex-card.boss .kind { background: var(--red); }
+.dex-card.boss ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 5px; }
+.dex-card.boss li { font-size: 12.5px; font-weight: 700; line-height: 1.4; opacity: .95; word-break: keep-all; }
+.dex-card.boss li b { display: inline-block; margin-right: 6px; color: var(--yellow); font-weight: 900; }
+.dex-app > .cutin { z-index: 95; }
+/* 폰에서는 도감 내용이 길어지면 스크롤 — 카드가 눌려 겹치지 않게 */
+body:not(.wide) .dex-body > *, .dex-info > * { flex: none; }

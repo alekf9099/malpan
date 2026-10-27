@@ -5,10 +5,11 @@
 //   random  아무 수나 둔다. 상점은 안 쓴다
 //   greedy  예상 점수가 가장 큰 수. 다시 던지기는 도·빽도일 때. 상점은 안 쓴다
 //   shopper greedy + 상점에서 살 수 있는 부적 중 가장 비싼 것부터 산다(부적 순서는 ×2 를 맨 뒤로)
+//   (random 외에는 원정대 스킬도 쓴다 — 쓸 수 있으면 바로, 판다 방패는 위험한 말이 있을 때)
 //   careful shopper 와 같되, 잡힐 위험이 큰 칸은 점수를 깎아 본다(위험 표시가 쓸모 있는 정보인지 확인용)
 
 import { createRun, startRound, settleRound, nextRound, buy, ROUNDS as ALL_ROUNDS, BOARD_RUNS } from '../src/core/run.js';
-import { throwYut, applyMove, reroll, legalMoves } from '../src/core/round.js';
+import { throwYut, applyMove, reroll, legalMoves, useSkill, skillBlocked, threats } from '../src/core/round.js';
 import { charmById } from '../src/core/items.js';
 
 const runs = Number(process.argv[2] || 2000);
@@ -37,7 +38,18 @@ function playRound(run, policy) {
   const r = run.round;
   let guard = 0;
   while (r.phase !== 'over' && guard++ < 500) {
-    if (r.phase === 'throw') { throwYut(r, run.rng); continue; }
+    if (r.phase === 'throw') {
+      // 스킬: 무작위 정책은 안 쓴다. 나머지는 쓸 수 있으면 바로(방패는 위험한 말이 있을 때만)
+      if (policy !== 'random') {
+        for (const h of ['tiger', 'rabbit', 'parrot', 'panda']) {
+          if (skillBlocked(r, h)) continue;
+          if (h === 'panda' && !Object.values(threats(r)).some((d) => d >= 0.2)) continue;
+          useSkill(r, h, run.rng);
+        }
+      }
+      throwYut(r, run.rng);
+      continue;
+    }
     const tier = r.pending.roll.tier;
     if (policy !== 'random' && r.rerolls > 0 && tier <= 1) { reroll(r, run.rng); continue; }
     const pick = policy === 'random' ? 'random' : policy === 'careful' ? 'careful' : 'greedy';

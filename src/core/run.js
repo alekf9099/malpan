@@ -10,15 +10,15 @@ import { planEvents } from './events.js';
 
 export const ROUNDS = [
   { board: 'yut', target: 400, opp: 2 },
-  { board: 'yut', target: 650, opp: 3, boss: true },
-  { board: 'marble', target: 1100, opp: 2 },
-  { board: 'marble', target: 1400, opp: 3, boss: true },
-  { board: 'chess', target: 1450, opp: 2 },
-  { board: 'chess', target: 1800, opp: 3, boss: true }
+  { board: 'yut', target: 700, opp: 3, boss: true },
+  { board: 'marble', target: 1200, opp: 2 },
+  { board: 'marble', target: 1600, opp: 3, boss: true },
+  { board: 'chess', target: 1650, opp: 2 },
+  { board: 'chess', target: 1950, opp: 3, boss: true }
 ];
 export const BOARD_RUNS = {
   yut: ROUNDS.filter((r) => r.board === 'yut'),
-  marble: [{ board: 'marble', target: 900, opp: 2 }, { board: 'marble', target: 1250, opp: 3, boss: true }],
+  marble: [{ board: 'marble', target: 1000, opp: 2 }, { board: 'marble', target: 1450, opp: 3, boss: true }],
   chess: [{ board: 'chess', target: 360, opp: 2 }, { board: 'chess', target: 600, opp: 3, boss: true }]
 };
 export const THROWS_PER_ROUND = 7;

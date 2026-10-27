@@ -85,6 +85,15 @@ export function pow(x, y, text, color = '#F2B33D', ink = '#22201D', rot = -10) {
   ], { duration: 900, easing: 'cubic-bezier(.2,.8,.3,1)' }).then(() => p.remove());
 }
 
+/** 충격파: 호랑이 포효. k 가 클수록 크게 번진다 */
+export function shock(x, y, k = 1) {
+  const p = spawn('fx-shock', x, y);
+  return tween(p, [
+    { transform: 'translate(-50%,-50%) scale(.2)', opacity: 0.95 },
+    { transform: `translate(-50%,-50%) scale(${2.4 + k})`, opacity: 0 }
+  ], { duration: 560, easing: 'cubic-bezier(.1,.7,.3,1)' }).then(() => p.remove());
+}
+
 /** 반짝이: 업기·흥 */
 export function sparkle(x, y, n = 6, color = '#FFFDF7') {
   for (let i = 0; i < n; i++) {

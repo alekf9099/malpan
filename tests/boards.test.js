@@ -294,3 +294,56 @@ test('판 하나만: 그 판의 두 라운드로 끝나고 두 번째가 보스'
     assert.equal(run.status, 'won');
   }
 });
+
+// ── 원정대 스킬 ──
+import { useSkill, skillBlocked, threats } from '../src/core/round.js';
+
+test('스킬은 판 위에 나온 캐릭터만, 던지기 전에, 라운드에 한 번', () => {
+  const r = round('yut');
+  assert.match(skillBlocked(r, 'rabbit'), /판 위/);
+  r.pieces.find((p) => p.id === 'm1').node = 'o3';
+  assert.equal(skillBlocked(r, 'rabbit'), null);
+  useSkill(r, 'rabbit', createRng(1));
+  assert.equal(r.extra, 1);
+  assert.match(skillBlocked(r, 'rabbit'), /이미/);
+  r.phase = 'move';
+  r.pieces.find((p) => p.id === 'm2').node = 'o4';
+  assert.match(skillBlocked(r, 'parrot'), /던지기 전/);
+});
+
+test('호랑이 포효: 가장 앞선 도깨비 묶음이 출발로', () => {
+  const r = round('yut');
+  r.pieces.find((p) => p.id === 'm0').node = 'o2';
+  assert.match(skillBlocked(r, 'tiger'), /도깨비/);
+  r.pieces.find((p) => p.id === 'd0').node = 'o3';
+  r.pieces.find((p) => p.id === 'd1').node = 'o12';
+  const ev = useSkill(r, 'tiger', createRng(1));
+  assert.deepEqual(ev.find((e) => e.type === 'roar').victimIds, ['d1']);
+  assert.equal(r.pieces.find((p) => p.id === 'd1').node, START);
+  assert.equal(r.pieces.find((p) => p.id === 'd0').node, 'o3');
+});
+
+test('앵무새 수다: 보따리 2개', () => {
+  const r = round('marble');
+  r.pieces.find((p) => p.id === 'm2').node = 'm4';
+  const ev = useSkill(r, 'parrot', createRng(2));
+  assert.equal(ev.filter((e) => e.type === 'treasureSpawn').length, 2);
+  assert.equal(r.treasures.length, 2);
+});
+
+test('판다 대나무 방패: 다음 도깨비 차례 동안 잡히지 않고, 끝나면 풀린다', () => {
+  for (let s = 1; s <= 30; s++) {
+    const r = round('yut');
+    r.pieces.find((p) => p.id === 'm3').node = 'o1';
+    r.pieces.find((p) => p.id === 'm0').node = 'o2';
+    r.pieces.find((p) => p.id === 'd0').node = 'o0';
+    useSkill(r, 'panda', createRng(s));
+    assert.equal(threats(r).o1, 0);
+    r.throwsLeft -= 1;
+    give(r, { value: 1, tier: 1, label: '도', faces: [], bonus: false, chips: 10, back: false });
+    const i = legalMoves(r).findIndex((m) => m.kind === 'new');
+    const ev = applyMove(r, i, createRng(s));
+    assert.ok(!ev.some((e) => e.type === 'capture' && e.who === 'opp'), `seed ${s}`);
+    assert.equal(r.shield, false);
+  }
+});

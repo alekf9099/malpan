@@ -33,8 +33,9 @@ const B = () => boardFor(R());
 
 const STACK_STEP = 21; // 함께 탄 말이 위로 쌓이는 높이
 const TIME_NAME = { rush: '러시아워', night: '심야', last: '막차' };
-const TIME_DESC = { rush: '손님이 많고 이동 칩 +50%', night: '안개가 짙다 — 먼 역은 ?', last: '막차 시간 — 골인 배수 +3' };
 const dayLabel = (r) => (G.run.daily ? '오늘의 노선' : `${r.day}요일`);
+// 점수판에 들어갈 짧은 꼴: 2시간 넘게 남으면 시간만
+const fmtLeftShort = (m) => (m >= 120 ? `${Math.floor(m / 60)}시간` : fmtLeft(m));
 const fmtLeft = (m) => (m >= 60 ? `${Math.floor(m / 60)}시간${m % 60 ? ` ${m % 60}분` : ''}` : `${m}분`);
 
 // ── 타이틀 ───────────────────────────────────────────────────
@@ -207,9 +208,9 @@ function buildGame() {
     <div class="hud" id="hud">
       <div class="top" id="top"></div>
       <div class="scoreboard" id="score">
-        <div class="score-row"><div class="score-now" id="scoreNow">0</div><div class="bar" id="bar"><i style="width:0%"></i></div><div class="score-goal">목표<b id="target">0</b></div></div>
-        <div class="heung" id="heung"></div>
-        <div class="clock" id="clock"></div>
+        <div class="hrow score-row" data-guide="score"><span class="hl hl-score">점수</span><div class="score-now" id="scoreNow">0</div><div class="bar" id="bar"><i style="width:0%"></i></div><div class="score-goal">목표<b id="target">0</b></div></div>
+        <div class="hrow heung" id="heung" data-guide="heung"></div>
+        <div class="hrow clock" id="clock" data-guide="clock"></div>
         <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
       </div>
     </div>
@@ -227,6 +228,7 @@ function buildGame() {
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
+  app.querySelectorAll('.hud [data-guide]').forEach((el) => { el.onclick = () => openGuide(el.dataset.guide); });
   wireGauge($('#throw'));
   $('#reroll').onclick = onReroll;
   $('#blockBtn').onclick = toggleBlockMode;
@@ -284,12 +286,15 @@ function drawTop() {
   const r = R();
   $('#top').innerHTML = `
     <span class="pill">${dayLabel(r)}${G.run.daily ? '' : `<span class="phone-only"> · </span><span class="wide-only">&nbsp;</span>${r.number}/${G.run.rounds.length}`}</span>
-    <span class="pill omen" id="omen" hidden></span>
-    ${r.boss ? `<span class="pill boss" title="도깨비 차장 · ${r.boss.name} — ${r.boss.desc}">차장</span>` : ''}
+    <button class="pill omen" id="omen" data-guide="event" hidden></button>
+    ${r.boss ? '<button class="pill boss" data-guide="boss">차장</button>' : ''}
     <span style="flex:1"></span>
-    <span class="pill" id="coinPill">${coin()} ${G.run.coins}</span>
+    <button class="pill" id="coinPill" data-guide="coin">${coin()} ${G.run.coins}</button>
+    <button class="btn small white icon-btn help-btn" id="help" aria-label="화면 보는 법">?</button>
     <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button>`;
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); drawTop(); };
+  $('#help').onclick = () => openGuide();
+  $('#top').querySelectorAll('[data-guide]').forEach((el) => { el.onclick = () => openGuide(el.dataset.guide); });
   drawOmen();
 }
 
@@ -312,16 +317,20 @@ function drawClock(at = R().clock) {
   if (!el) return;
   const r = R();
   G.clockShown = at;
+  el.innerHTML = clockHtml(r, at);
+  el.classList.toggle('late', r.end - at <= 120);
+}
+
+function clockHtml(r, at) {
   const span = r.end - CLOCK.start;
   const pos = (m) => Math.max(0, Math.min(100, (100 * (m - CLOCK.start)) / span));
   const seg = (a, b, cls) => `<i class="${cls}" style="left:${pos(a)}%;width:${pos(b) - pos(a)}%"></i>`;
   const left = Math.max(0, r.end - at);
   const t = timeOf(r, at);
-  el.innerHTML = `<span class="now">${hhmm(at)}</span>
+  return `<span class="hl hl-clock">시각</span><span class="now">${hhmm(at)}</span>
     <span class="track">${CLOCK.rush.map(([a, b]) => seg(a, b, 'rush')).join('')}${seg(CLOCK.night, CLOCK.last, 'night')}${seg(CLOCK.last, r.end, 'last')}
       <i class="done" style="width:${pos(at)}%"></i><b class="hand" style="left:${pos(at)}%"></b></span>
-    ${TIME_NAME[t] ? `<span class="band time-${t}" title="${TIME_DESC[t]}">${TIME_NAME[t]}</span>` : ''}<span class="left">${left ? `막차까지 ${fmtLeft(left)}` : '운행 끝'}</span>`;
-  el.classList.toggle('late', left <= 120);
+    ${TIME_NAME[t] ? `<span class="band time-${t}">${TIME_NAME[t]}</span>` : ''}<span class="left">${left ? `막차까지 ${fmtLeftShort(left)}` : '운행 끝'}</span>`;
 }
 
 function drawScore(value) {
@@ -335,11 +344,14 @@ function drawScore(value) {
 /** 승객 만족도: 칸 5개. 켜진 만큼 모든 이동에 배수가 더해진다. */
 function drawHeung(flashKind, h = R().heung) {
   const el = $('#heung');
-  el.className = 'heung' + (h >= HEUNG_MAX ? ' max' : '') + (flashKind === 'lost' ? ' lost' : '');
-  el.innerHTML = `<span class="lbl">만족</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
-    `<span class="val">${h ? `배수 +${h}` : '잡기·함께 타기·골인·분실물로 오른다'}</span>`;
-  if (!h) el.querySelector('.val').style.color = 'var(--ink-3)';
+  el.className = 'hrow heung' + (h >= HEUNG_MAX ? ' max' : '') + (flashKind === 'lost' ? ' lost' : '');
+  el.innerHTML = heungHtml(h);
   $('#score').classList.toggle('hot', h >= HEUNG_MAX);
+}
+
+function heungHtml(h) {
+  return `<span class="hl hl-heung">만족도</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
+    `<span class="val ${h ? '' : 'zero'}">${h ? `점수 배수 +${h}` : '배수 +0 · 잡기·골인으로 오른다'}</span>`;
 }
 
 function drawBoard() {
@@ -353,7 +365,8 @@ function drawLineLegend() {
   const b = B(), r = R();
   let el = $('#lineLegend');
   if (!el) { el = document.createElement('div'); el.id = 'lineLegend'; el.className = 'line-legend'; $('#board').appendChild(el); }
-  el.innerHTML = Object.entries(b.lineStations).map(([id, st]) => {
+  el.onclick = () => openGuide('flags');
+  el.innerHTML = '<span class="ll-head">깃발</span>' + Object.entries(b.lineStations).map(([id, st]) => {
     const line = b.lines[id];
     const got = st.filter((n) => r.flags[n]).length;
     const shut = b.closed === Number(id);
@@ -1381,7 +1394,74 @@ function boardIntro() {
     <div class="row"><button class="btn" id="go">알겠다!</button></div>`);
   const mini = s.querySelector('#mini');
   if (Roller3D.ready()) Roller3D.still(mini, B(), null); else Roller.idle(mini);
-  s.querySelector('#go').onclick = () => { Sound.click(); roundIntro(); };
+  s.querySelector('#go').onclick = () => {
+    Sound.click();
+    if (guideSeen()) roundIntro(); else openGuide(null, roundIntro);
+  };
+}
+
+// ── 화면 보는 법 ─────────────────────────────────────────────
+
+const GUIDE_KEY = 'malpan.guide.v1';
+function guideSeen() { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch { return true; } }
+function markGuideSeen() { try { localStorage.setItem(GUIDE_KEY, '1'); } catch { /* 저장 못 해도 괜찮다 */ } }
+
+/**
+ * 게임 화면의 표시 하나하나를 실제와 같은 모양으로 보여 주며 설명한다.
+ * focus 를 주면 그 항목으로 스크롤해 반짝인다(점수판 줄·위쪽 알약을 누르면 그 항목).
+ * then 이 있으면 첫 운행 안내 — 닫은 뒤 그날 소개로 넘어간다.
+ */
+function openGuide(focus = null, then = null) {
+  if (G.busy && !then) return;
+  Sound.click();
+  const r = R(), b = B();
+  const l0 = b.lines[Object.keys(b.lineStations)[0]];
+  const item = (key, mock, title, text) => `
+    <div class="g-item" data-key="${key}"><div class="g-mock">${mock}</div><div class="g-txt"><b>${title}</b><p>${text}</p></div></div>`;
+  const boss = r.boss
+    ? `오늘의 규칙 <b>${r.boss.name}</b> — ${r.boss.id === 'closure' ? `${b.lines[b.closed].name} ${CLOSURE_RULE.desc}` : r.boss.desc}`
+    : '수요일·금요일에만 나온다. 그날만 특별한 규칙이 하나 붙는다.';
+  const s = sheet(`
+    <h2>화면 보는 법</h2>
+    <p>게임 중에도 점수판 줄이나 위쪽 알약, <b>?</b> 단추를 누르면 이 설명이 열린다.</p>
+    <div class="guide">
+      <h3>위 점수판</h3>
+      ${item('score', `<div class="hrow score-row"><span class="hl hl-score">점수</span><div class="score-now">590</div><div class="bar"><i style="width:42%"></i></div><div class="score-goal">목표<b>${r.target.toLocaleString()}</b></div></div>`,
+        '점수 · 목표', '오늘 모은 점수. 막대가 끝까지 차서 <b>목표</b>를 넘기면 그날 운행 완료. 한 번 달릴 때마다 <b>칩 × 배수</b>만큼 오른다.')}
+      ${item('heung', `<div class="hrow heung">${heungHtml(2)}</div>`,
+        '만족도', '잡기·함께 타기·골인·분실물로 한 칸씩 켜진다. 켜진 칸 수만큼 <b>모든 이동 점수의 배수</b>가 커진다. 내 말이 잡히면 0으로 떨어진다.')}
+      ${item('clock', `<div class="hrow clock">${clockHtml({ end: r.end }, 480)}</div>
+          <div class="g-swatch"><span><i class="rush"></i>러시아워</span><span><i class="night"></i>심야</span><span><i class="last"></i>막차</span><span><i class="done"></i>지난 시간</span></div>`,
+        '시각 · 막차까지', `지금 시각과 막차까지 남은 시간. 한 번 달릴 때마다 시간이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>${hhmm(r.end)} 막차</b> 전에 목표를 넘겨야 한다.<br>러시아워 이동 칩 +50% · 심야 안개가 짙다 · 막차 골인 배수 +3`)}
+      <h3>위쪽 알약</h3>
+      ${item('event', '<span class="pill omen">사건 11:00</span>', '돌발 사건 예고', '이 시각이 되면 돌발 사건이 터진다. 무슨 일인지는 그때 안다. 1시간 안으로 다가오면 빨갛게 깜빡인다.')}
+      ${item('boss', '<span class="pill boss">차장</span>', '도깨비 차장', boss)}
+      ${item('coin', `<span class="pill">${coin()} ${G.run.coins}</span>`, '토큰', '하루를 마치면 <b>역 매점</b>에서 정기권·역 개조·노선 연장권을 사는 돈. 일찍 끝내 남긴 운행 시간만큼 더 받는다.')}
+      <h3>노선도 위</h3>
+      ${item('flags', `<span class="line-legend g-legend"><span class="ll-head">깃발</span><span class="ll" style="--lc:${l0.color}"><i></i><b>${l0.name}</b><em>1/4</em></span></span>`,
+        '호선 깃발', `내 말이 멈춘 역에 깃발이 꽂힌다(꽂은 역 / 그 호선 역 수). 한 호선을 모두 꽂으면 <b>호선 완성</b> — 점수 +${METRO.completeScore}, 그 호선 효과 2배.`)}
+      ${item('target', '<span class="g-tag"><span class="gain hot">+120<i class="risk">12%</i><i class="mins">75분</i></span></span>',
+        '갈 수 있는 역', '노란 고리가 갈 수 있는 역. 이름표는 <b>예상 점수 · 잡힐 확률</b>(초록 "안전"이면 걱정 없음) <b>· 걸리는 시간</b>. 고리를 누르면 그 역으로 달린다.')}
+      ${item('marks', `<span class="g-marks"><span class="g-warn">!</span><span class="g-head" style="--lc:${l0.color}">${l0.name}행</span><span class="g-person">${PERSON(l0.color)}</span><span class="g-tape">${tape(30)}</span></span>`,
+        '말 위 표시', '<b>!</b> 다음 도깨비 차례에 잡힐 수 있다 · <b>○호선행</b> 도깨비 열차가 다음 갈림길에서 탈 호선 · <b>사람</b> 손님(태워서 원하는 호선 역에 내려 주기) · <b>테이프</b> 봉쇄된 역')}
+      <h3>아래 조작판</h3>
+      ${item('dock', `<span class="g-dock"><span class="hero-chip wait">${character(HEROES[0], 30)}<i class="b">차고</i></span><span class="hero-chip out can">${character(HEROES[1], 30)}<i class="b skill">스킬</i></span></span>`,
+        '원정대', '<b>차고</b>에 있는 말은 눌러서 노선에 내보낸다. 노선 위에서 <b>스킬</b> 표시가 뜬 말을 누르면 하루 한 번 스킬을 쓴다.')}
+      ${item('throw', '<span class="btn main g-throw">열차 출발</span>',
+        '열차 출발 · 다시 굴리기 · 봉쇄', '<b>열차 출발</b>을 꾹 눌렀다 떼면 손맛 게이지(초록에서 떼면 좋은 결과). <b>다시 굴리기</b>는 결과가 마음에 안 들 때, <b>봉쇄 테이프</b>는 출발 전에 역 하나를 3시간 막는다.')}
+    </div>
+    <div class="row"><button class="btn" id="gOk">${then ? '알겠다! 오늘 운행 보기' : '닫기'}</button></div>`);
+  s.classList.add('guide-sheet');
+  s.querySelector('#gOk').onclick = () => {
+    Sound.click();
+    markGuideSeen();
+    closeSheet();
+    if (then) then();
+  };
+  if (focus) {
+    const el = s.querySelector(`.g-item[data-key="${focus}"]`);
+    if (el) { el.classList.add('focus'); requestAnimationFrame(() => el.scrollIntoView({ block: 'center' })); }
+  }
 }
 
 /** 그날 소개: 목표·도깨비·운행 시계·봉쇄·호선 특화·도깨비 차장 */

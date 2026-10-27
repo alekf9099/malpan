@@ -2,7 +2,7 @@
 //
 // 훅
 //   score(ctx)       이동 한 번의 점수 계산 중. ctx.chip(n, 출처) / ctx.mult(n, 출처) / ctx.times(k, 출처)
-//   dayStart(r)      하루 운행 시작. r.end(막차 시각) / r.rerolls / r.blockadesLeft 를 늘릴 수 있다
+//   dayStart(r)      하루 운행 시작. r.end(막차 시각) / r.rerolls / r.blockadesLeft / r.tollRate / r.priceRate 를 바꿀 수 있다
 //   dayWin(run)      하루를 목표대로 마친 직후. run.coins(토큰)를 늘릴 수 있다
 //
 // 열차 주사위 결과는 등급으로 본다: 1 = 1역 · 2 = 2역 · 3 = 3역 · 4 = 4~5역 · 5 = 급행
@@ -25,7 +25,7 @@ export const CHARMS = [
   },
   {
     id: 'shortcut', name: '환승 정기권', price: 5,
-    desc: '지선으로 갈아타면 배수 +2',
+    desc: '달리는 중에 다른 호선으로 갈아타면 배수 +2',
     score(c) { if (c.onDiagonal) c.mult(2, this.name); }
   },
   {
@@ -72,21 +72,25 @@ export const CHARMS = [
     id: 'tape', name: '봉쇄 테이프 묶음', price: 5,
     desc: '하루마다 봉쇄 테이프 +1',
     dayStart(r) { r.blockadesLeft += 1; }
+  },
+  {
+    id: 'lease', name: '임대 계약서', price: 6,
+    desc: '내 역 통행료 +50%',
+    dayStart(r) { r.tollRate *= 1.5; }
+  },
+  {
+    id: 'deed', name: '등기 권리증', price: 5,
+    desc: '역 값 25% 할인',
+    dayStart(r) { r.priceRate *= 0.75; }
   }
 ];
 
-/** 역 개조: 다음 날 노선도의 빈 역 하나에 붙는다 */
-export const TILES = [
-  { id: 'gold', name: '황금 역', price: 5, desc: '내 말이 멈추면 배수 +2' },
-  { id: 'luck', name: '토큰 역', price: 3, desc: '내 말이 멈추면 토큰 +1' },
-  { id: 'trap', name: '검표 역', price: 4, desc: '도깨비 열차가 멈추면 차고로 돌아간다' }
-];
 
-/** 매점: 노선 연장권 — 다음 날 노선도에 갈래가 하나 더 생긴다 */
-export const LINE_PASS = { id: 'linePass', name: '노선 연장권', price: 4, desc: '다음 날 노선도에 갈래 +1' };
+/** 매점: 노선 연장권 — 다음 날 구간이 넓어진다 */
+export const LINE_PASS = { id: 'linePass', name: '노선 연장권', price: 4, desc: '다음 날 구간이 넓어져 돌아가는 길이 늘어난다' };
 
 /** 도깨비 차장이 거는 규칙(보스 날). round.js 가 id 로 분기한다. 금요일은 늘 운행 중지. */
-export const CLOSURE_RULE = { id: 'closure', name: '운행 중지', desc: '호선 하나가 운행 중지 — 그 역은 아무도 지나갈 수 없다' };
+export const CLOSURE_RULE = { id: 'closure', name: '운행 중지', desc: '호선 하나가 운행 중지 — 그 호선으로는 아무도 달릴 수 없다' };
 export const BOSS_RULES = [
   { id: 'noDo', name: '서행 운전', desc: '1역이 나오면 움직이지 못한다' },
   { id: 'noStack', name: '합승 금지', desc: '함께 타도 배수가 오르지 않는다' },

@@ -83,5 +83,9 @@ export const Sound = {
   penalty() { tone(220, 0.25, { type: 'square', vol: 0.06, to: 110 }); },
   skill() { tone(PENTA[2], 0.5, { type: 'sawtooth', vol: 0.05, to: PENTA[9] }); [0, 3, 5, 8].forEach((n, i) => tone(PENTA[n + 1], 0.12, { type: 'square', vol: 0.05, delay: 0.12 + i * 0.05 })); knock(140, { vol: 0.5, dur: 0.3, q: 1, delay: 0.1 }); },
   roar() { tone(140, 0.7, { type: 'sawtooth', vol: 0.12, to: 70 }); tone(210, 0.6, { type: 'square', vol: 0.05, to: 90 }); knock(90, { vol: 0.7, dur: 0.5, q: 0.8 }); },
+  /** 역 인수: 금전등록기 — 땡 하고 동전이 쏟아진다 */
+  buy() { knock(2400, { vol: 0.22, dur: 0.05, q: 14 }); [0, 2, 4, 7, 9].forEach((n, i) => tone(PENTA[n], 0.12, { type: 'square', vol: 0.05, delay: 0.06 + i * 0.06 })); tone(PENTA[9] * 2, 0.4, { type: 'triangle', vol: 0.07, delay: 0.38 }); },
+  /** 통행료가 들어온다: 짤랑짤랑 */
+  toll(big = false) { const n = big ? 6 : 3; for (let i = 0; i < n; i++) { tone(1318 + i * 120, 0.06, { type: 'square', vol: 0.045, delay: i * 0.07 }); tone(1760 + i * 120, 0.1, { type: 'square', vol: 0.04, delay: i * 0.07 + 0.04 }); } },
   boss() { tone(110, 0.6, { type: 'sawtooth', vol: 0.08, to: 82 }); knock(120, { vol: 0.5, dur: 0.4, q: 1 }); }
 };

@@ -1,7 +1,7 @@
 // 2D 열차 주사위 — three.js(roller3d)를 못 불러왔을 때 쓰는 대체 그림과, 타이틀 장식 아이콘.
 
 import { tween, sleep } from './anim.js';
-import { METRO_FACES } from '../core/boards/metro.js';
+import { METRO_FACES } from '../core/boards/seoul.js';
 
 const INK = '#22201D';
 

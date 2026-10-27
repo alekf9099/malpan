@@ -3,27 +3,30 @@
 //   roller3d    3D 열차 주사위 (roller 는 three.js 를 못 불러왔을 때의 2D 대체)
 //   anim / fx   점프·찌그러짐·날려 보내기 / 먼지·폭죽·스티커
 
-import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, dailySeed, DAYS, MAX_CHARMS, SHOP_REROLL_COST } from '../core/run.js';
+import { createRun, startRound, settleRound, nextRound, buy, sellCharm, moveCharm, rerollShop, dailySeed, routeFor, networkGrowth, DAYS, MAX_CHARMS, SHOP_REROLL_COST } from '../core/run.js';
 import {
   depart, reroll, applyMove, legalMoves, threats, boardFor, nextEventAt, useSkill, skillBlocked,
-  placeBlockade, blockadeBlocked, timeOf, minutesLeft, hhmm, CLOCK, BLOCKADE, HEUNG_MAX, TREASURE_COINS, METRO
+  placeBlockade, blockadeBlocked, timeOf, minutesLeft, hhmm, CLOCK, BLOCKADE, buyStation, tollFor
 } from '../core/round.js';
 import { START, HOME } from '../core/board.js';
-import { TILES, BOSS_RULES, CLOSURE_RULE, LINE_PASS, charmById } from '../core/items.js';
+import { BOSS_RULES, CLOSURE_RULE, LINE_PASS, charmById } from '../core/items.js';
+import { stationToll, links, chainOf, holdings, CHAIN_MAX, OWN_STOP_MULT_MAX, PRICE } from '../core/estate.js';
 import { BOARDS } from '../core/boards/index.js';
+import { INCIDENTS } from '../core/incidents.js';
 import { HEROES as HERO_SKILLS, heroOf } from '../core/heroes.js';
-import { character, act, face, kindOf, charmCard, tileArt, lineArt, coin, HEROES, bundle, tape, traitBadge } from './art.js';
-import { useBoard, boardSvg, nodeXY, depth, pieceSize, canvasSize } from './board-view.js';
+import { character, act, face, kindOf, charmCard, lineArt, coin, HEROES, tape, traitBadge, ownerFlag, goblinFlag } from './art.js';
+import { useBoard, boardSvg, nodeXY, depth, pieceSize, canvasSize, tagSide } from './board-view.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
 import * as FX from './fx.js';
 import * as Roller from './roller.js';
 import * as Roller3D from './roller3d.js';
 import * as Records from './records.js';
+import * as Stations from './stations.js';
 import { Sound } from './sound.js';
 
 // 게임 이름은 여기 한 곳에서만 바꾼다
-export const GAME_TITLE = { main: '도깨비', accent: '노선도', sub: '막차 전에 손님을 실어 나르고, 도깨비 열차를 막아라' };
+export const GAME_TITLE = { main: '도깨비', accent: '노선도', sub: '서울 지하철, 막차 전에 원정대를 종착역까지 — 도깨비 열차를 막아라' };
 
 const app = document.getElementById('app');
 const G = { run: null, busy: false, stampEl: null, picked: null, boardId: null, blockMode: false };
@@ -56,6 +59,7 @@ function title() {
       <div class="title-boards" aria-hidden="true"><span class="tb tb2">${Roller.metroDieIcon()}</span></div>
       <div class="logo2"><span class="l1">${GAME_TITLE.main}</span><span class="l2">${GAME_TITLE.accent}</span></div>
       <div class="sub">${GAME_TITLE.sub}</div>
+      ${(() => { const h = holdings(Stations.load()); return `<button class="my-net" id="netPill">${ownerFlag(22)}<span>내 노선망</span><b>역 ${h.count}곳</b><em>${h.best > 1 ? `최대 ${h.best}역 연결` : '역을 이어서 사 보자'}</em></button>`; })()}
       <button class="my-rank" id="rankPill">${(() => { const m = Records.summary(); return `<b>${m.title.name}</b><span>누적 승점 ${m.total.toLocaleString()}</span><i>랭킹 보기 ›</i>`; })()}</button>
       <div class="roster-head"><b>원정대</b><span>카드를 누르면 자세히</span><button class="btn small white" id="dexBtn">캐릭터 도감</button></div>
       <div class="roster">${cards}</div>
@@ -73,6 +77,7 @@ function title() {
   app.querySelectorAll('[data-dex]').forEach((b) => { b.onclick = () => { Sound.unlock(); Sound.click(); dex(b.dataset.dex === 'foes' ? 'foes' : Number(b.dataset.dex)); }; });
   $('#dexBtn').onclick = () => { Sound.unlock(); Sound.click(); dex(0); };
   $('#rankPill').onclick = () => { Sound.unlock(); Sound.click(); ranking(); };
+  $('#netPill').onclick = () => { Sound.unlock(); Sound.click(); ranking(); };
   $('#start').onclick = () => begin(false);
   $('#daily').onclick = () => begin(true);
 }
@@ -104,10 +109,32 @@ function ranking() {
         <div class="bar rank-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `${next.name}까지 ${(next.min - m.total).toLocaleString()}점` : '가장 높은 칭호에 올랐다'}</p>
       </div>
+      ${netCard()}
       <div class="rank-rule">하루 목표 달성 +10 · 보스 날 +10 · 목표 초과 10%마다 +1 · 남은 운행 1시간마다 +2 · 5일 완주 +100 (오늘의 노선은 절반)</div>
       <div class="rank-list">${rows}</div>
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
+  const rs = $('#netReset');
+  if (rs) rs.onclick = () => {
+    if (!rs.dataset.sure) { rs.dataset.sure = '1'; rs.textContent = '정말 전부 놓을까? 한 번 더 누르면 초기화'; Sound.deny(); return; }
+    Stations.reset(Stations.load());
+    Sound.penalty();
+    ranking();
+  };
+}
+
+/** 랭킹 화면의 내 노선망: 가진 역·값·연결 구간 */
+function netCard() {
+  const owned = Stations.load();
+  const h = holdings(owned);
+  const at = links(owned).at;
+  const names = Object.keys(owned).filter((n) => owned[n]).sort();
+  return `<div class="net-card">
+      <div class="net-head">${ownerFlag(26)}<b>내 노선망</b><span>산 역은 원정이 끝나도 계속 내 것</span></div>
+      <div class="net-stats"><div><b>${h.count}</b><span>역</span></div><div><b>${h.value.toLocaleString()}</b><span>점어치</span></div><div><b>×${Math.min(CHAIN_MAX, h.best || 1)}</b><span>최대 연결</span></div></div>
+      ${names.length ? `<div class="net-list">${names.map((n) => `<i class="${at[n]?.len > 1 ? 'mono' : ''}">${n}${at[n]?.len > 1 ? ` ×${Math.min(CHAIN_MAX, at[n].len)}` : ''}</i>`).join('')}</div>` : '<p class="rank-empty">아직 산 역이 없다. 운행 중 멈춘 역을 점수로 인수해 보자.</p>'}
+      ${names.length ? '<button class="btn small white" id="netReset">내 노선망 초기화</button>' : ''}
+    </div>`;
 }
 
 // ── 캐릭터 도감 ─────────────────────────────────────────────
@@ -116,7 +143,7 @@ function ranking() {
 const DEX_NOTES = {
   tiger: { line: '첫차를 모는 기관사', tip: '빨간 도깨비 열차가 내 말 뒤를 쫓아오면 경적으로 차고에 돌려보내자. 직접 들이받으면 돌파로 배수가 두 배가 된다.' },
   rabbit: { line: '발 빠른 역무원', tip: '추가 운행은 시간이 들지 않는 공짜 운행이다. 막차가 가까울 때 아껴 두면 한 번을 더 달린다. 안전 요원이 남아 있으면 토끼가 낀 묶음은 잡히지 않는다.' },
-  parrot: { line: '목청 좋은 안내원', tip: '승객 호출로 손님을 불러 태우고, 앵무새가 직접 내려 주면 배달 보상이 두 배다.' },
+  parrot: { line: '목청 좋은 안내원', tip: '승객 호출로 역 두 곳에 인파를 부르자. 앵무새가 인파 몰린 역에 서면 칩이 한 번 더 붙는다.' },
   panda: { line: '든든한 보안관', tip: '여럿이 함께 타고 위험한 역에 섰을 때 스크린도어를 닫자. 판다가 낀 묶음은 함께 타기 배수도 두 배다.' }
 };
 const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
@@ -137,7 +164,7 @@ function dex(which = 0) {
     body = `${stage('dokkaebiRed')}
       <div class="dex-info">
         <div class="dex-name"><b>도깨비 열차</b><span>종점 쪽 차고에서 거꾸로 달려오는 장난꾸러기들</span></div>
-        <div class="dex-card"><div class="dex-row">${character('dokkaebiRed', 44)}<div><span class="kind">빨간 도깨비 · 사냥꾼</span><p>내 말을 들이받는 수를 가장 좋아한다. 잡히면 승객 만족도가 떨어지고, 그 말은 차고로 돌아가며 태운 손님도 내린다.</p></div></div></div>
+        <div class="dex-card"><div class="dex-row">${character('dokkaebiRed', 44)}<div><span class="kind">빨간 도깨비 · 사냥꾼</span><p>내 말을 들이받는 수를 가장 좋아한다. 잡히면 그 말은 차고로 돌아가 출발역부터 다시 달려야 한다.</p></div></div></div>
         <div class="dex-card"><div class="dex-row">${character('dokkaebiBlue', 44)}<div><span class="kind">파란 도깨비 · 도망꾼</span><p>출발역까지 달아나는 걸 가장 좋아한다. 파란 도깨비가 끝까지 가면 운행이 ${CLOCK.delay}분 지연된다.</p></div></div></div>
         <div class="dex-card"><span class="kind">행선지 · 봉쇄</span><p>도깨비 열차 머리 위의 호선 표시는 다음 갈림길에서 탈 노선이다. 봉쇄 테이프를 친 역은 ${BLOCKADE.minutes / 60}시간 동안 지나가지 못한다.</p></div>
         <div class="dex-card boss"><span class="kind">도깨비 차장 — 수요일·금요일</span>
@@ -192,7 +219,7 @@ function begin(daily) {
   const q = new URLSearchParams(location.search);
   const fixed = parseInt(q.get('seed'), 10);
   const seed = daily ? dailySeed() : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
-  G.run = createRun(seed, { daily });
+  G.run = createRun(seed, { daily, owned: Stations.load() });
   // 개발·테스트용: ?day=3 이면 그 날(수요일)부터 시작한다
   const startAt = parseInt(q.get('day'), 10);
   if (!daily && startAt >= 1 && startAt <= DAYS.length) G.run.roundNo = startAt;
@@ -209,7 +236,6 @@ function buildGame() {
       <div class="top" id="top"></div>
       <div class="scoreboard" id="score">
         <div class="hrow score-row" data-guide="score"><span class="hl hl-score">점수</span><div class="score-now" id="scoreNow">0</div><div class="bar" id="bar"><i style="width:0%"></i></div><div class="score-goal">목표<b id="target">0</b></div></div>
-        <div class="hrow heung" id="heung" data-guide="heung"></div>
         <div class="hrow clock" id="clock" data-guide="clock"></div>
         <div class="calc" id="calc"><div class="chips" id="chips">0</div><div class="x">×</div><div class="mult" id="mult">1</div></div>
       </div>
@@ -234,18 +260,17 @@ function buildGame() {
   $('#blockBtn').onclick = toggleBlockMode;
   $('#zoom').onclick = () => {
     Sound.click();
-    if (Camera.zoomedIn()) Camera.overview(); else frameAction();
-    drawZoom();
+    if (Camera.showingWhole()) frameAction(); else Camera.whole();
+    setTimeout(drawZoom, 0);
   };
 }
 
-function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.zoomedIn() ? '전체' : '확대'; }
+function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.showingWhole() ? '돌아가기' : '서울 전체'; }
 
-/** 지금 볼만한 곳(내 말·도깨비·분실물)을 화면에 맞춘다. */
+/** 지금 볼만한 곳(내 말·도깨비)을 화면에 맞춘다. */
 function frameAction() {
   const r = R();
   const pts = r.pieces.filter((p) => p.node !== START && p.node !== HOME).map((p) => nodeXY(p.node));
-  for (const t of r.treasures) pts.push(nodeXY(t.node));
   pts.push(nodeXY(B().S));
   Camera.frame(pts, { maxZoom: 0.92 });
 }
@@ -263,6 +288,11 @@ function enterRound() {
   clearStamp();
   hideCalc();
   Camera.attach($('#board'), $('#cam'), canvasSize());
+  // 처음엔 출발역과 그 앞 몇 역을 가까이 — 노선도는 크고, 카메라가 말을 따라간다
+  const b = B();
+  const near = b.nodes.filter((n) => b.depth[n] <= 2).map((n) => nodeXY(n));
+  const xs = near.map((p) => p[0]), ys = near.map((p) => p[1]);
+  Camera.setHome([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]]);
   refresh();
   Camera.overview(0);
   drawZoom();
@@ -270,7 +300,6 @@ function enterRound() {
 }
 
 function refresh() {
-  drawHeung();
   drawTop();
   drawScore(R().score);
   drawClock();
@@ -341,39 +370,21 @@ function drawScore(value) {
   $('#bar i').style.width = Math.min(100, (100 * value) / r.target) + '%';
 }
 
-/** 승객 만족도: 칸 5개. 켜진 만큼 모든 이동에 배수가 더해진다. */
-function drawHeung(flashKind, h = R().heung) {
-  const el = $('#heung');
-  el.className = 'hrow heung' + (h >= HEUNG_MAX ? ' max' : '') + (flashKind === 'lost' ? ' lost' : '');
-  el.innerHTML = heungHtml(h);
-  $('#score').classList.toggle('hot', h >= HEUNG_MAX);
-}
-
-function heungHtml(h) {
-  return `<span class="hl hl-heung">만족도</span><span class="pips">${Array.from({ length: HEUNG_MAX }, (_, i) => `<i class="${i < h ? 'on' : ''}"></i>`).join('')}</span>` +
-    `<span class="val ${h ? '' : 'zero'}">${h ? `점수 배수 +${h}` : '배수 +0 · 잡기·골인으로 오른다'}</span>`;
-}
-
 function drawBoard() {
   const r = R();
-  $('#mat').innerHTML = boardSvg(r.tiles, r.revealed, { flags: r.flags, completed: r.completed });
-  drawLineLegend();
+  $('#mat').innerHTML = boardSvg({ owned: r.owned, goblin: r.goblinStations, monopolyEdges: links(r.owned).edges });
+  drawRouteBanner();
 }
 
-/** 호선마다 깃발 진행(꽂은 역 / 전체 역)과 특화 효과 */
-function drawLineLegend() {
-  const b = B(), r = R();
-  let el = $('#lineLegend');
-  if (!el) { el = document.createElement('div'); el.id = 'lineLegend'; el.className = 'line-legend'; $('#board').appendChild(el); }
-  el.onclick = () => openGuide('flags');
-  el.innerHTML = '<span class="ll-head">깃발</span>' + Object.entries(b.lineStations).map(([id, st]) => {
-    const line = b.lines[id];
-    const got = st.filter((n) => r.flags[n]).length;
-    const shut = b.closed === Number(id);
-    const done = r.completed.includes(Number(id));
-    return `<span class="ll ${done ? 'done' : ''} ${shut ? 'shut' : ''}" style="--lc:${line.color}" title="${line.title} · ${line.desc}">
-      <i></i><b>${line.name}</b><em>${shut ? '운행 중지' : done ? '완성' : `${got}/${st.length}`}</em></span>`;
-  }).join('');
+/** 노선도 위 왼쪽 위: 오늘 구간(출발역 → 종착역) · 운행 중지 호선 */
+function drawRouteBanner() {
+  const b = B();
+  let el = $('#routeBanner');
+  if (!el) { el = document.createElement('div'); el.id = 'routeBanner'; el.className = 'route-banner'; $('#board').appendChild(el); }
+  el.onclick = () => openGuide('route');
+  const dot = (n) => `<i style="--lc:${b.lineAt(n).color}"></i>`;
+  el.innerHTML = `<span class="rb-head">오늘 구간</span><b>${dot(b.S)}${b.S}</b><span class="rb-arrow">→</span><b>${dot(b.G)}${b.G}</b><em>최단 ${b.length}역</em>${(() => { const k = b.nodes.filter((n) => R().owned[n]).length; return k ? `<span class="rb-own">${ownerFlag(14)}내 역 ${k}</span>` : ''; })()}` +
+    (b.closed ? `<span class="rb-shut" style="--lc:${b.lines[b.closed].color}">${b.lines[b.closed].name} 운행 중지</span>` : '');
 }
 
 // ── 좌표 ─────────────────────────────────────────────────────
@@ -438,12 +449,11 @@ function syncPieces() {
       badge.textContent = '×' + list.length;
     });
   }
-  // 태운 손님(내 말), 다음 갈림길에서 탈 호선(도깨비)
+  // 다음 갈림길에서 탈 호선(도깨비)
   const b = B();
   for (const p of r.pieces) {
     const el = pieceEl(p.id);
-    el.querySelector('.rider, .heading')?.remove();
-    if (p.owner === 'me' && p.rider) el.insertAdjacentHTML('beforeend', `<span class="rider" style="--lc:${b.lines[p.rider].color}" title="${b.lines[p.rider].name} 역에 내려 주면 배달">${PERSON(b.lines[p.rider].color)}</span>`);
+    el.querySelector('.heading')?.remove();
     if (p.owner === 'opp' && p.heading) el.insertAdjacentHTML('beforeend', `<span class="heading" style="--lc:${b.lines[p.heading.line].color}">${b.lines[p.heading.line].name}행</span>`);
   }
   // 잡힐 위험 경고는 묶음의 맨 위 말에만
@@ -564,7 +574,7 @@ function showOptions() {
     t.style.left = x + 'px';
     t.style.top = y + 'px';
     t.style.zIndex = depth(y) - 1;
-    const label = pv.dest === HOME ? '골인 ' : pv.captured ? '잡기 ' : pv.treasure ? '분실물 ' : pv.joined ? '함께 타기 ' : pv.boardTile ? pv.boardTile.name + ' ' : '';
+    const label = pv.dest === HOME ? '골인 ' : pv.captured ? '잡기 ' : pv.joined ? '함께 타기 ' : pv.incident ? INCIDENTS[pv.incident].name + ' ' : '';
     const risk = pv.dest === HOME ? '' : pv.danger >= 0.05
       ? `<i class="risk">${Math.round(pv.danger * 100)}%</i>`
       : '<i class="risk safe">안전</i>';
@@ -573,10 +583,9 @@ function showOptions() {
     tag.style.left = x + 'px';
     tag.style.top = y + 'px';
     tag.style.zIndex = 600 + depth(y);
-    const hidden = pv.dest !== HOME && !R().revealed.includes(pv.dest);
     const mins = pv.minutes ? `<i class="mins">${pv.minutes}분</i>` : '<i class="mins free">공짜</i>';
-    tag.innerHTML = hidden ? `<span class="gain mystery">? 안개 속${mins}</span>`
-      : `<span class="gain ${pv.score.total === best ? 'hot' : ''}">${label}+${pv.score.total}${risk}${mins}</span>`;
+    const deal = pv.pay ? `<i class="pay">도깨비 역 −${pv.pay}</i>` : pv.price ? `<i class="buy">인수 ${pv.price}</i>` : '';
+    tag.innerHTML = `<span class="gain ${pv.score.total === best ? 'hot' : ''}">${label}+${pv.score.total}${risk}${mins}${deal}</span>`;
     t.onclick = () => doMove(m.i);
     $('#layer').append(t, tag);
   }
@@ -629,7 +638,8 @@ function drawControls() {
   bb.innerHTML = G.blockMode ? '봉쇄 취소' : `봉쇄 테이프 <b>×${r.blockadesLeft}</b>`;
   drawOmen();
   const many = r.phase === 'move' && legalMoves(r).length > 6;
-  $('#hint').textContent = G.blockMode ? '테이프를 칠 역을 누르세요 · 3시간 동안 도깨비 열차가 못 지나간다'
+  $('#hint').textContent = r.offer && r.phase === 'throw' && !G.busy && r.score >= r.offer.price ? '멈춘 역을 인수할 수 있다 — 카드를 보거나 그냥 출발'
+    : G.blockMode ? '테이프를 칠 역을 누르세요 · 3시간 동안 도깨비 열차가 못 지나간다'
     : G.busy || r.phase !== 'move' ? ''
       : many ? '말을 고르고 노란 역을 누르세요 · %는 잡힐 확률' : '노란 역을 누르세요 · 점수 · 잡힐 확률 · 걸리는 시간';
 }
@@ -697,44 +707,172 @@ function charmTip(i, inShop) {
   });
 }
 
-// ── 분실물 · 손님 · 봉쇄 테이프 ─────────────────────────────
+// ── 내 역 깃발 · 역 사건 · 봉쇄 테이프 ─────────────────────────
 
 function drawBundles() {
-  $('#layer').querySelectorAll('.bundle, .passenger, .tape').forEach((b) => b.remove());
-  for (const t of R().treasures) addBundle(t.node, t.ttl);
-  for (const q of R().passengers) addPassenger(q);
+  $('#layer').querySelectorAll('.flag, .incident, .tape').forEach((b) => b.remove());
+  for (const n of Object.keys(R().owned)) if (R().owned[n]) addFlag(n, 'own');
+  for (const n of R().goblinStations) addFlag(n, 'goblin');
+  for (const i of R().incidents) addIncident(i);
   for (const t of R().blockades) addTape(t);
 }
 
-const PERSON = (color) => `<svg viewBox="0 0 40 48" width="26" height="31"><circle cx="20" cy="12" r="8" fill="#FFFDF7" stroke="#22201D" stroke-width="3"/><path d="M6 44c0-10 6-17 14-17s14 7 14 17z" fill="${color}" stroke="#22201D" stroke-width="3" stroke-linejoin="round"/></svg>`;
+// 역 사건 그림: 화재는 불꽃, 신호 장애는 시계, 인파는 사람들, 버스킹은 음표
+const INC_ART = {
+  fire: '<path d="M20 4c2 7 10 10 10 20a10 10 0 0 1-20 0c0-5 3-8 5-10 0 4 2 6 4 6-1-6 1-11 1-16z" fill="#F2733D" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/><path d="M20 20c1 3 5 5 5 9a5 5 0 0 1-10 0c0-3 3-5 5-9z" fill="#F7C94A"/>',
+  delay: '<circle cx="20" cy="21" r="14" fill="#FFFDF7" stroke="#22201D" stroke-width="3"/><path d="M20 21V12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/><path class="inc-hand" d="M20 21l7 4" stroke="#E0533D" stroke-width="3" stroke-linecap="round"/><path d="M14 4h12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/>',
+  crowd: '<circle cx="11" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M3 35c0-7 4-12 8-12s8 5 8 12z" fill="#2EA6DA" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="29" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M21 35c0-7 4-12 8-12s8 5 8 12z" fill="#E2337A" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="11" r="5.5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M11 33c0-8 4-13 9-13s9 5 9 13z" fill="#F2B33D" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/>',
+  busk: '<path d="M15 30V8l16-4v20" fill="none" stroke="#22201D" stroke-width="3.2" stroke-linejoin="round"/><ellipse cx="11" cy="30" rx="6" ry="4.5" fill="#E2337A" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="25" rx="6" ry="4.5" fill="#8E63B0" stroke="#22201D" stroke-width="2.6"/>'
+};
+const incidentArt = (kind, size = 34) => `<svg class="inc-art" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">${INC_ART[kind]}</svg>`;
 
-function addPassenger(q) {
-  const b = B();
+/** 사건마다 역 위에 도는 움직임: 연기·고리·뛰는 사람들·떠오르는 음표 */
+const INC_FX = {
+  fire: '<i class="smoke s1"></i><i class="smoke s2"></i><i class="smoke s3"></i><i class="ember"></i>',
+  delay: '<i class="pulse"></i><i class="pulse p2"></i>',
+  crowd: '<i class="hop h1"></i><i class="hop h2"></i>',
+  busk: '<i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i>'
+};
+const incidentTag = (i) => i.kind === 'fire' ? `화재 ~${hhmm(i.until)}` : i.kind === 'delay' ? `지연 +${INCIDENTS.delay.delay}분`
+  : i.kind === 'crowd' ? `인파 칩+${INCIDENTS.crowd.chips}` : `버스킹 배수+${INCIDENTS.busk.mult}`;
+
+function addIncident(i) {
   const el = document.createElement('div');
-  el.className = 'passenger';
-  el.dataset.node = q.node;
-  el.style.setProperty('--lc', b.lines[q.line].color);
-  el.innerHTML = PERSON(b.lines[q.line].color) + `<span class="want">${b.lines[q.line].name}</span>`;
-  const [x, y] = nodeXY(q.node);
+  el.className = `incident kind-${i.kind}`;
+  el.dataset.node = i.node;
+  el.innerHTML = `<span class="inc-fx">${INC_FX[i.kind]}</span>${incidentArt(i.kind)}<span class="inc-tag">${incidentTag(i)}</span>`;
+  const [x, y] = nodeXY(i.node);
   el.style.left = x + 'px';
-  el.style.top = y - 4 + 'px';
-  el.style.zIndex = depth(y) - 1;
+  el.style.top = y + 'px';
+  el.style.zIndex = depth(y) - 2;
   $('#layer').appendChild(el);
   return el;
 }
 
-function addBundle(node, ttl) {
-  const b = document.createElement('div');
-  b.className = 'bundle';
-  b.dataset.node = node;
-  b.style.animation = 'none';
-  b.innerHTML = bundle(34) + `<span class="ttl">${ttl}</span>`;
+/** 역 사건 속보: 위에 뉴스 띠가 지나가고, 카메라가 그 역으로 가서 사건이 터진다 */
+async function incidentAlert(e) {
+  const info = INCIDENTS[e.kind];
+  const news = document.createElement('div');
+  news.className = `news-flash kind-${e.kind}`;
+  news.innerHTML = `<b>속보</b><span>${hhmm(R().clock)} <strong>${e.node}역</strong> ${info.name} — ${info.desc}</span>`;
+  $('#board').appendChild(news);
+  tween(news, [{ transform: 'translateX(110%)' }, { transform: 'translateX(-3%)', offset: 0.75 }, { transform: 'translateX(0)' }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
+  Camera.follow(nodeXY(e.node), 480);
+  drawZoom();
+  await sleep(480);
+  const el = addIncident(e);
+  const [x, y] = nodeApp(e.node);
+  if (e.kind === 'fire') {
+    Sound.capture(); flash(app); shake($('#board'), 8, 420);
+    FX.pow(x, y - 56, '화재 발생!', '#E0533D', '#FFFDF7', -6);
+  } else if (e.kind === 'delay') {
+    Sound.penalty(); FX.ring(x, y, '#F2B33D');
+    FX.pow(x, y - 56, '신호 장애', '#F2B33D', '#22201D', 5);
+  } else if (e.kind === 'crowd') {
+    Sound.bundle(); FX.pow(x, y - 56, '인파 몰림!', '#2EA6DA', '#FFFDF7', -4);
+  } else {
+    Sound.home(); FX.sparkle(x, y - 20, 10, '#E2337A'); FX.pow(x, y - 56, '버스킹!', '#E2337A', '#FFFDF7', 4);
+  }
+  await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.35)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+  await sleep(900);
+  tween(news, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-14px)' }], { duration: 300, fill: 'forwards' }).then(() => news.remove());
+}
+
+/** 역 깃발: kind 'own' 내 역(금빛) · 'goblin' 도깨비 역(보랏빛). 오늘 구간의 내 역엔 통행료가 붙는다 */
+function addFlag(node, kind) {
+  const r = R();
+  const el = document.createElement('div');
+  const k = kind === 'own' ? chainOf(r.owned, node) : 0;
+  const mono = k > 1;
+  el.className = `flag kind-${kind}${mono ? ' mono' : ''} tag-${tagSide(node)}`;
+  el.dataset.node = node;
+  // 출발역·종착역에는 도깨비 열차가 서지 않으니 통행료 표시도 없다
+  const onRoute = B().nodes.includes(node) && node !== B().S && node !== B().G;
+  const tag = kind === 'goblin' ? `<span class="flag-tag">도깨비 −${stationToll(node)}</span>`
+    : onRoute ? `<span class="flag-tag">+${tollFor(r, node).amount || stationToll(node)}${mono ? ` ×${k}` : ''}</span>` : mono ? `<span class="flag-tag">×${k}</span>` : '';
+  el.innerHTML = (kind === 'goblin' ? goblinFlag(30) : ownerFlag(onRoute ? 30 : 22)) + tag;
   const [x, y] = nodeXY(node);
-  b.style.left = x + 'px';
-  b.style.top = y - 6 + 'px';
-  b.style.zIndex = depth(y) - 1;
-  $('#layer').appendChild(b);
-  return b;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.zIndex = depth(y) - 3;
+  $('#layer').appendChild(el);
+  return el;
+}
+
+/** 멈춘 역을 살 수 있으면 노선도 아래에 인수 카드를 띄운다 */
+function showOffer() {
+  hideOffer();
+  const r = R();
+  // 값을 낼 수 있을 때만 묻는다
+  if (r.phase !== 'throw' || !r.offer || G.busy || r.score < r.offer.price) return;
+  const { node, price } = r.offer;
+  const b = B();
+  const lines = b.stationLines(node).map((l) => `<i style="--lc:${b.lines[l].color}" title="${b.lines[l].name}"></i>`).join('');
+  const next = { ...r.owned, [node]: true };
+  const k = chainOf(next, node);
+  const via = links(next).at[node];
+  const card = document.createElement('div');
+  card.className = 'offer-card';
+  card.innerHTML = `
+    <div class="oc-sign">${lines}<b>${node}</b></div>
+    <div class="oc-body"><span>이 역을 인수할까?</span>
+      <em>값 <b>${price}점</b> · 도깨비 열차가 서면 통행료 <b>${stationToll(node) * k}점</b>${k > 1 ? ` · <strong>${b.lines[via.line].name} ${via.len}역 연결 — 배수 ×${k}</strong>` : ''}</em></div>
+    <div class="oc-btns"><button class="btn small white" data-a="skip">지나치기</button>
+      <button class="btn small yellow" data-a="buy">${price}점에 인수</button></div>`;
+  $('#board').appendChild(card);
+  tween(card, [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(-4px)', opacity: 1, offset: 0.7 }, { transform: 'translateY(0)' }], { duration: 320, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
+  card.querySelector('[data-a=skip]').onclick = () => { Sound.click(); R().offer = null; hideOffer(); drawControls(); };
+  card.querySelector('[data-a=buy]').onclick = () => onBuy(node);
+  // 카메라: 그 역이 카드 위쪽에 보이게
+  const [x, y] = nodeXY(node);
+  Camera.follow([x, y + 120], 360);
+}
+
+function hideOffer() { $('#board')?.querySelector('.offer-card')?.remove(); }
+
+async function onBuy(node) {
+  if (G.busy || R().offer?.node !== node || R().score < R().offer.price) { Sound.deny(); return; }
+  Sound.unlock();
+  hideOffer();
+  await play(buyStation(R(), node));
+  Stations.save(G.run.owned);
+}
+
+/** 점수판 숫자 자리(앱 좌표) */
+function scoreSpot() {
+  const el = $('#scoreNow'), ab = app.getBoundingClientRect(), b = el.getBoundingClientRect(), k = b.width / el.offsetWidth;
+  return [(b.left - ab.left) / k + el.offsetWidth / 2, (b.top - ab.top) / k + el.offsetHeight / 2];
+}
+
+/** 토큰 그림이 from 에서 to 로 날아간다(점수가 오가는 연출) */
+async function flyCoins(from, to, n) {
+  const flights = [];
+  for (let i = 0; i < Math.min(8, n); i++) {
+    const c = document.createElement('div');
+    c.className = 'fly-coin';
+    c.innerHTML = coin(22);
+    $('#fx').appendChild(c);
+    flights.push(fly(c, [from[0] + (Math.random() - 0.5) * 26, from[1] - 10], to, { duration: 600, arc: 110, delay: i * 60 }));
+  }
+  await Promise.all(flights);
+}
+
+/** 연결 카드: 호선 색 카드가 떨어지고, 그 구간 금빛 띠가 흐른다 */
+async function linkCard(lineId, len, k) {
+  const line = B().lines[lineId];
+  Sound.big();
+  flash(app);
+  const card = document.createElement('div');
+  card.className = 'event-card line-card';
+  card.style.setProperty('--lc', line.color);
+  card.innerHTML = `<div class="ev-head">역 연결</div><div class="ev-name">${line.name} ${len}역 연결!</div>
+    <div class="ev-desc">이 구간 통행료 ×${k} · 내 말이 서면 배수 +${Math.min(OWN_STOP_MULT_MAX, k - 1)}${k >= CHAIN_MAX ? '<br>최대 배수!' : ''}</div>`;
+  $('#board').appendChild(card);
+  await tween(card, [{ transform: 'translate(-50%, -50%) scale(.4) rotate(-8deg)', opacity: 0 }, { transform: 'translate(-50%, -50%) scale(1.06) rotate(2deg)', opacity: 1, offset: 0.6 }, { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 }], { duration: 480, fill: 'forwards' });
+  FX.confetti(card.offsetLeft + $('#board').offsetLeft, card.offsetTop + $('#board').offsetTop - 30, 40, 1.4);
+  await sleep(1300);
+  await tween(card, [{ opacity: 1 }, { opacity: 0, transform: 'translate(-50%, -50%) translateY(30px) scale(.85)' }], { duration: 260, fill: 'forwards' });
+  card.remove();
 }
 
 function addTape(t) {
@@ -757,6 +895,7 @@ async function onThrow(quality = 'normal') {
   Sound.unlock();
   G.picked = null;
   G.blockMode = false;
+  hideOffer();
   await play(depart(R(), G.run.rng, quality));
 }
 
@@ -883,11 +1022,11 @@ async function play(events) {
   if (R().phase === 'throw') { frameAction(); drawZoom(); }
   syncPieces();
   drawBundles();
-  drawHeung();
   drawTrays();
   drawControls();
   drawTop();
   drawClock();
+  showOffer();
 }
 
 function clearStamp() {
@@ -1003,7 +1142,7 @@ const HANDLERS = {
   },
   async noMove(e) {
     toast(e.who === 'opp'
-      ? (e.why === 'shield' ? '스크린도어에 막혔다!' : e.why === 'blockade' ? '봉쇄 테이프에 막혔다!' : '도깨비 열차가 움직일 수 없다')
+      ? (e.why === 'shield' ? '스크린도어에 막혔다!' : e.why === 'blockade' ? '봉쇄 테이프에 막혔다!' : e.why === 'fire' ? '화재 역에 막혔다!' : '도깨비 열차가 움직일 수 없다')
       : e.why === 'boss' ? '도깨비 차장: 서행 운전 — 1역은 무효!' : `갈 수 있는 길이 없다 — ${CLOCK.wait}분 기다린다`);
     await sleep(700);
   },
@@ -1064,8 +1203,7 @@ const HANDLERS = {
   async timeShift(e) {
     drawTop();
     drawClock(e.clock);
-    if (e.time === 'night') drawBoard();
-    const say = { rush: '러시아워! 손님이 몰려온다 — 이동 칩 +50%', day: '한산한 시간', night: '심야 — 안개가 짙어진다', last: '막차 시간! 골인 배수 +3' };
+    const say = { rush: '러시아워! 인파가 몰린다 — 이동 칩 +50%', day: '한산한 시간', night: '심야 할증 — 이동 칩 +25%', last: '막차 시간! 골인 배수 +3' };
     Sound.stamp();
     toast(`${hhmm(e.clock)} · ${say[e.time]}`);
     await sleep(500);
@@ -1088,12 +1226,6 @@ const HANDLERS = {
     if (e.why === 'toll') { const [x, y] = nodeApp(e.node); FX.pow(x, y - 40, '통행료!', '#F2B33D', '#22201D', 4); }
     await coinsFly(nodeApp(e.node), e.amount);
   },
-  async trap(e) {
-    toast('검표 역에 걸린 도깨비 열차!');
-    Sound.capture();
-    await Promise.all(e.pieceIds.map((id) => knockOut(pieceEl(id), 1)));
-    e.pieceIds.forEach((id) => { const el = pieceEl(id); el.getAnimations().forEach((a) => a.cancel()); el.style.display = 'none'; });
-  },
   async score(e) {
     await animateScore(e);
     if (e.total >= e.target * 0.3) {
@@ -1106,102 +1238,68 @@ const HANDLERS = {
       await sleep(600);
     }
   },
-  async heung(e) {
-    Sound.heung(e.value);
-    drawHeung(null, e.value);
-    const pip = $('#heung').querySelectorAll('.pips i')[e.value - 1];
-    if (pip) tween(pip, [{ transform: 'scale(1)' }, { transform: 'scale(1.6) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 360 });
-    if (e.value >= HEUNG_MAX) toast('승객 만족도 최고! 배수 +5');
-    await sleep(260);
+  async incident(e) { await incidentAlert(e); },
+  async incidentEnd(e) {
+    const el = $('#layer').querySelector(`.incident[data-node="${e.node}"]`);
+    if (e.used) {
+      const [x, y] = nodeApp(e.node);
+      FX.pow(x, y - 62, e.kind === 'crowd' ? '승객 가득 태움!' : '앵콜!', e.kind === 'crowd' ? '#2EA6DA' : '#E2337A', '#FFFDF7', -5);
+      FX.sparkle(x, y - 30, 10, '#F2B33D');
+      Sound.coin();
+    }
+    if (el) { await tween(el, [{ opacity: 1 }, { opacity: 0, transform: 'scale(1.3)' }], { duration: 360, fill: 'forwards' }); el.remove(); }
   },
-  async heungLost(e) {
-    Sound.heungLost();
-    toast(e.why === 'trap' ? `공사중! 만족도가 떨어졌다 (배수 +${e.value} 사라짐)` : `승객들이 실망했다… (배수 +${e.value} 사라짐)`);
-    drawHeung('lost', 0);
-    shake($('#heung'), 6, 400);
-    await sleep(480);
-  },
-  async flag(e) {
-    drawBoard();
-    const [x, y] = nodeApp(e.node);
-    FX.sparkle(x + 6, y - 24, 5, '#F2B33D');
-    Sound.stack();
-    await sleep(120);
-  },
-  async flagLost(e) {
-    drawBoard();
-    const [x, y] = nodeApp(e.node);
-    FX.pow(x, y - 40, '깃발을 뺏겼다', '#22201D', '#F2B33D', 6);
-    await sleep(260);
-  },
-  async lineComplete(e) {
-    drawBoard();
-    const line = B().lines[e.line];
-    Sound.big();
-    flash(app);
-    const card = document.createElement('div');
-    card.className = 'event-card line-card';
-    card.style.setProperty('--lc', line.color);
-    card.innerHTML = `<div class="ev-head">호선 완성</div><div class="ev-name">${line.name} 완성!</div>
-      <div class="ev-desc">${line.title} 효과 2배 · 점수 +${e.bonus} · 토큰 +${e.coins}<br>도깨비 열차가 이 호선에 서면 통행료</div>`;
-    $('#board').appendChild(card);
-    await tween(card, [{ transform: 'translate(-50%, -50%) scale(.4) rotate(-8deg)', opacity: 0 }, { transform: 'translate(-50%, -50%) scale(1.06) rotate(2deg)', opacity: 1, offset: 0.6 }, { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 }], { duration: 480, fill: 'forwards' });
-    FX.confetti(card.offsetLeft + $('#board').offsetLeft, card.offsetTop + $('#board').offsetTop - 30, 34, 1.3);
-    drawScore(e.score);
-    drawTop();
-    await sleep(1300);
-    await tween(card, [{ opacity: 1 }, { opacity: 0, transform: 'translate(-50%, -50%) translateY(30px) scale(.85)' }], { duration: 260, fill: 'forwards' });
-    card.remove();
-  },
-  async passengerSpawn(e) {
-    const el = addPassenger(e);
-    Sound.bundle();
-    await drop(el, { height: 90, duration: 360 });
-  },
-  async passengerGone(e) {
-    const el = $('#layer').querySelector(`.passenger[data-node="${e.node}"]`);
-    if (el) { await tween(el, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(-20px)' }], { duration: 300, fill: 'forwards' }); el.remove(); }
-  },
-  async pickup(e) {
-    $('#layer').querySelector(`.passenger[data-node="${e.node}"]`)?.remove();
-    const [x, y] = nodeApp(e.node);
-    Sound.coin();
-    FX.pow(x, y - 54, `손님 탑승 · ${B().lines[e.line].name}행`, B().lines[e.line].color, '#FFFDF7', -4);
-    act(pieceEl(e.pieceId), 'cheer', 700);
-    await sleep(380);
-  },
-  async deliver(e) {
-    const [x, y] = nodeApp(e.node);
-    Sound.home();
-    FX.pow(x, y - 58, '배달 완료!', '#3E9B6A', '#FFFDF7', 5);
-    FX.sparkle(x, y - 30, 10, '#F2B33D');
-    e.pieceIds.forEach((id) => act(pieceEl(id), 'dance', 900));
-    await sleep(420);
-  },
-  async reveal(e) {
-    drawBoard();
-    Sound.bundle();
-    e.nodes.forEach((n, i) => setTimeout(() => { const [x, y] = nodeApp(n); FX.sparkle(x, y - 6, 4, '#FFFDF7'); }, i * 40));
-    await sleep(160);
-  },
-  async treasureSpawn(e) {
-    Sound.bundle();
-    const b = addBundle(e.node, e.ttl);
-    b.style.animation = '';
-    await drop(b, { height: 120, duration: 420 });
-    FX.dust(...nodeApp(e.node), 5);
-  },
-  async treasureGone(e) {
-    const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
-    if (b) { Sound.bundleGone(); await tween(b, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.6)', opacity: 0 }], { duration: 320, fill: 'forwards' }); b.remove(); }
-  },
-  async treasureTake(e) {
-    const b = $('#layer').querySelector(`.bundle[data-node="${e.node}"]`);
+  async buy(e) {
+    // 점수에서 토큰이 날아가 역에 꽂히고, 금빛 깃발이 떨어진다
     const at = nodeApp(e.node);
-    if (b) { tween(b, [{ transform: 'scale(1)', opacity: 1 }, { transform: 'scale(1.8) rotate(20deg)', opacity: 0 }], { duration: 380, fill: 'forwards' }).then(() => b.remove()); }
-    FX.stars(at[0], at[1] - 10, 6);
-    if (e.who === 'me') { Sound.coin(); await coinsFly(at, TREASURE_COINS); }
-    else { Sound.penalty(); FX.pow(at[0], at[1] - 40, '분실물을 뺏겼다', '#E0533D', '#FFFDF7'); await sleep(400); }
+    Camera.follow(nodeXY(e.node), 300);
+    await sleep(200);
+    drawScore(e.score);
+    tween($('#scoreNow'), [{ transform: 'scale(1)' }, { transform: 'scale(.8)' }, { transform: 'scale(1)' }], { duration: 300 });
+    await flyCoins(scoreSpot(), nodeApp(e.node), 6);
+    Sound.buy();
+    drawBoard();
+    const el = addFlag(e.node, 'own');
+    await drop(el, { height: 140, duration: 420 });
+    FX.ring(...nodeApp(e.node), '#F2B33D');
+    FX.ring(...nodeApp(e.node), '#FFFDF7');
+    FX.confetti(at[0], at[1] - 30, 22, 1);
+    FX.pow(at[0], at[1] - 70, '인수!', '#F2B33D', '#22201D', -5);
+    toast(`${e.node}역이 내 역이 됐다 — 도깨비 열차가 서면 통행료 ${stationToll(e.node)}점`);
+    shake($('#board'), 5, 260);
+    R().pieces.filter((p) => p.owner === 'me' && p.node === e.node).forEach((p) => act(pieceEl(p.id), 'cheer', 1200));
+    await sleep(450);
+    if (e.chain > 1) { drawBundles(); await linkCard(e.line, e.length, e.chain); }
+    drawBundles();
+  },
+  async toll(e) {
+    // 도깨비가 내 역에 섰다: 깃발이 펄럭이고 토큰이 역에서 점수판으로 쏟아진다
+    const at = nodeApp(e.node);
+    const flag = $('#layer').querySelector(`.flag.kind-own[data-node="${e.node}"]`);
+    if (flag) { flag.classList.remove('wave'); void flag.offsetWidth; flag.classList.add('wave'); }
+    e.pieceIds?.forEach((id) => act(pieceEl(id), 'sad', 1000));
+    Sound.toll(e.chain > 1 || e.crowd);
+    FX.pow(at[0], at[1] - 64, `통행료 +${e.amount}`, '#F2B33D', '#22201D', 6);
+    if (e.chain > 1) FX.pow(at[0] + 34, at[1] - 96, `연결 ×${e.chain}`, '#E0533D', '#FFFDF7', -8);
+    if (e.crowd) FX.pow(at[0] - 34, at[1] - 96, '인파 ×2', '#2EA6DA', '#FFFDF7', 8);
+    FX.sparkle(at[0], at[1] - 30, 6 + e.chain * 3, '#F2B33D');
+    await flyCoins(at, scoreSpot(), 2 + e.chain * 2);
+    drawScore(e.score);
+    tween($('#scoreNow'), [{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-4deg)' }, { transform: 'scale(1)' }], { duration: 320 });
+    await sleep(200);
+  },
+  async tollPaid(e) {
+    // 내 말이 도깨비 역에 섰다: 점수판에서 토큰이 빠져나가 도깨비 깃발로
+    const at = nodeApp(e.node);
+    Sound.penalty();
+    R().pieces.filter((p) => p.owner === 'me' && p.node === e.node).forEach((p) => act(pieceEl(p.id), 'sad', 1100));
+    FX.pow(at[0], at[1] - 64, `통행료 −${e.amount}`, '#6B3FA0', '#FFFDF7', -6);
+    drawScore(e.score);
+    shake($('#score'), 6, 360);
+    await flyCoins(scoreSpot(), at, 4);
+    const flag = $('#layer').querySelector(`.flag.kind-goblin[data-node="${e.node}"]`);
+    if (flag) tween(flag, [{ transform: 'scale(1)' }, { transform: 'scale(1.3) rotate(-8deg)' }, { transform: 'scale(1)' }], { duration: 380 });
+    await sleep(250);
   },
   async escape(e) {
     const at = nodeApp(e.node);
@@ -1218,11 +1316,15 @@ const HANDLERS = {
   async event(e) {
     await eventCard(e);
   },
-  async goldRush(e) {
-    drawBoard();
+  async sale() {
     Sound.coin();
-    for (const n of e.nodes) { const [x, y] = nodeApp(n); FX.sparkle(x, y - 10, 10, '#F2B33D'); FX.ring(x, y); }
-    toast('황금 역이 생겼다 — 멈추면 배수 +2');
+    toast('역세권 세일 — 오늘 하루 역 값이 반값!');
+    await sleep(500);
+  },
+  async boom() {
+    Sound.toll(true);
+    for (const el of $('#layer').querySelectorAll('.flag.kind-own')) { el.classList.add('wave'); const [x, y] = nodeApp(el.dataset.node); FX.sparkle(x, y - 40, 5, '#F2B33D'); }
+    toast('역세권 호재 — 오늘 하루 내 역 통행료 2배!');
     await sleep(700);
   },
   async gust(e) {
@@ -1388,9 +1490,9 @@ function boardIntro() {
   const s = sheet(`
     <span class="kind">노선도 보는 법</span>
     <h2 style="margin-top:8px">${GAME_TITLE.main} ${GAME_TITLE.accent}</h2>
-    <p>원정대 넷을 출발역에서 종점까지 실어 나르자. 열차 주사위(1~5역·급행)만큼 달리고, 환승역을 지나면 탈 호선을 고른다.</p>
+    <p>서울 지하철 노선도 위에서 원정대 넷을 <b>출발역</b>에서 <b>종착역</b>까지 보내자. 열차 주사위(1~5역·급행)만큼 달리고, 환승역에서는 갈아탈 호선을 고른다. 날마다 구간이 바뀐다.</p>
     <div class="board-preview"><div class="roller-mini" id="mini"></div>
-      <div style="font-size:12.5px;font-weight:700;line-height:1.55">한 번 달릴 때마다 <b>운행 시간</b>이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>24:00 막차</b>가 지나기 전에 목표 점수를 넘겨야 한다. 안 가 본 역은 ?</div></div>
+      <div style="font-size:12.5px;font-weight:700;line-height:1.55">한 번 달릴 때마다 <b>운행 시간</b>이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>24:00 막차</b>가 지나기 전에 목표 점수를 넘겨야 한다. 역마다 화재·신호 장애 같은 사건이 터진다. 멈춘 역은 <b>점수로 인수</b>해 두면 도깨비 열차가 설 때마다 통행료가 들어온다.</div></div>
     <div class="row"><button class="btn" id="go">알겠다!</button></div>`);
   const mini = s.querySelector('#mini');
   if (Roller3D.ready()) Roller3D.still(mini, B(), null); else Roller.idle(mini);
@@ -1415,7 +1517,7 @@ function openGuide(focus = null, then = null) {
   if (G.busy && !then) return;
   Sound.click();
   const r = R(), b = B();
-  const l0 = b.lines[Object.keys(b.lineStations)[0]];
+  const l0 = b.lineAt(b.S);
   const item = (key, mock, title, text) => `
     <div class="g-item" data-key="${key}"><div class="g-mock">${mock}</div><div class="g-txt"><b>${title}</b><p>${text}</p></div></div>`;
   const boss = r.boss
@@ -1428,22 +1530,24 @@ function openGuide(focus = null, then = null) {
       <h3>위 점수판</h3>
       ${item('score', `<div class="hrow score-row"><span class="hl hl-score">점수</span><div class="score-now">590</div><div class="bar"><i style="width:42%"></i></div><div class="score-goal">목표<b>${r.target.toLocaleString()}</b></div></div>`,
         '점수 · 목표', '오늘 모은 점수. 막대가 끝까지 차서 <b>목표</b>를 넘기면 그날 운행 완료. 한 번 달릴 때마다 <b>칩 × 배수</b>만큼 오른다.')}
-      ${item('heung', `<div class="hrow heung">${heungHtml(2)}</div>`,
-        '만족도', '잡기·함께 타기·골인·분실물로 한 칸씩 켜진다. 켜진 칸 수만큼 <b>모든 이동 점수의 배수</b>가 커진다. 내 말이 잡히면 0으로 떨어진다.')}
       ${item('clock', `<div class="hrow clock">${clockHtml({ end: r.end }, 480)}</div>
           <div class="g-swatch"><span><i class="rush"></i>러시아워</span><span><i class="night"></i>심야</span><span><i class="last"></i>막차</span><span><i class="done"></i>지난 시간</span></div>`,
-        '시각 · 막차까지', `지금 시각과 막차까지 남은 시간. 한 번 달릴 때마다 시간이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>${hhmm(r.end)} 막차</b> 전에 목표를 넘겨야 한다.<br>러시아워 이동 칩 +50% · 심야 안개가 짙다 · 막차 골인 배수 +3`)}
+        '시각 · 막차까지', `지금 시각과 막차까지 남은 시간. 한 번 달릴 때마다 시간이 흐른다(출발 ${CLOCK.trip}분 + 역마다 ${CLOCK.perStop}분). <b>${hhmm(r.end)} 막차</b> 전에 목표를 넘겨야 한다.<br>러시아워 이동 칩 +50% · 심야 할증 이동 칩 +25% · 막차 골인 배수 +3`)}
       <h3>위쪽 알약</h3>
       ${item('event', '<span class="pill omen">사건 11:00</span>', '돌발 사건 예고', '이 시각이 되면 돌발 사건이 터진다. 무슨 일인지는 그때 안다. 1시간 안으로 다가오면 빨갛게 깜빡인다.')}
       ${item('boss', '<span class="pill boss">차장</span>', '도깨비 차장', boss)}
-      ${item('coin', `<span class="pill">${coin()} ${G.run.coins}</span>`, '토큰', '하루를 마치면 <b>역 매점</b>에서 정기권·역 개조·노선 연장권을 사는 돈. 일찍 끝내 남긴 운행 시간만큼 더 받는다.')}
+      ${item('coin', `<span class="pill">${coin()} ${G.run.coins}</span>`, '토큰', '하루를 마치면 <b>역 매점</b>에서 정기권·노선 연장권을 사는 돈. 일찍 끝내 남긴 운행 시간만큼 더 받는다.')}
       <h3>노선도 위</h3>
-      ${item('flags', `<span class="line-legend g-legend"><span class="ll-head">깃발</span><span class="ll" style="--lc:${l0.color}"><i></i><b>${l0.name}</b><em>1/4</em></span></span>`,
-        '호선 깃발', `내 말이 멈춘 역에 깃발이 꽂힌다(꽂은 역 / 그 호선 역 수). 한 호선을 모두 꽂으면 <b>호선 완성</b> — 점수 +${METRO.completeScore}, 그 호선 효과 2배.`)}
+      ${item('route', `<span class="route-banner g-banner"><span class="rb-head">오늘 구간</span><b>${b.S}</b><span class="rb-arrow">→</span><b>${b.G}</b><em>최단 ${b.length}역</em></span>`,
+        '오늘 구간', '진한 선과 역이 오늘 달릴 수 있는 길이다. 옅은 선은 오늘 구간 밖. 초록 <b>출발역</b>에서 나와 빨간 <b>종착역</b>을 지나면 골인. 큰 동그라미는 <b>환승역</b>(칩 +8) — 다른 호선으로 갈아탈 수 있다.')}
+      ${item('estate', `<span class="g-flags"><span class="flag kind-own g-flag">${ownerFlag(30)}<span class="flag-tag">+12</span></span><span class="flag kind-own mono g-flag">${ownerFlag(30)}<span class="flag-tag">+36 ×3</span></span><span class="flag kind-goblin g-flag">${goblinFlag(30)}<span class="flag-tag">−12</span></span></span>`,
+        '역 인수 · 통행료', `내 말이 멈춘 역은 출발 전에 <b>점수로 인수</b>할 수 있다(일반역 ${PRICE[1]} · 환승역 ${PRICE[2]} · 세 호선 ${PRICE[3]}). 금빛 깃발이 내 역 — 도깨비 열차가 서면 <b>통행료</b>(값의 4분의 1)가 들어오고, 같은 호선에서 이어서 사면 <b>연결 배수</b>가 오른다 — 통행료 2역 ×2 · 3역 ×3 · 4역 이상 ×4, 내 말이 연결된 내 역에 서면 점수 배수 +1(2역)·+2(3역 이상). 노선망이 클수록 승객이 늘어 그날 목표도 조금씩 오른다. 산 역은 원정이 끝나도 계속 내 것. 보랏빛 깃발은 <b>도깨비 역</b>(수·금) — 내 말이 서면 내가 낸다.`)}
+      ${item('incidents', `<span class="g-incidents">${Object.values(INCIDENTS).map((i) => `<span class="incident kind-${i.id} g-inc">${incidentArt(i.id)}<span class="inc-tag">${i.name}</span></span>`).join('')}</span>`,
+        '역 사건', `운행 중에 역에서 일이 터지면 <b>속보</b>가 뜨고 그 역에 표시가 생긴다. <b>화재</b>: 연기가 걷힐 때까지 아무도 못 지나간다 · <b>신호 장애</b>: 지나가거나 서면 ${INCIDENTS.delay.delay}분 더 · <b>인파 몰림</b>: 서면 칩 +${INCIDENTS.crowd.chips} · <b>역 버스킹</b>: 서면 배수 +${INCIDENTS.busk.mult}`)}
       ${item('target', '<span class="g-tag"><span class="gain hot">+120<i class="risk">12%</i><i class="mins">75분</i></span></span>',
         '갈 수 있는 역', '노란 고리가 갈 수 있는 역. 이름표는 <b>예상 점수 · 잡힐 확률</b>(초록 "안전"이면 걱정 없음) <b>· 걸리는 시간</b>. 고리를 누르면 그 역으로 달린다.')}
-      ${item('marks', `<span class="g-marks"><span class="g-warn">!</span><span class="g-head" style="--lc:${l0.color}">${l0.name}행</span><span class="g-person">${PERSON(l0.color)}</span><span class="g-tape">${tape(30)}</span></span>`,
-        '말 위 표시', '<b>!</b> 다음 도깨비 차례에 잡힐 수 있다 · <b>○호선행</b> 도깨비 열차가 다음 갈림길에서 탈 호선 · <b>사람</b> 손님(태워서 원하는 호선 역에 내려 주기) · <b>테이프</b> 봉쇄된 역')}
+      ${item('marks', `<span class="g-marks"><span class="g-warn">!</span><span class="g-head" style="--lc:${l0.color}">${l0.name}행</span><span class="g-tape">${tape(30)}</span></span>`,
+        '말 위 표시', '<b>!</b> 다음 도깨비 차례에 잡힐 수 있다 · <b>○호선행</b> 도깨비 열차가 다음 갈림길에서 탈 호선 · <b>테이프</b> 봉쇄된 역')}
       <h3>아래 조작판</h3>
       ${item('dock', `<span class="g-dock"><span class="hero-chip wait">${character(HEROES[0], 30)}<i class="b">차고</i></span><span class="hero-chip out can">${character(HEROES[1], 30)}<i class="b skill">스킬</i></span></span>`,
         '원정대', '<b>차고</b>에 있는 말은 눌러서 노선에 내보낸다. 노선 위에서 <b>스킬</b> 표시가 뜬 말을 누르면 하루 한 번 스킬을 쓴다.')}
@@ -1464,23 +1568,25 @@ function openGuide(focus = null, then = null) {
   }
 }
 
-/** 그날 소개: 목표·도깨비·운행 시계·봉쇄·호선 특화·도깨비 차장 */
+/** 그날 소개: 구간·목표·도깨비·운행 시계·봉쇄·역 사건·도깨비 차장 */
 function roundIntro() {
   const r = R(), b = B();
   const bossInfo = r.boss ? `<div class="boss-card">${character('dokkaebiRed', 56)}<div><b>도깨비 차장 — ${r.boss.name}</b><span>${r.boss.id === 'closure' ? `${b.lines[b.closed].name} ${CLOSURE_RULE.desc}` : r.boss.desc}</span></div></div>` : '';
-  const lines = Object.keys(b.lineStations).map((id) => b.lines[id]);
   const s = sheet(`
     <h2>${dayLabel(r)} 운행${G.run.daily ? '' : ` <small class="day-no">${r.number}/${G.run.rounds.length}</small>`}</h2>
-    <p><b>${hhmm(CLOCK.start)} 첫차 → ${hhmm(r.end)} 막차</b> 안에 <b>${r.target.toLocaleString()}점</b>을 넘겨라. 도깨비 열차 ${r.pieces.filter((p) => p.owner === 'opp').length}대가 종점 쪽에서 거꾸로 달려온다.</p>
+    <div class="route-card"><span>오늘 구간</span><b><i style="--lc:${b.lineAt(b.S).color}"></i>${b.S}</b><em>→</em><b><i style="--lc:${b.lineAt(b.G).color}"></i>${b.G}</b><small>최단 ${b.length}역 · 갈림길 ${b.forks.length}곳</small></div>
+    <p><b>${hhmm(CLOCK.start)} 첫차 → ${hhmm(r.end)} 막차</b> 안에 <b>${r.target.toLocaleString()}점</b>을 넘겨라. 도깨비 열차 ${r.pieces.filter((p) => p.owner === 'opp').length}대가 ${b.G} 쪽에서 거꾸로 달려온다.</p>
     <div class="legend">
       <div>${character('dokkaebiRed', 34)}<span><b>빨간 도깨비</b><br>내 말을 들이받으러 온다</span></div>
       <div>${character('dokkaebiBlue', 34)}<span><b>파란 도깨비</b><br>끝까지 가면 운행 지연 +${CLOCK.delay}분</span></div>
     </div>
     <div class="metro-intro">
-      <div class="mi-time"><b>운행 시계</b>07~09시·18~20시 러시아워(이동 칩 +50%) · 22시 심야(안개) · 23시 막차(골인 배수 +3)</div>
+      <div class="mi-time"><b>운행 시계</b>07~09시·18~20시 러시아워(이동 칩 +50%) · 22시 심야 할증(+25%) · 23시 막차(골인 배수 +3)</div>
+      ${networkGrowth(r.owned) > 0 ? `<div class="mi-time own-line"><b>내 노선망 역 ${holdings(r.owned).count}곳</b>승객이 늘어 오늘 목표 +${Math.round(networkGrowth(r.owned) * 100)}%</div>` : ''}
+      <div class="mi-time own-line"><b>역 인수</b>멈춘 역을 점수로 사 두면 도깨비 열차가 설 때마다 통행료. 같은 호선에서 이어서 사면 배수 ×2·×3·×4 · 산 역은 계속 내 것</div>
+      ${r.goblinStations.length ? `<div class="mi-time goblin-line"><b>도깨비 역</b>${r.goblinStations.join(' · ')} — 내 말이 서면 통행료를 낸다</div>` : ''}
       <div class="mi-time tape-line"><b>봉쇄 테이프 ×${r.blockadesLeft}</b>역 하나를 ${BLOCKADE.minutes / 60}시간 동안 막아 도깨비 열차가 못 지나가게 한다</div>
-      <div class="mi-lines">${lines.map((l) => `<span style="--lc:${l.color}" class="${b.closed === l.id ? 'shut' : ''}"><i></i><b>${l.name} ${l.title}</b>${b.closed === l.id ? '운행 중지' : l.desc}</span>`).join('')}</div>
-      <p>멈춘 역에 깃발이 꽂힌다. 한 호선 역에 모두 꽂으면 <b>호선 완성</b> — 점수 +${METRO.completeScore}, 효과 2배, 도깨비 열차는 통행료를 낸다. 손님은 원하는 호선 역에 내려 주자.</p>
+      <div class="mi-lines">${Object.values(INCIDENTS).map((i) => `<span class="mi-inc kind-${i.id}">${incidentArt(i.id, 22)}<b>${i.name}</b>${i.desc}</span>`).join('')}</div>
     </div>
     ${bossInfo}
     <div class="row"><button class="btn" id="go">첫차 출발!</button></div>`);
@@ -1524,17 +1630,16 @@ async function roundOver() {
 function openShop() {
   const run = G.run;
   const next = run.rounds[run.roundNo];
-  const art = (o) => o.kind === 'charm' ? charmCard(o.id) : o.kind === 'tile' ? tileArt(o.id) : lineArt();
+  const art = (o) => o.kind === 'charm' ? charmCard(o.id) : lineArt();
   const info = (o) => {
     if (o.kind === 'charm') { const c = charmById(o.id); return { kind: '정기권', name: c.name, desc: c.desc }; }
-    if (o.kind === 'tile') { const t = TILES.find((x) => x.id === o.id); return { kind: '역 개조', name: t.name, desc: `${t.desc} (내일 노선도 빈 역에)` }; }
     return { kind: '노선', name: LINE_PASS.name, desc: LINE_PASS.desc + (run.extraLines ? ` (지금 ${run.extraLines}장)` : '') };
   };
   const s = sheet(`
     <div style="display:flex;align-items:center;justify-content:space-between">
       <h2>역 매점</h2><span class="pill">${coin()} ${run.coins}</span>
     </div>
-    <p>내일은 <b>${next.day}요일</b> · 목표 ${next.target.toLocaleString()}점 · 도깨비 열차 ${next.opp}대${next.boss ? ' · <b style="color:var(--red)">도깨비 차장</b>' : ''}</p>
+    <p>내일은 <b>${next.day}요일</b> · <b>${routeFor(run, run.roundNo + 1).join(' → ')}</b> · 목표 ${next.target.toLocaleString()}점 · 도깨비 열차 ${next.opp}대${next.boss ? ' · <b style="color:var(--red)">도깨비 차장</b>' : ''}</p>
     <div class="offers">${run.shop.offers.map((o, i) => {
       const d = info(o);
       return `<div class="offer ${o.sold ? 'sold' : ''}">
@@ -1557,7 +1662,6 @@ function openShop() {
       const res = buy(run, Number(b.dataset.buy));
       if (!res.ok) { Sound.deny(); toast(res.reason); return; }
       Sound.coin();
-      if (res.node) toast('내일 노선도의 빈 역 하나가 개조된다');
       drawTop();
       openShop();
     };
@@ -1601,7 +1705,7 @@ function gameOver() {
   s.querySelector('#title').onclick = () => { closeSheet(); title(); };
   s.querySelector('#again').onclick = () => {
     closeSheet();
-    G.run = createRun(run.daily ? dailySeed() : Date.now() & 0x7fffffff, { daily: run.daily });
+    G.run = createRun(run.daily ? dailySeed() : Date.now() & 0x7fffffff, { daily: run.daily, owned: run.owned });
     G.boardId = 'metro';
     startRound(G.run);
     enterRound();

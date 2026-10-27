@@ -1,5 +1,5 @@
 // 하루 운행의 규칙. 화면을 모르고, 할 때마다 "무슨 일이 있었는지" 이벤트 목록을 돌려준다.
-// 판(노선도)은 boards/metro.js 의 인터페이스(roll·options·tile·rollsFor·lineAt…)로만 안다.
+// 판(서울 노선도의 그날 구간)은 boards/seoul.js 의 인터페이스(roll·options·tile·rollsFor·lineAt…)로만 안다.
 //
 // 하루는 운행 시계로 흐른다. 06:00 첫차 → 24:00 막차. 한 번 달릴 때마다 시간이 든다
 // (출발 45분 + 역마다 15분, 급행은 역마다 8분). 막차 시각이 지나면 그날 운행이 끝나고,
@@ -7,9 +7,11 @@
 
 import { START, HOME } from './board.js';
 import { charmById } from './items.js';
-import { makeMetro } from './boards/metro.js';
+import { makeSeoul, routeBySeed } from './boards/seoul.js';
 import { HEROES, heroOf } from './heroes.js';
 import { eventById } from './events.js';
+import { INCIDENTS, INCIDENT_MAX, INCIDENT_CHANCE, pickIncident } from './incidents.js';
+import { stationPrice, stationToll, links, chainOf, OWN_STOP_CHIPS, OWN_STOP_MULT_MAX } from './estate.js';
 
 export const CAPTURE_CHIPS = 50;
 export const HOME_CHIPS = 100;
@@ -26,25 +28,18 @@ export const CLOCK = {
 // 지하철 시간표처럼 자정 넘어도 24:00 · 24:30 으로 쓴다
 export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-// 승객 만족도(흥): 잡기·업기·골인·분실물마다 1씩 올라 모든 이동에 배수로 붙는다. 내 말이 잡히면 떨어진다.
-export const HEUNG_MAX = 5;
-// 분실물: 도깨비 차례가 끝날 때 확률로 역에 나타나 내 차례 3번 동안 머문다.
-export const TREASURE_CHANCE = 0.5;
-export const TREASURE_TTL = 3;
-export const TREASURE_CHIPS = 40;
-export const TREASURE_COINS = 2;
 // 봉쇄 테이프: 하루 2개. 친 역은 3시간 동안 도깨비 열차가 지나가지 못한다.
 export const BLOCKADE = { perDay: 2, minutes: 180 };
 
-// 깃발·호선 완성·승객(보상은 노선도가 클수록 작게 맞췄다)
-export const METRO = { regular: 5, completeScore: 80, completeCoins: 2, toll: 1, deliverChips: 30, deliverCoins: 1, passengerTtl: 4 };
-
 /**
- * cfg: { number, target, rerolls, myPieces, oppPieces, charms: [id], tiles: {node: tileId}, boss, events,
- *        mapSeed, extraLines, closedLine }
+ * cfg: { number, target, rerolls, myPieces, oppPieces, charms: [id], boss, events,
+ *        route, mapSeed, extraLines, closure, owned, goblinStations }
  *   events     돌발 사건 계획 [{ at(시각), id }] (events.js planEvents). 없으면 사건이 없다
- *   mapSeed    노선도 시드(날마다 다르게)
- *   extraLines 노선 연장권으로 더 붙일 갈래 · closedLine 도깨비 차장이 막은 호선
+ *   route      그날 구간 [출발역, 종착역]. 없으면 mapSeed 로 고른다
+ *   extraLines 노선 연장권 — 구간이 그만큼 넓어진다(돌아가는 길이 늘어난다)
+ *   closure    도깨비 차장이 호선 하나를 운행 중지(끊어도 구간이 이어지는 호선 중에서 mapSeed 로)
+ *   owned      내 역 { 역이름: true } — 원정(run)과 같은 객체를 함께 쓴다. 사면 여기에 바로 들어간다
+ *   goblinStations 그날 도깨비 역(보스 날). 내 말이 서면 내가 통행료를 낸다
  */
 export function createRound(cfg) {
   const pieces = [];
@@ -53,7 +48,10 @@ export function createRound(cfg) {
     // 짝수 번째는 빨간 사냥꾼(잡기 우선), 홀수 번째는 파란 도망꾼(골인 우선). 그림 색과 맞춘다.
     pieces.push({ id: 'd' + i, owner: 'opp', node: START, prev: null, trait: i % 2 === 0 ? 'hunter' : 'runner' });
   }
-  const board = makeMetro(cfg.mapSeed || 1, { extra: cfg.extraLines || 0, closed: cfg.closedLine ?? null });
+  const board = makeSeoul(cfg.route || routeBySeed(cfg.mapSeed || 1), {
+    slack: 2 + (cfg.extraLines || 0),
+    closeSeed: cfg.closure ? (cfg.mapSeed || 1) : null
+  });
   const r = {
     number: cfg.number,
     boardId: 'metro',
@@ -65,11 +63,14 @@ export function createRound(cfg) {
     freeRide: false,
     rerolls: cfg.rerolls,
     extra: 0,
-    heung: 0,
-    treasures: [],
+    incidents: [],                 // 역 사건 { node, kind, until }
     pieces,
     charms: cfg.charms.slice(),
-    tiles: { ...cfg.tiles },
+    owned: cfg.owned || {},
+    goblinStations: (cfg.goblinStations || []).slice(),
+    offer: null,                   // 방금 멈춘 역을 살 수 있으면 { node, price }
+    priceRate: 1,                  // 역 값 배율(돌발 사건 '역세권 세일')
+    tollRate: 1,                   // 통행료 배율(정기권 '임대 계약서', 돌발 사건 '역세권 호재')
     boss: cfg.boss || null,
     coins: 0,
     escapeUsed: false,
@@ -78,16 +79,12 @@ export function createRound(cfg) {
     blockades: [],                 // { node, until }
     blockadesLeft: BLOCKADE.perDay,
     eventPlan: (cfg.events || []).map((e) => ({ ...e, done: false })),
-    flags: {},                     // 내 깃발이 꽂힌 역
-    completed: [],                 // 완성한 호선 id
-    passengers: [],                // 역에서 기다리는 손님 { node, line, ttl }
     pending: null,
     phase: 'throw',
     outcome: null,
     lastMoveBest: 0,
     moves: 0
   };
-  r.revealed = [...board.ahead([START], fogRadius(r))];
   for (const id of r.charms) charmById(id)?.dayStart?.(r);
   return r;
 }
@@ -96,33 +93,22 @@ export const boardFor = (r) => r.boardInst;
 
 // ── 시간대 ─────────────────────────────────────────────────
 
-/** 지금 시간대: 'rush' 출퇴근 러시 · 'night' 심야 · 'last' 막차(23시~) · 'day' 낮 */
+/** 지금 시간대: 'rush' 출퇴근 러시(칩 +50%) · 'night' 심야(칩 +25%) · 'last' 막차(23시~, 골인 배수 +3) · 'day' 낮 */
 export function timeOf(r, clock = r.clock) {
   if (clock >= CLOCK.last) return 'last';
   if (clock >= CLOCK.night) return 'night';
   if (CLOCK.rush.some(([a, b]) => clock >= a && clock < b)) return 'rush';
   return 'day';
 }
-const fogRadius = (r) => (r.clock >= CLOCK.night ? 4 : boardFor(r).fogRadius);
 export const minutesLeft = (r) => Math.max(0, r.end - r.clock);
 const outOfTime = (r) => r.clock >= r.end;
 
-/** 이번 이동에 드는 시간 */
+/** 이번 이동에 드는 시간. 신호 장애 역을 지나거나 서면 더 걸린다 */
 export function tripMinutes(r, opt, roll) {
   if (r.freeRide) return 0;
-  const stops = opt.path.filter((n) => n !== HOME).length;
-  return CLOCK.trip + stops * (roll.face === 'express' ? CLOCK.expressPerStop : CLOCK.perStop);
-}
-
-/** 안개 걷기: 내 말들 앞이 보이게 된다. 새로 보인 역이 있으면 이벤트 하나 */
-function reveal(r) {
-  const b = boardFor(r);
-  const seen = new Set(r.revealed);
-  const now = b.ahead(mine(r).map((p) => p.node), fogRadius(r));
-  const fresh = [...now].filter((n) => !seen.has(n));
-  if (!fresh.length) return [];
-  r.revealed.push(...fresh);
-  return [{ type: 'reveal', nodes: fresh }];
+  const stops = opt.path.filter((n) => n !== HOME);
+  const late = stops.reduce((s, n) => s + (INCIDENTS[incidentAt(r, n)?.kind]?.delay || 0), 0);
+  return CLOCK.trip + stops.length * (roll.face === 'express' ? CLOCK.expressPerStop : CLOCK.perStop) + late;
 }
 
 // ── 던지기 솜씨(손맛 게이지) ───────────────────────────────
@@ -147,6 +133,7 @@ export function depart(r, rng, quality = 'normal') {
   if (r.phase !== 'throw') throw new Error('지금은 출발할 차례가 아닙니다: ' + r.phase);
   if (outOfTime(r)) throw new Error('오늘 운행이 끝났습니다');
   if (r.extra > 0) r.extra--;
+  r.offer = null;
   const events = settleThrow(r, rollWith(r, rng, quality), rng, false);
   events[0].quality = quality;
   return events;
@@ -194,15 +181,18 @@ const bossBlocks = (r, roll) => r.boss?.id === 'noDo' && roll.tier === 1;
 const mine = (r) => r.pieces.filter((p) => p.owner === 'me');
 const theirs = (r) => r.pieces.filter((p) => p.owner === 'opp');
 const onBoard = (p) => p.node !== START && p.node !== HOME;
-const treasureAt = (r, node) => r.treasures.find((t) => t.node === node);
-const blockedSet = (r) => new Set(r.blockades.map((b) => b.node));
+export const incidentAt = (r, node) => r.incidents.find((i) => i.node === node);
+/** 화재 역: 아무도 못 지나간다 */
+const fireSet = (r) => new Set(r.incidents.filter((i) => INCIDENTS[i.kind]?.block).map((i) => i.node));
+/** 도깨비가 못 지나가는 역: 화재 + 봉쇄 테이프 */
+const blockedSet = (r) => new Set([...fireSet(r), ...r.blockades.map((b) => b.node)]);
 
 /** 지금 나온 결과로 둘 수 있는 수. 각 수에 예상 점수·위험도·걸리는 시간(preview)을 붙인다. */
 export function legalMoves(r) {
   if (!r.pending) return [];
   const roll = r.pending.roll;
   if (bossBlocks(r, roll)) return [];
-  return boardFor(r).options(r.pieces, 'me', roll).map((o) => ({ ...o, preview: evaluate(r, o, roll) }));
+  return boardFor(r).options(r.pieces, 'me', roll, fireSet(r)).map((o) => ({ ...o, preview: evaluate(r, o, roll) }));
 }
 
 /** 도깨비 열차가 할 수 있는 수(봉쇄 역은 지나가지 못한다) */
@@ -236,83 +226,24 @@ export function threats(r) {
   return out;
 }
 
-// ── 노선도 규칙: 역 효과 · 깃발 · 호선 완성 · 손님 · 도깨비 행선지 ───────────
-//   깃발: 내 말이 멈춘 역에 꽂힌다. 다시 멈추면 단골역. 도깨비가 밟으면 빼앗긴다
-//   호선 완성: 한 호선의 역에 모두 깃발 → 즉시 점수·토큰, 그날 특화 효과 2배, 도깨비가 멈추면 통행료
-//   손님: 역에서 기다리다 내 말이 멈추면 탄다. 원하는 호선 역에 내려 주면 배달 보상
+// ── 역 효과 · 도깨비 행선지 · 역 사건 ─────────────────────────
 
-/** 역 효과를 하나로 합친다: 역 종류 + 호선 특화(완성이면 2배) + 단골역 + 배달 */
-function stationEffect(r, dest, opt) {
-  const b = boardFor(r);
-  const base = b.tile(dest);
-  const line = b.lineAt(dest);
+/** 역 효과를 하나로 합친다: 환승역 + 역 사건(인파·버스킹) */
+function stationEffect(r, dest) {
+  const base = boardFor(r).tile(dest);
+  const inc = INCIDENTS[incidentAt(r, dest)?.kind];
   const parts = [];
   if (base) parts.push(base);
-  if (line?.perk) {
-    const k = r.completed.includes(line.id) ? 2 : 1;
-    const p = {};
-    for (const [key, v] of Object.entries(line.perk)) p[key] = v * k;
-    parts.push({ name: `${line.name}${k > 1 ? '(완성)' : ''}`, ...p });
+  if (r.owned[dest]) {
+    // 이어진 내 역이면 배수가 오른다: 2역 연결 +1, 3역 이상 +2 (통행료 쪽은 ×2~×4)
+    const k = chainOf(r.owned, dest);
+    parts.push({ kind: 'own', name: k > 1 ? `내 역 ${k}역 연결` : '내 역', chips: OWN_STOP_CHIPS, mult: Math.min(OWN_STOP_MULT_MAX, k - 1) });
   }
-  if (r.flags[dest]) parts.push({ name: '단골역', chips: METRO.regular });
-  const riders = opt ? r.pieces.filter((p) => opt.pieceIds.includes(p.id) && p.rider && p.rider === line?.id) : [];
-  if (riders.length) {
-    const k = Math.max(1, ...opt.pieceIds.map((id) => heroOf(id)?.deliverMultiplier || 1));
-    parts.push({ name: '배달', chips: METRO.deliverChips * riders.length * k, coins: METRO.deliverCoins * riders.length * k });
-  }
+  if (inc && (inc.chips || inc.mult)) parts.push(inc);
   if (!parts.length) return null;
-  const out = { kind: base?.kind || 'line', name: parts.map((p) => p.name).join(' · ') };
-  for (const p of parts) for (const key of ['chips', 'mult', 'coins', 'heung']) if (p[key]) out[key] = (out[key] || 0) + p[key];
+  const out = { kind: inc?.id || parts[0].kind, name: parts.map((p) => p.name).join(' · ') };
+  for (const p of parts) for (const key of ['chips', 'mult', 'coins']) if (p[key]) out[key] = (out[key] || 0) + p[key];
   return out;
-}
-
-/** 내 말이 멈춘 뒤: 배달·승차·깃발·호선 완성 */
-function afterMyStop(r, dest, movers) {
-  const b = boardFor(r);
-  if (dest === HOME) return [];
-  const events = [];
-  const line = b.lineAt(dest);
-  const delivered = movers.filter((p) => p.rider && p.rider === line?.id);
-  if (delivered.length) {
-    for (const p of delivered) p.rider = null;
-    events.push({ type: 'deliver', node: dest, pieceIds: delivered.map((p) => p.id), line: line.id });
-  }
-  for (const q of r.passengers.filter((x) => x.node === dest)) {
-    const seat = movers.find((p) => !p.rider);
-    if (!seat) break;
-    seat.rider = q.line;
-    r.passengers = r.passengers.filter((x) => x !== q);
-    events.push({ type: 'pickup', node: dest, pieceId: seat.id, line: q.line });
-  }
-  if (!r.flags[dest]) {
-    r.flags[dest] = true;
-    events.push({ type: 'flag', node: dest });
-    for (const [id, stations] of Object.entries(b.lineStations)) {
-      const lid = Number(id);
-      if (r.completed.includes(lid) || lid === b.closed) continue;
-      if (stations.every((n) => r.flags[n])) {
-        r.completed.push(lid);
-        r.score += METRO.completeScore;
-        r.coins += METRO.completeCoins;
-        events.push({ type: 'lineComplete', line: lid, bonus: METRO.completeScore, coins: METRO.completeCoins, score: r.score });
-      }
-    }
-  }
-  return events;
-}
-
-/** 도깨비가 멈춘 뒤: 깃발을 빼앗고, 완성 호선이면 통행료 */
-function afterOppStop(r, dest) {
-  const b = boardFor(r);
-  if (dest === HOME) return [];
-  const events = [];
-  if (r.flags[dest]) { delete r.flags[dest]; events.push({ type: 'flagLost', node: dest }); }
-  const line = b.lineAt(dest);
-  if (line && r.completed.includes(line.id)) {
-    r.coins += METRO.toll;
-    events.push({ type: 'coin', node: dest, amount: METRO.toll, why: 'toll' });
-  }
-  return events;
 }
 
 /** 도깨비 열차마다 다음 갈림역에서 탈 갈래를 미리 정해 둔다(화면이 머리 위에 보여준다) */
@@ -327,37 +258,92 @@ function planHeadings(r, rng) {
     const score = (way) => {
       let v = rng.next();
       if (p.trait === 'hunter') v += mine(r).some((m) => onBoard(m) && b.depth[m.node] <= b.depth[way] && b.depth[m.node] > b.depth[way] - 6) ? 1 : 0;
-      else v += b.depth[way] < b.depth[fork.at] - 1.5 ? 0.6 : 0;
+      else v += b.depth[way] < b.depth[fork.at] - 0.5 ? 0.6 : 0;
       return v;
     };
     const way = fork.ways.slice().sort((x, y) => score(y) - score(x))[0];
-    p.heading = { at: fork.at, node: way, line: b.lineAt(way)?.id || 1 };
+    p.heading = { at: fork.at, node: way, line: b.lineOfEdge(fork.at, way) || b.lineAt(way)?.id || 1 };
   }
 }
 
-/** 손님이 역에 나타나고, 오래 기다리면 떠난다. 출퇴근 러시엔 손님이 많다 */
-function tickPassengers(r, rng) {
+/** 역 사건이 날 수 있는 역. 화재는 출발역 → 종착역 길을 끊는 역에는 나지 않는다 */
+function incidentSpots(r, kind) {
   const b = boardFor(r);
+  const taken = new Set([...r.pieces.map((p) => p.node), ...r.incidents.map((i) => i.node), ...r.blockades.map((x) => x.node)]);
+  let spots = b.nodes.filter((n) => n !== b.S && n !== b.G && !taken.has(n));
+  if (INCIDENTS[kind].block) {
+    const fires = fireSet(r);
+    spots = spots.filter((n) => connected(b, new Set([...fires, n])));
+  }
+  return spots;
+}
+
+/** avoid 역을 피해 출발역에서 종착역까지 갈 수 있나 */
+function connected(b, avoid) {
+  const seen = new Set([b.S]);
+  const q = [b.S];
+  while (q.length) {
+    const n = q.shift();
+    if (n === b.G) return true;
+    for (const m of b.next[n]) if (!seen.has(m) && !avoid.has(m)) { seen.add(m); q.push(m); }
+  }
+  return false;
+}
+
+/** 역 사건 하나를 일으킨다. kind 를 주지 않으면 가중치로 */
+function spawnIncident(r, rng, kind = null) {
+  const k = kind || pickIncident(rng, timeOf(r) === 'rush').id;
+  const spots = incidentSpots(r, k);
+  if (!spots.length) return [];
+  const node = spots[Math.floor(rng.next() * spots.length)];
+  const info = INCIDENTS[k];
+  const until = r.clock + info.minutes;
+  r.incidents.push({ node, kind: k, until });
+  return [{ type: 'incident', node, kind: k, until, name: info.name, desc: info.desc }];
+}
+
+/** 시간이 다 된 사건은 사라지고, 확률로 새 사건이 생긴다 */
+function tickIncidents(r, rng) {
   const events = [];
-  for (const q of r.passengers) q.ttl -= 1;
-  for (const q of r.passengers.filter((x) => x.ttl <= 0)) events.push({ type: 'passengerGone', node: q.node });
-  r.passengers = r.passengers.filter((q) => q.ttl > 0);
-  const rush = timeOf(r) === 'rush';
-  const max = rush ? 3 : 2;
-  if (r.passengers.length < max && rng.next() < (rush ? 0.85 : 0.45)) events.push(...spawnPassenger(r, rng));
+  for (const i of r.incidents.filter((x) => r.clock >= x.until)) events.push({ type: 'incidentEnd', node: i.node, kind: i.kind });
+  r.incidents = r.incidents.filter((x) => r.clock < x.until);
+  if (r.incidents.length < INCIDENT_MAX && rng.next() < INCIDENT_CHANCE) events.push(...spawnIncident(r, rng));
   return events;
 }
 
-function spawnPassenger(r, rng) {
+// ── 역 인수 · 통행료 ──────────────────────────────────────────
+
+/** 이 역의 오늘 값(점수) */
+export const priceFor = (r, node) => Math.round(stationPrice(node) * r.priceRate);
+
+/** 도깨비 열차가 내 역에 서면 받는 통행료: 연결 ×2~×4 · 인파 ×2 · 배율. 불난 역은 못 받는다 */
+export function tollFor(r, node) {
+  if (!r.owned[node] || fireSet(r).has(node)) return { amount: 0, chain: 0 };
+  const chain = chainOf(r.owned, node);
+  const crowd = incidentAt(r, node)?.kind === 'crowd';
+  const amount = Math.round(stationToll(node) * chain * (crowd ? 2 : 1) * r.tollRate);
+  return { amount, chain, crowd };
+}
+
+/** 내 말이 도깨비 역에 서면 내는 통행료 */
+export const goblinTollFor = (r, node) => (r.goblinStations.includes(node) ? stationToll(node) : 0);
+
+/** 이 역을 살 수 있나: 구간 안, 출발역·종착역이 아니고, 주인이 없고, 도깨비 역이 아닌 곳 */
+export function buyable(r, node) {
   const b = boardFor(r);
-  const taken = new Set([...r.pieces.map((p) => p.node), ...r.passengers.map((q) => q.node), ...r.treasures.map((t) => t.node)]);
-  const lines = Object.keys(b.lineStations).map(Number).filter((id) => id !== b.closed);
-  const free = b.nodes.filter((n) => !taken.has(n) && !b.blocked(n) && n !== b.S && n !== b.G && b.lineAt(n)?.id === 1);
-  if (!free.length || !lines.length) return [];
-  const node = free[Math.floor(rng.next() * free.length)];
-  const line = lines[Math.floor(rng.next() * lines.length)];
-  r.passengers.push({ node, line, ttl: METRO.passengerTtl });
-  return [{ type: 'passengerSpawn', node, line, ttl: METRO.passengerTtl }];
+  return b.nodes.includes(node) && node !== b.S && node !== b.G && !r.owned[node] && !r.goblinStations.includes(node);
+}
+
+/** 방금 제안받은 역을 점수로 산다(출발 전, 다음 출발까지만). 이어진 묶음이 생기면 그 길이·호선도 알려 준다 */
+export function buyStation(r, node) {
+  if (r.phase !== 'throw' || r.offer?.node !== node) throw new Error('지금은 이 역을 살 수 없다');
+  const price = r.offer.price;
+  if (r.score < price) throw new Error('점수가 모자란다');
+  r.score -= price;
+  r.owned[node] = true;
+  r.offer = null;
+  const at = links(r.owned).at[node];
+  return [{ type: 'buy', node, price, score: r.score, chain: chainOf(r.owned, node), line: at?.line ?? null, length: at?.len || 1 }];
 }
 
 /** 이 수를 두면 무슨 일이 생기는지 계산만 한다(상태를 바꾸지 않는다). */
@@ -368,11 +354,8 @@ function evaluate(r, opt, roll) {
   const joined = dest === HOME ? 0 : mine(r).filter((p) => p.node === dest && !opt.pieceIds.includes(p.id)).length;
   const stack = opt.pieceIds.length + joined;
   const waiting = mine(r).filter((p) => p.node === START && !opt.pieceIds.includes(p.id)).length;
-  const treasure = dest !== HOME && !!treasureAt(r, dest);
-  const boardTile = dest === HOME ? null : stationEffect(r, dest, opt);
-  const trap = boardTile?.kind === 'trap';
-  const heungUp = !trap && (victims.length > 0 || homed > 0 || joined > 0 || treasure || !!boardTile?.heung);
-  const heung = trap ? 0 : Math.min(HEUNG_MAX, r.heung + (heungUp ? 1 : 0) + (boardTile?.heung || 0));
+  const boardTile = dest === HOME ? null : stationEffect(r, dest);
+  const incident = dest === HOME ? null : incidentAt(r, dest)?.kind || null;
   const groupIds = dest === HOME ? opt.pieceIds : opt.pieceIds.concat(mine(r).filter((p) => p.node === dest && !opt.pieceIds.includes(p.id)).map((p) => p.id));
   const heroes = opt.pieceIds.map(heroOf).filter(Boolean).map((h) => h.id);
   const groupHeroes = groupIds.map(heroOf).filter(Boolean).map((h) => h.id);
@@ -388,10 +371,12 @@ function evaluate(r, opt, roll) {
 
   const score = scoreMove(r, {
     roll, result: roll.value, tier: roll.tier, stack, captured: victims.length, homed, waiting,
-    onDiagonal: !!opt.diagonal, tile: r.tiles[dest] || null, boardTile, treasure, heung, heroes, groupHeroes,
+    onDiagonal: !!opt.diagonal, transfers: opt.transfers || 0, boardTile, incident, heroes, groupHeroes,
     arriveAt: r.clock + minutes
   });
-  return { dest, homed, captured: victims.length, stack, joined, treasure, boardTile, trap, heung, heungUp, danger, score, heroes, minutes };
+  const pay = dest === HOME ? 0 : goblinTollFor(r, dest);
+  const price = dest !== HOME && buyable(r, dest) ? priceFor(r, dest) : 0;
+  return { dest, homed, captured: victims.length, stack, joined, boardTile, incident, danger, score, heroes, minutes, pay, price };
 }
 
 export function scoreMove(r, info) {
@@ -404,15 +389,12 @@ export function scoreMove(r, info) {
     mult(n, src) { mul += n; lines.push({ src, mult: n }); },
     times(k, src) { mul *= k; lines.push({ src, times: k }); }
   };
-  if (info.tile === 'gold') c.mult(2, '황금 역');
   const bt = info.boardTile;
   if (bt?.chips) c.chip(bt.chips, bt.name);
   if (bt?.mult) c.mult(bt.mult, bt.name);
   if (info.stack > 1 && r.boss?.id !== 'noStack') c.mult(info.stack - 1, '함께 타기');
   if (info.captured > 0) { c.chip(CAPTURE_CHIPS * info.captured, '잡기'); c.mult(1, '잡기'); }
   if (info.homed > 0) { c.chip(HOME_CHIPS * info.homed, '골인'); c.mult(2, '골인'); }
-  if (info.treasure) c.chip(TREASURE_CHIPS, '분실물');
-  if (info.heung > 0) c.mult(info.heung, '만족도');
   // 원정대 능력 — 정기권보다 먼저
   for (const h of HEROES) if (h.score && info.heroes) h.score(c);
   for (const id of r.charms) {
@@ -421,6 +403,7 @@ export function scoreMove(r, info) {
   }
   const when = timeOf(r, info.arriveAt ?? r.clock);
   if (when === 'rush' && roll.chips) c.chip(Math.round(roll.chips * 0.5), '러시아워');
+  if (when === 'night' && roll.chips) c.chip(Math.round(roll.chips * 0.25), '심야 할증');
   if (when === 'last' && info.homed > 0) c.mult(3, '막차');
   if (r.boss?.id === 'halfChips') {
     const half = Math.floor(chips / 2);
@@ -438,18 +421,18 @@ export function applyMove(r, index, rng) {
   const roll = r.pending.roll;
   const ev = opt.preview;
   const events = moveGroup(r, 'me', opt, roll);
-  events.push(...reveal(r));
   r.moves++;
 
   r.score += ev.score.total;
   r.lastMoveBest = Math.max(r.lastMoveBest, ev.score.total);
   events.push({ type: 'score', ...ev.score, score: r.score, target: r.target });
-  if (ev.heungUp && ev.heung > r.heung) {
-    r.heung = ev.heung;
-    events.push({ type: 'heung', value: r.heung });
-  }
   events.push(...landOnStation(r, ev));
-  events.push(...afterMyStop(r, ev.dest, r.pieces.filter((p) => opt.pieceIds.includes(p.id))));
+  if (ev.pay) {
+    const paid = Math.min(ev.pay, r.score);
+    r.score -= paid;
+    events.push({ type: 'tollPaid', node: ev.dest, amount: paid, score: r.score });
+  }
+  r.offer = ev.price ? { node: ev.dest, price: ev.price } : null;
   // 시간이 흐른다(토끼의 추가 운행이면 공짜)
   events.push(...spend(r, ev.minutes, r.freeRide ? 'free' : 'trip'));
   r.freeRide = false;
@@ -467,20 +450,20 @@ export function applyMove(r, index, rng) {
   return events.concat(afterMyMove(r, rng));
 }
 
-/** 역 효과 중 점수 계산 밖에서 일어나는 것: 토큰, 공사중(만족도가 꺼진다). */
+/** 역 효과 중 점수 계산 밖에서 일어나는 것: 토큰. 인파·버스킹은 한 번 누리면 끝난다 */
 function landOnStation(r, ev) {
-  const t = ev.boardTile;
-  if (!t) return [];
   const events = [];
-  if (t.coins) { r.coins += t.coins; events.push({ type: 'coin', node: ev.dest, amount: t.coins }); }
-  if (t.kind === 'trap' && r.heung > 0) {
-    events.push({ type: 'heungLost', value: r.heung, why: 'trap' });
-    r.heung = 0;
+  const t = ev.boardTile;
+  if (t?.coins) { r.coins += t.coins; events.push({ type: 'coin', node: ev.dest, amount: t.coins }); }
+  const inc = incidentAt(r, ev.dest);
+  if (inc && (INCIDENTS[inc.kind].chips || INCIDENTS[inc.kind].mult)) {
+    r.incidents = r.incidents.filter((i) => i !== inc);
+    events.push({ type: 'incidentEnd', node: inc.node, kind: inc.kind, used: true });
   }
   return events;
 }
 
-/** owner 의 말 묶음을 실제로 옮기고 이벤트를 만든다. 잡기·골인·역·분실물까지. */
+/** owner 의 말 묶음을 실제로 옮기고 이벤트를 만든다. 잡기·골인·통행료까지. */
 function moveGroup(r, owner, opt, roll) {
   const board = boardFor(r);
   const movers = r.pieces.filter((p) => opt.pieceIds.includes(p.id));
@@ -498,7 +481,6 @@ function moveGroup(r, owner, opt, roll) {
       events.push({ type: 'home', who: owner, pieceIds: opt.pieceIds, delay });
       events.push(...spend(r, delay, 'delay'));
     } else {
-      for (const p of movers) p.rider = null;
       events.push({ type: 'home', who: owner, pieceIds: opt.pieceIds });
     }
     return events;
@@ -514,29 +496,17 @@ function moveGroup(r, owner, opt, roll) {
     return events;
   }
   if (victims.length) {
-    for (const v of victims) { v.node = START; v.prev = null; v.rider = null; }
+    for (const v of victims) { v.node = START; v.prev = null; }
     if (owner === 'me') r.extra += 1;
     events.push({ type: 'capture', who: owner, node: dest, victimIds: victims.map((v) => v.id), attackerIds: opt.pieceIds });
-    if (owner === 'opp' && r.heung > 0) {
-      events.push({ type: 'heungLost', value: r.heung });
-      r.heung = 0;
+  }
+
+  if (owner === 'opp') {
+    const toll = tollFor(r, dest);
+    if (toll.amount) {
+      r.score += toll.amount;
+      events.push({ type: 'toll', node: dest, pieceIds: opt.pieceIds, ...toll, score: r.score });
     }
-  }
-
-  const loot = treasureAt(r, dest);
-  if (loot) {
-    r.treasures = r.treasures.filter((t) => t !== loot);
-    const coins = owner === 'me' ? TREASURE_COINS : 0;
-    r.coins += coins;
-    events.push({ type: 'treasureTake', who: owner, node: dest, coins });
-  }
-
-  if (owner === 'opp') events.push(...afterOppStop(r, dest));
-  const tile = r.tiles[dest];
-  if (tile === 'luck' && owner === 'me') { r.coins += 1; events.push({ type: 'coin', node: dest, amount: 1 }); }
-  if (tile === 'trap' && owner === 'opp') {
-    for (const p of movers) { p.node = START; p.prev = null; }
-    events.push({ type: 'trap', node: dest, pieceIds: opt.pieceIds });
   }
   if (owner === 'me') {
     const stacked = mine(r).filter((p) => p.node === dest);
@@ -549,37 +519,14 @@ function moveGroup(r, owner, opt, roll) {
 
 function afterMyMove(r, rng) {
   const events = opponentTurn(r, rng);
-  events.push(...tickTreasures(r, rng));
+  events.push(...tickIncidents(r, rng));
   events.push(...expireBlockades(r));
   if (!outOfTime(r)) events.push(...fireEvent(r, rng));
+  // 도깨비가 낸 통행료로 목표를 넘길 수도 있다
+  if (r.score >= r.target) return events.concat(finish(r, 'target'));
   if (outOfTime(r)) return events.concat(finish(r, 'lastTrain'));
   r.phase = 'throw';
   return events;
-}
-
-/** 도깨비 차례가 끝날 때: 있던 분실물은 한 턴 줄고, 없으면 새로 나타날 수 있다. 손님도 오간다. */
-function tickTreasures(r, rng) {
-  const board = boardFor(r);
-  const events = tickPassengers(r, rng);
-  for (const t of r.treasures) t.ttl -= 1;
-  for (const t of r.treasures.filter((x) => x.ttl <= 0)) events.push({ type: 'treasureGone', node: t.node });
-  r.treasures = r.treasures.filter((t) => t.ttl > 0);
-  if (r.treasures.length === 0 && rng.next() < TREASURE_CHANCE) {
-    const node = pickFree(r, rng);
-    if (node) {
-      r.treasures.push({ node, ttl: TREASURE_TTL });
-      events.push({ type: 'treasureSpawn', node, ttl: TREASURE_TTL });
-    }
-  }
-  return events;
-}
-
-/** 아무것도 없는 역 하나(분실물·사건용) */
-function pickFree(r, rng) {
-  const b = boardFor(r);
-  const taken = new Set([...r.pieces.map((p) => p.node), ...r.passengers.map((q) => q.node)]);
-  const free = b.nodes.filter((n) => n !== b.S && n !== b.G && !taken.has(n) && !b.tile(n) && !r.tiles[n] && !treasureAt(r, n) && !b.blocked(n));
-  return free.length ? free[Math.floor(rng.next() * free.length)] : null;
 }
 
 // ── 봉쇄 테이프 ─────────────────────────────────────────────
@@ -590,7 +537,7 @@ export function blockadeBlocked(r, node) {
   if (r.phase !== 'throw') return '출발 전에만 칠 수 있다';
   if (r.blockadesLeft <= 0) return '오늘 봉쇄 테이프를 다 썼다';
   if (!b.nodes.includes(node) || node === b.S || node === b.G) return '출발역·종점은 막을 수 없다';
-  if (b.blocked(node)) return '이미 운행 중지된 역이다';
+  if (fireSet(r).has(node)) return '불이 난 역은 이미 막혀 있다';
   if (r.blockades.some((x) => x.node === node)) return '이미 봉쇄한 역이다';
   if (theirs(r).some((p) => p.node === node)) return '도깨비 열차가 서 있는 역은 막을 수 없다';
   return null;
@@ -628,24 +575,18 @@ function fireEvent(r, rng) {
   due.done = true;
   const info = eventById(due.id);
   const events = [{ type: 'event', id: info.id, name: info.name, desc: info.desc, good: info.good }];
-  if (due.id === 'treasureRain') {
-    for (let i = 0; i < 3; i++) {
-      const node = pickFree(r, rng);
-      if (!node) break;
-      r.treasures.push({ node, ttl: TREASURE_TTL });
-      events.push({ type: 'treasureSpawn', node, ttl: TREASURE_TTL });
-    }
-  } else if (due.id === 'goldRush') {
-    const nodes = [];
-    for (let i = 0; i < 2; i++) { const node = pickFree(r, rng); if (node) { r.tiles[node] = 'gold'; nodes.push(node); } }
-    events.push({ type: 'goldRush', nodes });
+  if (due.id === 'sale') {
+    r.priceRate *= 0.5;
+    events.push({ type: 'sale' });
+  } else if (due.id === 'boom') {
+    r.tollRate *= 2;
+    events.push({ type: 'boom' });
   } else if (due.id === 'gust') {
     const blown = theirs(r).filter(onBoard);
     for (const p of blown) { p.node = START; p.prev = null; p.heading = null; }
     events.push({ type: 'gust', pieceIds: blown.map((p) => p.id) });
   } else if (due.id === 'feast') {
-    r.heung = Math.min(HEUNG_MAX, r.heung + 2);
-    events.push({ type: 'heung', value: r.heung });
+    for (let i = 0; i < 3; i++) events.push(...spawnIncident(r, rng, 'busk'));
   } else if (due.id === 'tailwind') {
     r.end += 60;
     events.push({ type: 'tailwind', end: r.end });
@@ -673,7 +614,7 @@ function opponentTurn(r, rng) {
       let opts = oppOptions(r, roll);
       // 판다의 스크린도어: 내 말을 잡는 수는 막힌다
       if (r.shield) opts = opts.filter((o) => { const d = o.path[o.path.length - 1]; return d === HOME || !mine(r).some((p) => p.node === d); });
-      if (opts.length === 0) { events.push({ type: 'noMove', who: 'opp', roll, why: r.shield ? 'shield' : r.blockades.length ? 'blockade' : 'none' }); continue; }
+      if (opts.length === 0) { events.push({ type: 'noMove', who: 'opp', roll, why: r.shield ? 'shield' : r.blockades.length ? 'blockade' : fireSet(r).size ? 'fire' : 'none' }); continue; }
       const moved = moveGroup(r, 'opp', chooseOpp(r, opts), roll);
       events.push(...moved);
       again = roll.bonus || moved.some((e) => e.type === 'capture');
@@ -719,7 +660,7 @@ export function useSkill(r, heroId, rng) {
     r.freeRide = true;
     events.push({ type: 'hop', pieceId: piece.id });
   } else if (h.active.id === 'chatter') {
-    for (let i = 0; i < 2; i++) events.push(...spawnPassenger(r, rng));
+    for (let i = 0; i < 2; i++) events.push(...spawnIncident(r, rng, 'crowd'));
   } else if (h.active.id === 'shield') {
     r.shield = true;
     events.push({ type: 'shieldUp', pieceIds: mine(r).filter(onBoard).map((p) => p.id) });
@@ -731,7 +672,7 @@ export function useSkill(r, heroId, rng) {
  * 도깨비 AI. 성격마다 점수를 매겨 가장 높은 수를 고른다.
  *   사냥꾼(빨강): 잡기를 가장 좋아한다
  *   도망꾼(파랑): 골인을 가장 좋아한다 — 골인하면 운행이 지연된다
- * 둘 다 분실물을 탐내고, 노선 위의 열차를 차고 열차보다 먼저 민다. 미리 정해 둔 갈래(행선지)를 따른다.
+ * 노선 위의 열차를 차고 열차보다 먼저 민다. 미리 정해 둔 갈래(행선지)를 따른다.
  */
 export function chooseOpp(r, opts) {
   const board = boardFor(r);
@@ -742,7 +683,6 @@ export function chooseOpp(r, opts) {
     let v = board.progress(dest, 'opp') * 10;
     if (victims) v += (piece.trait === 'hunter' ? 100 : 45) + victims * 10;
     if (dest === HOME) v += piece.trait === 'runner' ? 120 : 30;
-    if (dest !== HOME && treasureAt(r, dest)) v += 25;
     if (o.kind === 'new') v -= 4;
     const h = piece.heading;
     if (h && o.path.includes(h.at) && o.path.indexOf(h.at) < o.path.length - 1) v += o.path.includes(h.node) ? 35 : -35;

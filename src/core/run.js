@@ -1,30 +1,38 @@
-// 원정 전체: 월요일부터 금요일까지 5일 운행. 날마다 노선도가 새로 짜이고, 수·금은 도깨비 차장이 나오는 보스 날.
-// "오늘의 노선"은 하루짜리 운행 — 날짜로 시드를 정해 그날은 누구나 같은 노선도를 탄다.
+// 원정 전체: 월요일부터 금요일까지 5일 운행. 날마다 서울 노선도의 다른 구간을 달리고, 수·금은 도깨비 차장이 나오는 보스 날.
+// "오늘의 노선"은 하루짜리 운행 — 날짜로 시드를 정해 그날은 누구나 같은 구간을 탄다.
 // 하루를 목표대로 마치면 토큰을 정산하고 역 매점이 열린다.
 
 import { createRng } from './rng.js';
 import { createRound, minutesLeft } from './round.js';
-import { makeMetro } from './boards/metro.js';
-import { CHARMS, TILES, BOSS_RULES, CLOSURE_RULE, LINE_PASS, charmById } from './items.js';
+import { makeSeoul, ROUTES, routeBySeed } from './boards/seoul.js';
+import { CHARMS, BOSS_RULES, CLOSURE_RULE, LINE_PASS, charmById } from './items.js';
+import { GOBLIN_STATIONS } from './estate.js';
+
+/** 노선망이 클수록 그날 목표가 오른다(승객이 는다): 내 역 1곳마다 +0.5%, 최대 +35% */
+export const NETWORK_GROWTH = { perStation: 0.005, max: 0.35 };
+export const networkGrowth = (owned) => Math.min(NETWORK_GROWTH.max, Object.keys(owned || {}).filter((n) => owned[n]).length * NETWORK_GROWTH.perStation);
 import { planEvents } from './events.js';
 import { roundPoints, scaled, POINTS } from './ranking.js';
 
 export const DAYS = [
-  { day: '월', target: 1400, opp: 2 },
-  { day: '화', target: 2500, opp: 2 },
-  { day: '수', target: 3500, opp: 3, boss: true },
-  { day: '목', target: 4800, opp: 3 },
-  { day: '금', target: 6500, opp: 3, boss: true, closure: true }
+  { day: '월', target: 1300, opp: 2 },
+  { day: '화', target: 2000, opp: 2 },
+  { day: '수', target: 2600, opp: 3, boss: true },
+  { day: '목', target: 3700, opp: 3 },
+  { day: '금', target: 4800, opp: 3, boss: true, closure: true }
 ];
-export const DAILY = [{ day: '오늘', target: 2200, opp: 3 }];
+export const DAILY = [{ day: '오늘', target: 1650, opp: 3 }];
 export const REROLLS_PER_DAY = 2;
 export const MY_PIECES = 4;
 export const MAX_CHARMS = 5;
 export const SHOP_REROLL_COST = 2;
 export const START_COINS = 4;
 
-/** 원정을 만든다. daily 면 하루짜리 오늘의 노선 */
-export function createRun(seed, { daily = false } = {}) {
+/**
+ * 원정을 만든다. daily 면 하루짜리 오늘의 노선.
+ * owned 는 내 역 { 역이름: true } — 기기에 저장해 두고 원정마다 넘겨준다(산 역은 사라지지 않는다).
+ */
+export function createRun(seed, { daily = false, owned = {} } = {}) {
   return {
     seed,
     daily,
@@ -33,7 +41,7 @@ export function createRun(seed, { daily = false } = {}) {
     roundNo: 1,
     coins: START_COINS,
     charms: [],
-    tiles: {},
+    owned,
     extraLines: 0,
     round: null,
     shop: null,
@@ -49,37 +57,48 @@ export function dailySeed(date = new Date()) {
   return date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
 }
 
-/** 날마다 다른 노선도 시드(같은 원정·같은 날이면 늘 같다) */
+/** 날마다 다른 시드(같은 원정·같은 날이면 늘 같다) */
 export const mapSeed = (run, roundNo) => ((run.seed * 31 + roundNo * 7919) >>> 0) || 1;
 
-/** 그날 운행 중지되는 호선(금요일 도깨비 차장). 시드로 정해 매점이 다음 날 노선도를 미리 볼 수 있다 */
-export function closedLineFor(run, roundNo) {
-  const spec = run.rounds[roundNo - 1];
-  return spec?.closure ? 2 + (Math.floor(mapSeed(run, roundNo) / 7) % 4) : null;
+/** 그날 달릴 구간 [출발역, 종착역]. 한 원정 안에서는 겹치지 않는다. 오늘의 노선은 날짜로 */
+export function routeFor(run, roundNo) {
+  if (run.daily) return routeBySeed(run.seed);
+  const order = createRng((run.seed >>> 0) || 1).shuffle(ROUTES.slice());
+  return order[(roundNo - 1) % order.length];
 }
+
+/** 그날 판. 매점이 다음 날 판을 미리 볼 때도 같은 것이 나온다 */
+export function dayBoard(run, roundNo, extraLines = 0) {
+  const spec = run.rounds[roundNo - 1];
+  return makeSeoul(routeFor(run, roundNo), { slack: 2 + extraLines, closeSeed: spec?.closure ? mapSeed(run, roundNo) : null });
+}
+
+/** 그날 운행 중지되는 호선(금요일 도깨비 차장) */
+export const closedLineFor = (run, roundNo) => dayBoard(run, roundNo, run.extraLines || 0).closed;
 
 export function startRound(run) {
   const spec = run.rounds[run.roundNo - 1];
-  const closedLine = closedLineFor(run, run.roundNo);
+  const closedLine = spec.closure ? closedLineFor(run, run.roundNo) : null;
   const boss = !spec.boss ? null : spec.closure ? { ...CLOSURE_RULE, line: closedLine } : run.rng.pick(BOSS_RULES);
   run.round = createRound({
     number: run.roundNo,
     day: spec.day,
-    target: spec.target,
+    target: Math.round(spec.target * (1 + networkGrowth(run.owned)) / 10) * 10,
     rerolls: REROLLS_PER_DAY,
     myPieces: MY_PIECES,
     oppPieces: spec.opp,
     charms: run.charms,
-    tiles: run.tiles.metro || {},
+    owned: run.owned,
+    goblinStations: spec.boss ? goblinStationsFor(run, run.roundNo) : [],
     boss,
     mapSeed: mapSeed(run, run.roundNo),
-    closedLine,
+    route: routeFor(run, run.roundNo),
+    closure: !!spec.closure,
     extraLines: run.extraLines || 0,
     events: planEvents(run.rng)
   });
   run.round.day = spec.day;
-  run.extraLines = 0; // 노선 연장권은 그날 노선도에서 다 쓴다
-  run.tiles.metro = {}; // 역 개조도 그날 노선도에만 붙는다
+  run.extraLines = 0; // 노선 연장권은 그날 구간에서 다 쓴다
   run.status = 'round';
   return run.round;
 }
@@ -114,24 +133,20 @@ export function settleRound(run) {
   return run.lastPayout;
 }
 
+/** 보스 날 도깨비 차장이 차지하는 역: 구간 안의 주인 없는 역 중에서 시드로 */
+export function goblinStationsFor(run, roundNo) {
+  const b = dayBoard(run, roundNo, run.extraLines || 0);
+  const free = b.nodes.filter((n) => n !== b.S && n !== b.G && !run.owned[n]).sort();
+  return createRng(mapSeed(run, roundNo) + 17).shuffle(free).slice(0, GOBLIN_STATIONS);
+}
+
 function makeShop(run) {
   const charms = run.rng.shuffle(CHARMS.filter((c) => !run.charms.includes(c.id))).slice(0, 3);
-  const tile = run.rng.pick(TILES);
   const offers = charms.map((c) => ({ kind: 'charm', id: c.id, price: c.price, sold: false }));
-  offers.push({ kind: 'tile', id: tile.id, price: tile.price, sold: false });
   offers.push({ kind: 'line', id: LINE_PASS.id, price: LINE_PASS.price, sold: false });
   return { offers };
 }
 
-/** 다음 날 노선도(역 개조를 미리 놓을 자리를 고르려고) */
-function nextBoard(run) {
-  return makeMetro(mapSeed(run, run.roundNo + 1), { extra: run.extraLines || 0, closed: closedLineFor(run, run.roundNo + 1) });
-}
-function freeNodes(run) {
-  const b = nextBoard(run);
-  const used = run.tiles.metro || {};
-  return b.nodes.filter((n) => n !== b.S && n !== b.G && !used[n] && !b.tile(n) && !b.blocked(n));
-}
 
 export function buy(run, index) {
   const offer = run.shop?.offers[index];
@@ -143,11 +158,6 @@ export function buy(run, index) {
   offer.sold = true;
   if (offer.kind === 'charm') run.charms.push(offer.id);
   if (offer.kind === 'line') run.extraLines = (run.extraLines || 0) + 1;
-  if (offer.kind === 'tile') {
-    const node = run.rng.pick(freeNodes(run));
-    (run.tiles.metro ||= {})[node] = offer.id;
-    return { ok: true, node };
-  }
   return { ok: true };
 }
 

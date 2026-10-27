@@ -106,3 +106,24 @@ export function traitBadge(trait) {
   return `<svg viewBox="0 0 20 20" width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="8.5" fill="#FFFDF7" stroke="${INK}" stroke-width="2"/>
     <path d="M5.5 6.5l4 3.5-4 3.5M10.5 6.5l4 3.5-4 3.5" stroke="#2F6BD8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>`;
 }
+
+/** 내 역 깃발 — 금빛 깃발에 별. 산 역마다 꽂힌다 */
+export function ownerFlag(size = 34) {
+  return `<svg class="flag-art" viewBox="0 0 40 48" width="${size}" height="${size * 1.2}" aria-hidden="true">
+    <path d="M9 46V5" stroke="${INK}" stroke-width="3.4" stroke-linecap="round"/>
+    <path class="flag-cloth" d="M10 6h24l-6 8 6 8H10z" fill="#F2B33D" ${S}/>
+    <path d="M19 9.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6-3.2-1.7-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z" fill="#FFFDF7" stroke="${INK}" stroke-width="1.4" stroke-linejoin="round"/>
+    <ellipse cx="9" cy="46" rx="6" ry="2" fill="rgba(34,32,29,.3)"/>
+  </svg>`;
+}
+
+/** 도깨비 역 깃발 — 보랏빛 깃발에 뿔 두 개 */
+export function goblinFlag(size = 34) {
+  return `<svg class="flag-art" viewBox="0 0 40 48" width="${size}" height="${size * 1.2}" aria-hidden="true">
+    <path d="M9 46V5" stroke="${INK}" stroke-width="3.4" stroke-linecap="round"/>
+    <path class="flag-cloth" d="M10 6h24l-6 8 6 8H10z" fill="#6B3FA0" ${S}/>
+    <path d="M15 12l2-5 2 5M23 12l2-5 2 5" fill="#F2B33D" stroke="${INK}" stroke-width="1.6" stroke-linejoin="round"/>
+    <circle cx="18" cy="15.5" r="1.6" fill="#FFFDF7"/><circle cx="24" cy="15.5" r="1.6" fill="#FFFDF7"/>
+    <ellipse cx="9" cy="46" rx="6" ry="2" fill="rgba(34,32,29,.3)"/>
+  </svg>`;
+}

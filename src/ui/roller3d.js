@@ -10,7 +10,7 @@
 // 결과는 규칙(core)이 이미 정해 두었다. 정해진 면이 위로 오는 끝 자세를 먼저 정하고,
 // 거기로 날아가 떨어지는 궤적(포물선 + 잦아드는 튕김 + 회전)을 맞춘다. 물리 엔진은 쓰지 않는다.
 
-import { METRO_FACES } from '../core/boards/metro.js';
+import { METRO_FACES } from '../core/boards/seoul.js';
 import { TRAIN_SVG } from './roller.js';
 
 let THREE = null, RoundedBox = null;

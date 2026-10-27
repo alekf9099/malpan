@@ -22,7 +22,7 @@
 <script type="module">
 import * as R3 from '../src/ui/roller3d.js';
 import { BOARDS } from '../src/core/boards/index.js';
-import { METRO_FACES } from '../src/core/boards/metro.js';
+import { METRO_FACES } from '../src/core/boards/seoul.js';
 await R3.load();
 const board = BOARDS.metro;
 const cases = METRO_FACES.map((f) => [{ face: f }, f === 'express' ? '급행' : `${f}역`]);

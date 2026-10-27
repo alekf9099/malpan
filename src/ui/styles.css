@@ -248,17 +248,8 @@ body {
 @keyframes shake { 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
 
 /* ── 다이나믹 요소: 만족도 · 위험 · 분실물 · 도깨비 성격 ── */
-.heung { display: flex; align-items: center; gap: 6px; margin-top: 8px; height: 20px; }
-.heung .lbl { font-family: var(--display); font-size: 16px; line-height: 1; }
-.heung .pips { display: flex; gap: 3px; }
-.heung .pips i { width: 22px; height: 12px; border: 2px solid var(--ink); border-radius: 6px; background: var(--paper-2); transition: background .2s; }
-.heung .pips i.on { background: linear-gradient(180deg, #F2B33D, #E0533D); }
-.heung .val { font-weight: 900; font-size: 13px; color: var(--red); margin-left: 2px; }
-.heung.max .pips i.on { animation: flame .6s ease-in-out infinite alternate; }
 @keyframes flame { from { filter: brightness(1); } to { filter: brightness(1.35) saturate(1.3); } }
-.heung.lost .pips i { animation: lost .5s; }
 @keyframes lost { 30% { transform: translateY(-4px) rotate(10deg); background: var(--ink-3); } }
-.scoreboard.hot { box-shadow: 0 4px 0 var(--ink), 0 0 0 4px rgba(242, 179, 61, .55); }
 /* 예상 점수 + 잡힐 확률을 한 줄로. 칸 위치에 따라 판 바깥쪽으로 비켜 뜬다. */
 .target .gain { display: inline-flex; align-items: center; gap: 4px; z-index: 9; }
 .target .gain.left { left: auto; right: 30px; top: 50%; transform: translateY(-50%); }
@@ -357,7 +348,6 @@ body {
 .target-tag .gain { transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; }
 .scoreboard { padding: 8px 14px 10px !important; margin-top: 8px !important; }
 .score-now { font-size: 34px !important; }
-.heung { margin-top: 6px !important; }
 .trays { height: 40px !important; padding-top: 2px !important; }
 .charms { padding: 6px 16px 8px !important; }
 .slot, .charm { width: 46px !important; height: 62px !important; }
@@ -539,14 +529,14 @@ img.roll3d { object-fit: contain; }
 .title-boards .tb2.as3d { margin-left: -46px; width: 104px; }
 
 /* ── v0.6: 굴림 칸 없음 — 던지기는 판 위에서, 결과 도장은 판 오른쪽 위 ── */
-.stamp-spot { position: absolute; right: 16px; top: 48px; width: 0; height: 0; z-index: 2300; pointer-events: none; }
+.stamp-spot { position: absolute; right: 16px; top: 104px; width: 0; height: 0; z-index: 2300; pointer-events: none; }
 .stamp-spot .stamp { right: 0; font-size: 38px; white-space: nowrap; }
 .stamp-spot .stamp.opp { left: auto; right: 0; font-size: 22px; }
 .roller-float { position: absolute; left: 50%; top: 50%; width: 300px; height: 110px; margin: -55px 0 0 -150px; z-index: 2150;
   display: flex; align-items: center; justify-content: center; perspective: 520px; pointer-events: none; opacity: 0; transition: opacity .25s; }
 .roller-float.show { opacity: 1; }
 body:not(.wide) .board-wrap { height: 424px !important; }
-body.wide .stamp-spot { right: 26px; top: 60px; }
+body.wide .stamp-spot { right: 26px; top: 104px; }
 body.wide .stamp-spot .stamp { font-size: 54px; }
 
 /* ── v0.6: 캐릭터 도감 ── */
@@ -618,9 +608,6 @@ body:not(.wide) .dex-body > *, .dex-info > * { flex: none; }
 .hud .bar { flex: 1; margin-top: 0; height: 13px; }
 .hud .score-goal { white-space: nowrap; font-size: 12px; }
 .hud .score-goal b { font-size: 18px; }
-.hud .heung { margin-top: 5px !important; height: 16px; }
-.hud .heung .pips i { width: 18px; height: 10px; }
-.hud .heung .val { font-size: 11.5px; }
 .hud .calc { top: 50%; margin-top: -19px; }
 
 /* 판: 폰에서는 남는 높이를 전부 */
@@ -721,19 +708,7 @@ body.wide .tip { bottom: 300px; }
 .rank-empty { margin: 16px 4px; font-size: 13px; font-weight: 700; color: var(--ink-2); line-height: 1.6; }
 
 /* ── v0.8: 지하철판 — 호선·깃발·승객·행선지·시간대 ── */
-.line-legend { position: absolute; left: 8px; top: 8px; z-index: 2250; display: flex; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 120px); pointer-events: auto; }
-.line-legend .ll { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 4px; border: 2px solid var(--ink); border-radius: 999px; background: rgba(255,253,247,.94); font-size: 11px; font-weight: 800; }
-.line-legend .ll i { width: 12px; height: 12px; border-radius: 50%; background: var(--lc); border: 2px solid var(--ink); }
-.line-legend .ll em { font-style: normal; color: var(--ink-2); }
-.line-legend .ll.done { background: var(--yellow); }
-.line-legend .ll.shut { opacity: .6; text-decoration: line-through; }
-.passenger { position: absolute; z-index: 6; width: 26px; height: 31px; margin: -36px 0 0 -13px; pointer-events: none; filter: drop-shadow(0 2px 0 rgba(34,32,29,.3)); animation: popin .4s var(--spring); }
-.passenger svg { display: block; }
-.passenger .want { position: absolute; left: 50%; top: -15px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; white-space: nowrap; padding: 0 5px; border-radius: 999px; background: var(--lc); color: #FFFDF7; border: 1.5px solid var(--ink); font-size: 9.5px; font-weight: 900; }
-.piece .rider { position: absolute; right: -6px; top: -4px; width: 20px; height: 24px; z-index: 3; pointer-events: none; }
-.piece .rider svg { width: 100%; height: 100%; display: block; }
 .piece .heading { position: absolute; left: 50%; top: -14px; transform: translateX(-50%); white-space: nowrap; padding: 0 6px; border-radius: 999px; background: var(--lc); color: #FFFDF7; border: 2px solid var(--ink); font-size: 10px; font-weight: 900; z-index: 3; pointer-events: none; }
-.target-tag .gain.mystery { background: #6E6A5E; color: #FFFDF7; }
 .pill.time-rush { background: #F2A13D; } .pill.time-night { background: #2E3A5C; color: #FFFDF7; } .pill.time-last { background: #E0533D; color: #FFFDF7; }
 .metro-intro { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
 .metro-intro .mi-time { padding: 6px 10px; border-radius: 12px; border: 2px solid var(--ink); font-size: 12.5px; font-weight: 700; background: var(--white); }
@@ -793,15 +768,10 @@ body.wide .tip { bottom: 300px; }
 /* ── v1.1 점수판 줄마다 이름표 · 화면 보는 법 ── */
 .hrow { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .hl { flex: none; width: 44px; text-align: center; font-size: 11px; font-weight: 900; line-height: 1.35; padding: 1px 0 0; border: 1.5px solid var(--ink); border-radius: 6px; color: var(--ink); }
-.hl-score { background: #FBD3CB; } .hl-heung { background: #FFE2B8; } .hl-clock { background: #D6E3FA; }
-.hud .heung .val, .g-mock .heung .val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.heung .val.zero { color: var(--ink-3); font-weight: 800; }
-.hud .heung { height: 18px; }
+.hl-score { background: #FBD3CB; } .hl-clock { background: #D6E3FA; }
 .hud .clock { height: 18px; }
 button.pill { appearance: none; font-family: var(--body); color: inherit; cursor: pointer; }
 .help-btn { font-family: var(--display); font-size: 17px; }
-.line-legend { cursor: pointer; }
-.line-legend .ll-head { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; border: 2px solid var(--ink); background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; }
 
 .guide h3 { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; font-size: 13px; font-weight: 900; color: var(--ink-2); }
 .guide h3::after { content: ""; flex: 1; height: 2px; border-radius: 2px; background: var(--ink-3); opacity: .4; }
@@ -813,8 +783,6 @@ button.pill { appearance: none; font-family: var(--body); color: inherit; cursor
 .g-mock .score-now { font-family: var(--display); font-size: 24px; line-height: 1; min-width: 44px; }
 .g-mock .bar { flex: 1; margin-top: 0; height: 12px; }
 .g-mock .score-goal { white-space: nowrap; font-size: 12px; } .g-mock .score-goal b { font-size: 17px; }
-.g-mock .heung .pips i { width: 18px; height: 10px; }
-.g-mock .heung .val { font-size: 11.5px; }
 .g-mock .pill { height: 28px; font-size: 12.5px; padding: 0 10px; }
 .g-txt b { font-weight: 900; }
 .g-txt > b { font-size: 14.5px; }
@@ -833,3 +801,135 @@ button.pill { appearance: none; font-family: var(--body); color: inherit; cursor
 .g-dock { display: flex; gap: 8px; }
 .g-dock .hero-chip { width: 44px; height: 44px; }
 .sheet .btn.main.g-throw { height: 38px; padding: 0 18px; font-size: 18px; box-shadow: 0 3px 0 var(--ink); }
+
+/* ── v2.0 서울 노선도: 오늘 구간 · 역 사건 · 속보 ── */
+.route-banner { position: absolute; left: 8px; top: 8px; z-index: 2250; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; max-width: calc(100% - 16px);
+  padding: 4px 10px 4px 4px; border: 2.5px solid var(--ink); border-radius: 14px; background: rgba(255,253,247,.96); box-shadow: 0 3px 0 var(--ink); cursor: pointer; font-size: 13px; }
+.route-banner .rb-head { padding: 2px 8px; border-radius: 9px; background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; }
+.route-banner b { display: inline-flex; align-items: center; gap: 4px; font-weight: 900; white-space: nowrap; }
+.route-banner b i, .route-card b i { width: 11px; height: 11px; border-radius: 50%; background: var(--lc); border: 2px solid var(--ink); }
+.route-banner .rb-arrow { font-weight: 900; color: var(--ink-2); }
+.route-banner em { font-style: normal; font-size: 11px; font-weight: 800; color: var(--ink-2); }
+.route-banner .rb-shut { padding: 1px 7px; border-radius: 8px; border: 2px dashed var(--lc); font-size: 11px; font-weight: 900; color: var(--ink-2); text-decoration: line-through; }
+.g-banner { position: static; box-shadow: none; }
+.route-card { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 10px; padding: 10px 12px; border: 2.5px solid var(--ink); border-radius: 14px; background: var(--white); }
+.route-card > span { width: 100%; font-size: 11.5px; font-weight: 900; color: var(--ink-2); }
+.route-card b { display: inline-flex; align-items: center; gap: 6px; font-family: var(--display); font-weight: 400; font-size: 22px; }
+.route-card em { font-style: normal; font-family: var(--display); font-size: 20px; color: var(--ink-2); }
+.route-card small { width: 100%; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+
+/* 역 사건: 역 한가운데 그림 + 도는 움직임 + 이름표 */
+.incident { position: absolute; width: 0; height: 0; pointer-events: none; }
+.incident .inc-art { position: absolute; left: -22px; top: -50px; width: 44px; height: 44px; filter: drop-shadow(0 3px 0 rgba(34,32,29,.35)); }
+.incident .inc-tag { position: absolute; left: 0; top: -70px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; white-space: nowrap;
+  padding: 1px 7px; border-radius: 8px; border: 2px solid var(--ink); font-size: 11px; font-weight: 900; background: var(--white); }
+.incident .inc-fx { position: absolute; left: 0; top: 0; }
+.incident .inc-fx i { position: absolute; display: block; }
+.kind-fire .inc-tag { background: #E0533D; color: #FFFDF7; }
+.kind-delay .inc-tag { background: #F2B33D; }
+.kind-crowd .inc-tag { background: #2EA6DA; color: #FFFDF7; }
+.kind-busk .inc-tag { background: #E2337A; color: #FFFDF7; }
+/* 화재: 붉은 바닥빛 + 피어오르는 연기 + 튀는 불티 */
+.kind-fire .inc-fx::before { content: ""; position: absolute; left: -34px; top: -22px; width: 68px; height: 44px; border-radius: 50%; background: radial-gradient(closest-side, rgba(242,115,61,.55), rgba(242,115,61,0)); animation: glow 1s ease-in-out infinite alternate; }
+.kind-fire .smoke { left: -17px; top: -60px; width: 34px; height: 34px; border-radius: 50%; background: rgba(66,60,54,.62); box-shadow: 0 0 0 3px rgba(66,60,54,.18); animation: smoke 2.4s ease-out infinite; }
+.kind-fire .smoke.s2 { animation-delay: .8s; left: -4px; }
+.kind-fire .smoke.s3 { animation-delay: 1.6s; left: -22px; }
+.kind-fire .ember { left: 4px; top: -40px; width: 6px; height: 6px; border-radius: 50%; background: #F7C94A; animation: ember 1.1s ease-out infinite; }
+.kind-fire .inc-art { animation: flicker .35s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+@keyframes smoke { 0% { transform: translate(0, 0) scale(.5); opacity: .9; } 100% { transform: translate(14px, -70px) scale(2.2); opacity: 0; } }
+@keyframes ember { 0% { transform: translate(0, 0); opacity: 1; } 100% { transform: translate(-16px, -44px); opacity: 0; } }
+@keyframes flicker { from { transform: scale(1, 1); } to { transform: scale(1.08, .92) rotate(-3deg); } }
+@keyframes glow { from { opacity: .6; } to { opacity: 1; transform: scale(1.15); } }
+/* 신호 장애: 노란 고리가 퍼지고 시곗바늘이 빙빙 */
+.kind-delay .pulse { left: -26px; top: -26px; width: 52px; height: 52px; border-radius: 50%; border: 4px solid #F2B33D; animation: ripple 1.6s ease-out infinite; }
+.kind-delay .pulse.p2 { animation-delay: .8s; }
+.kind-delay .inc-hand { transform-origin: 20px 21px; animation: spin 1.2s linear infinite; }
+.kind-delay .inc-art { animation: jitter .18s linear infinite; }
+@keyframes ripple { 0% { transform: scale(.5); opacity: 1; } 100% { transform: scale(1.9); opacity: 0; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes jitter { 0%, 100% { transform: translateX(0); } 50% { transform: translateX(1.5px); } }
+/* 인파: 사람들이 들썩들썩 */
+.kind-crowd .inc-art { animation: crowd .5s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+.kind-crowd .hop { top: -18px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--ink); background: #F7B7C8; animation: hop .45s ease-in-out infinite alternate; }
+.kind-crowd .hop.h1 { left: -30px; } .kind-crowd .hop.h2 { left: 20px; background: #7FD39B; animation-delay: .2s; }
+@keyframes crowd { from { transform: translateY(0) scale(1); } to { transform: translateY(-5px) scale(1.04, .97); } }
+@keyframes hop { from { transform: translateY(0); } to { transform: translateY(-12px); } }
+/* 버스킹: 음표가 둥실 */
+.kind-busk .note { left: -6px; top: -48px; font-size: 20px; font-weight: 900; color: #E2337A; text-shadow: 0 0 0 #22201D, 1px 1px 0 #22201D; animation: note 2s ease-out infinite; }
+.kind-busk .note.n2 { color: #8E63B0; animation-delay: .7s; left: 8px; }
+.kind-busk .note.n3 { color: #2EA6DA; animation-delay: 1.4s; left: -18px; }
+.kind-busk .inc-art { animation: sway .6s ease-in-out infinite alternate; transform-origin: 50% 100%; }
+@keyframes note { 0% { transform: translate(0, 0) scale(.6); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(18px, -60px) scale(1.2) rotate(18deg); opacity: 0; } }
+@keyframes sway { from { transform: rotate(-8deg); } to { transform: rotate(8deg); } }
+
+/* 속보 띠 */
+.news-flash { position: absolute; left: 8px; right: 8px; top: 52px; z-index: 2400; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 6px;
+  border: 3px solid var(--ink); border-radius: 12px; background: #FFFDF7; box-shadow: 0 4px 0 var(--ink); font-size: 13px; font-weight: 700; line-height: 1.35; pointer-events: none; }
+.news-flash b { flex: none; padding: 3px 9px 2px; border-radius: 8px; background: #E0533D; color: #FFFDF7; font-family: var(--display); font-weight: 400; font-size: 15px; animation: pulse .7s ease-in-out infinite; }
+.news-flash strong { font-weight: 900; }
+.news-flash.kind-delay b { background: #F2B33D; color: var(--ink); }
+.news-flash.kind-crowd b { background: #2EA6DA; }
+.news-flash.kind-busk b { background: #E2337A; }
+
+/* 안내서·소개의 역 사건 견본 */
+.g-incidents { display: flex; gap: 22px; padding: 70px 18px 6px; }
+.g-inc { position: relative; width: 0; height: 0; margin-right: 44px; }
+.mi-inc { align-items: flex-start !important; }
+.mi-inc .inc-art { flex: none; }
+
+/* ── v2.1 역 인수 · 통행료 · 독점 ── */
+.flag { position: absolute; width: 0; height: 0; pointer-events: none; }
+.flag .flag-art { position: absolute; left: -6px; bottom: 4px; transform-origin: 6px 100%; filter: drop-shadow(0 2px 0 rgba(34,32,29,.3)); }
+.flag .flag-cloth { transform-origin: 10px 14px; animation: cloth 1.8s ease-in-out infinite; }
+.flag.wave .flag-art { animation: flagWave .9s ease-in-out 2; }
+.flag .flag-tag { position: absolute; left: 22px; bottom: 26px; white-space: nowrap; padding: 0 6px; border-radius: 7px; border: 2px solid var(--ink);
+  background: #F2B33D; color: var(--ink); font-size: 10.5px; font-weight: 900; transform: scale(var(--inv, 1)); transform-origin: 0 100%; }
+.flag.mono .flag-tag { background: #E0533D; color: #FFFDF7; }
+.flag.kind-goblin .flag-tag { background: #6B3FA0; color: #FFFDF7; }
+@keyframes cloth { 0%, 100% { transform: skewY(0); } 50% { transform: skewY(-6deg) scaleX(.94); } }
+@keyframes flagWave { 0%, 100% { transform: rotate(0) scale(1); } 30% { transform: rotate(-14deg) scale(1.25); } 60% { transform: rotate(10deg) scale(1.15); } }
+.mono-glow { animation: monoGlow 1.4s ease-in-out infinite alternate; }
+.mono-run { animation: monoRun 1.1s linear infinite; }
+@keyframes monoGlow { from { opacity: .45; } to { opacity: .9; } }
+@keyframes monoRun { to { stroke-dashoffset: -28; } }
+
+.offer-card { position: absolute; left: 10px; right: 10px; bottom: 54px; z-index: 2350; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  padding: 10px 12px; border: 3px solid var(--ink); border-radius: 16px; background: #FFF6D6; box-shadow: 0 5px 0 var(--ink); }
+.offer-card .oc-sign { display: flex; align-items: center; gap: 4px; padding: 6px 10px 5px; border-radius: 10px; background: var(--ink); color: #FFFDF7; }
+.offer-card .oc-sign i { width: 12px; height: 12px; border-radius: 50%; background: var(--lc); border: 2px solid #FFFDF7; }
+.offer-card .oc-sign b { margin-left: 3px; font-family: var(--display); font-weight: 400; font-size: 19px; }
+.offer-card .oc-body { flex: 1; min-width: 150px; display: flex; flex-direction: column; gap: 2px; }
+.offer-card .oc-body span { font-weight: 900; font-size: 14px; }
+.offer-card .oc-body em { font-style: normal; font-size: 12px; font-weight: 700; color: var(--ink-2); line-height: 1.4; }
+.offer-card .oc-body strong { color: var(--red); }
+.offer-card .oc-btns { display: flex; gap: 6px; width: 100%; justify-content: flex-end; }
+.offer-card .oc-btns .btn { flex: 1; }
+body.wide .offer-card { left: auto; right: 16px; width: 420px; bottom: 60px; }
+
+.target-tag .buy { font-style: normal; padding: 0 4px; border-radius: 5px; background: #F2B33D; color: var(--ink); border: 1.5px solid var(--ink); font-size: 10px; }
+.target-tag .pay { font-style: normal; padding: 0 4px; border-radius: 5px; background: #6B3FA0; color: #FFFDF7; font-size: 10px; }
+.route-banner .rb-own { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px 0 2px; border-radius: 8px; background: #FFF1C2; border: 2px solid #D9A93A; font-size: 11px; font-weight: 900; }
+
+.my-net { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 6px; margin: 0 auto 8px; padding: 5px 12px 5px 8px; border: 2.5px solid var(--ink); border-radius: 999px;
+  background: #FFF1C2; box-shadow: 0 3px 0 var(--ink); font-family: var(--body); color: var(--ink); font-size: 12.5px; font-weight: 800; }
+.my-net b { font-weight: 900; }
+.my-net em { font-style: normal; color: var(--ink-2); font-size: 11.5px; }
+.net-card { margin: 12px 0; padding: 12px; border: 3px solid var(--ink); border-radius: 18px; background: #FFF6D6; box-shadow: 0 4px 0 var(--ink); }
+.net-head { display: flex; align-items: center; gap: 8px; }
+.net-head b { font-family: var(--display); font-weight: 400; font-size: 20px; }
+.net-head span { font-size: 11.5px; font-weight: 700; color: var(--ink-2); }
+.net-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+.net-stats div { padding: 6px; border: 2px solid var(--ink); border-radius: 12px; background: var(--white); text-align: center; }
+.net-stats b { display: block; font-family: var(--display); font-weight: 400; font-size: 22px; }
+.net-stats span { font-size: 11px; font-weight: 800; color: var(--ink-2); }
+.net-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.net-list i { font-style: normal; padding: 2px 8px; border-radius: 999px; border: 2px solid var(--ink); background: var(--white); font-size: 11.5px; font-weight: 800; }
+.net-list i.mono { background: #F2B33D; }
+.metro-intro .mi-time.own-line { background: #FFF1C2; }
+.metro-intro .mi-time.goblin-line { background: #E7DAF6; }
+.g-flags { display: flex; gap: 46px; padding: 46px 16px 4px; }
+.g-flag { position: relative; }
+
+/* 깃발 표 자리: 옆 역 이름에 닿는 역은 왼쪽·위로(board-view 의 TAG_SIDE) */
+.flag.tag-left .flag-tag { left: auto; right: 6px; transform-origin: 100% 100%; }
+.flag.tag-up .flag-tag { left: -30px; bottom: 50px; transform-origin: 50% 100%; }

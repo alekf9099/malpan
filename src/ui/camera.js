@@ -1,14 +1,18 @@
 // 카메라 — 화면보다 큰 판 캔버스를 이동·확대해서 보여준다.
 //   frame(points)   점들이 모두 들어오도록 맞춘다(고를 때)
 //   follow(point)   한 점을 가운데에 두고 가까이 본다(말이 움직일 때)
-//   overview()      판 전체
+//   overview()      처음 볼 곳(setHome 으로 정한 사각형 — 출발역 언저리). 없으면 판 전체
+//   whole()         서울 노선도 전체
 // 손가락(마우스)으로 끌면 둘러볼 수 있다. 끌었을 때는 클릭으로 치지 않는다.
 
 let view = null, cam = null, size = { w: 1, h: 1 };
 const state = { cx: 0, cy: 0, s: 1 };
 let dragged = false;
+let home = null;   // [[x0, y0], [x1, y1]] — 처음 보여 줄 곳
 let wired = false;
 export const MAX_ZOOM = 1.0;
+// 노선도가 크기 때문에, 고를 때·따라갈 때 이보다 멀어지면 역 이름이 안 읽힌다(서울 전체는 whole()로만)
+export const MIN_ZOOM = 0.5;
 const FOLLOW_ZOOM = 0.95;
 
 export function attach(viewEl, camEl, canvas) {
@@ -48,20 +52,31 @@ export function refit() {
   apply(0);
 }
 
+export function setHome(rect) { home = rect; }
+
 export function overview(ms) {
+  if (!home) { whole(ms); return; }
+  const [[x0, y0], [x1, y1]] = home;
+  frame([[x0, y0], [x1, y1]], { maxZoom: 0.8, pad: 60, ms });
+}
+
+export function whole(ms) {
   state.s = fitScale();
   state.cx = size.w / 2;
   state.cy = size.h / 2;
   apply(ms);
 }
 
-/** 점들이 모두 화면에 들어오게. 너무 가까이 붙지 않도록 maxZoom 까지만 확대한다. */
-export function frame(points, { maxZoom = MAX_ZOOM, pad = 80, ms } = {}) {
+/** 지금 서울 전체를 보고 있나 */
+export const showingWhole = () => state.s <= fitScale() + 0.02;
+
+/** 점들이 모두 화면에 들어오게. 너무 가까이 붙지 않도록 maxZoom 까지만, 글자가 읽히도록 MIN_ZOOM 아래로는 내려가지 않는다. */
+export function frame(points, { maxZoom = MAX_ZOOM, minZoom = MIN_ZOOM, pad = 80, ms } = {}) {
   if (!points.length) { overview(ms); return; }
   const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
   const x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad;
   const y0 = Math.min(...ys) - pad - 40, y1 = Math.max(...ys) + pad;
-  state.s = Math.max(fitScale(), Math.min(maxZoom, vw() / (x1 - x0), vh() / (y1 - y0)));
+  state.s = Math.max(fitScale(), minZoom, Math.min(maxZoom, vw() / (x1 - x0), vh() / (y1 - y0)));
   state.cx = (x0 + x1) / 2;
   state.cy = (y0 + y1) / 2;
   apply(ms);

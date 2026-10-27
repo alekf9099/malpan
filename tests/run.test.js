@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createRun, startRound, settleRound, buy, sellCharm, moveCharm, DAYS, DAILY, closedLineFor, dailySeed } from '../src/core/run.js';
+import { createRun, startRound, settleRound, buy, sellCharm, moveCharm, DAYS, DAILY, closedLineFor, dailySeed, routeFor } from '../src/core/run.js';
 import { roundPoints, rankOf } from '../src/core/ranking.js';
 
 const win = (run, extra = {}) => { Object.assign(run.round, { phase: 'over', outcome: 'win', score: run.round.target, ...extra }); return settleRound(run); };
@@ -19,10 +19,12 @@ test('원정은 월~금 5일, 수·금이 보스 날이고 금요일은 운행 �
   assert.ok(run.round.boss && run.round.boss.id !== 'closure');
 });
 
-test('같은 원정·같은 날이면 같은 노선도', () => {
+test('같은 원정·같은 날이면 같은 구간, 5일 동안 구간이 겹치지 않는다', () => {
   const a = createRun(31); startRound(a);
   const b = createRun(31); startRound(b);
-  assert.deepEqual(a.round.boardInst.edges, b.round.boardInst.edges);
+  assert.deepEqual(a.round.boardInst.route, b.round.boardInst.route);
+  const routes = DAYS.map((_, i) => routeFor(a, i + 1).join('→'));
+  assert.equal(new Set(routes).size, DAYS.length);
 });
 
 test('오늘의 노선: 하루짜리, 날짜 시드', () => {
@@ -42,10 +44,10 @@ test('하루를 마치면 토큰 정산: 기본 4 + 남은 운행 1시간당 1 +
   win(run);
   assert.equal(run.coins, 10 + 4 + 3 + 2);
   assert.equal(run.status, 'shop');
-  assert.equal(run.shop.offers.length, 5); // 정기권 3 + 역 개조 1 + 노선 연장권 1
+  assert.equal(run.shop.offers.length, 4); // 정기권 3 + 노선 연장권 1
 });
 
-test('매점: 사고, 팔고, 순서 바꾸기, 노선 연장권·역 개조는 다음 날에', () => {
+test('매점: 사고, 팔고, 순서 바꾸기, 노선 연장권은 다음 날에', () => {
   const run = createRun(3);
   startRound(run);
   win(run);
@@ -53,7 +55,6 @@ test('매점: 사고, 팔고, 순서 바꾸기, 노선 연장권·역 개조는 
   for (let i = 0; i < run.shop.offers.length; i++) buy(run, i);
   assert.equal(run.charms.length, 3);
   assert.equal(run.extraLines, 1);
-  assert.equal(Object.keys(run.tiles.metro).length, 1);
   const [a, b] = run.charms;
   moveCharm(run, 0, 1);
   assert.deepEqual(run.charms.slice(0, 2), [b, a]);
@@ -63,7 +64,29 @@ test('매점: 사고, 팔고, 순서 바꾸기, 노선 연장권·역 개조는 
   run.roundNo = 2;
   startRound(run);
   assert.equal(run.extraLines, 0);
-  assert.equal(Object.keys(run.round.tiles).length, 1);
+  assert.equal(run.round.boardInst.slack, 3);
+});
+
+test('산 역은 원정 객체와 하루 운행이 함께 쓰고, 다음 원정에 넘겨주면 그대로 남는다', () => {
+  const owned = { 시청: true };
+  const run = createRun(5, { owned });
+  startRound(run);
+  assert.equal(run.round.owned, owned);
+  run.round.owned['강남'] = true;
+  const next = createRun(6, { owned: run.owned });
+  assert.ok(next.owned['강남'] && next.owned['시청']);
+});
+
+test('보스 날에는 도깨비 역 두 곳 — 내 역은 고르지 않는다', () => {
+  const run = createRun(13);
+  run.roundNo = 3;
+  startRound(run);
+  const g = run.round.goblinStations;
+  assert.equal(g.length, 2);
+  for (const n of g) assert.ok(run.round.boardInst.nodes.includes(n) && !run.owned[n]);
+  run.roundNo = 2;
+  startRound(run);
+  assert.equal(run.round.goblinStations.length, 0);
 });
 
 test('지면 원정이 끝난다', () => {

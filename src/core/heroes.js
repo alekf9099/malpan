@@ -4,7 +4,6 @@
 //   score(ctx)        이동 한 번의 점수 계산 중. ctx.heroes = 이번에 움직인 말들의 캐릭터,
 //                     ctx.groupHeroes = 도착 역에서 한 묶음이 된 말들 전부의 캐릭터
 //   escape            잡혔을 때 하루 한 번 피한다(round.js 가 이 표시를 본다)
-//   deliverMultiplier 이 캐릭터가 손님을 내려 주면 배달 보상 배수
 //
 // 스킬(active): 플레이어가 눌러 쓰는 고유 기술. 하루 한 번, 그 캐릭터가 노선 위에 나와 있을 때
 // 출발 전에 쓸 수 있다. 효과는 round.js 의 useSkill 이 active.id 로 풀어낸다.
@@ -24,10 +23,13 @@ export const HEROES = [
   },
   {
     id: 'parrot', name: '앵무새', job: '안내원', skill: '안내방송',
-    desc: '움직일 때마다 칩 +15, 손님을 내려 주면 배달 보상 2배',
-    deliverMultiplier: 2,
-    score(c) { if (c.heroes.includes('parrot')) c.chip(15, '앵무새 안내방송'); },
-    active: { id: 'chatter', name: '승객 호출', desc: '역 두 곳에 손님을 부른다' }
+    desc: '움직일 때마다 칩 +15, 인파 몰린 역에 서면 칩 +40 더',
+    score(c) {
+      if (!c.heroes.includes('parrot')) return;
+      c.chip(15, '앵무새 안내방송');
+      if (c.incident === 'crowd') c.chip(40, '앵무새 안내방송');
+    },
+    active: { id: 'chatter', name: '승객 호출', desc: '역 두 곳에 인파를 부른다 — 멈추면 칩 +40' }
   },
   {
     id: 'panda', name: '판다', job: '보안관', skill: '만원 열차',

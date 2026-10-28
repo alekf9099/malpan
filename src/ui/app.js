@@ -6,11 +6,11 @@
 // 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
 
 import {
-  createMatch, roll, move, decide, choose, useSkill, skillBlocked, invest, investable, current, playerById, alive, assets, stationsOf,
+  createMatch, roll, pickDie, dieOptions, dieSteps, areaOf, move, decide, choose, useSkill, skillBlocked, invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
   monopolyOf, HOT_WIN, LINE_WIN
 } from '../core/match.js';
-import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
+import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, SKILL_USES, STARTERS } from '../core/heroes.js';
 import { createRng } from '../core/rng.js';
@@ -449,7 +449,8 @@ function ranking() {
 
 function guide(then = null) {
   const steps = [
-    ['이동', '주사위만큼 이동(1~5역 · 급행 7역+한 번 더). 길게 눌렀다 초록 구간에서 떼면 좋은 결과'],
+    ['지역', '판마다 서울의 한 지역(도심 · 강남 · 서남 · 동부, 72역)에서 대결 · 12바퀴'],
+    ['이동', '주사위 2개 중 하나를 골라 이동(1~5역 · 급행 7역+한 번 더) · 눈마다 도착할 곳이 미리 보임'],
     ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
     ['구매 · 증축', '빈 역 도착 시 구매(일반 100 · 환승 180 · 3개 노선 260) · 내 역 재도착 시 증축, 3단계는 랜드마크'],
     ['통행료', '남의 역 도착 시 통행료, 지나가기만 해도 20% · 같은 노선 연결 ×2~×4 · 단계 ×3 · ×7'],
@@ -457,8 +458,8 @@ function guide(then = null) {
     ['노선 투자', '주사위 전, 연결된 내 역(2역 이상)은 어디서든 증축'],
     ['목적지', `목적지를 지나거나 도착 시 +${GOAL_BONUS} · 새 목적지 지급`],
     ['명소역', '그림 간판이 있는 역 11곳 · 가격 1.5배 · 도착 시 특수 효과(서울역 KTX, 김포공항 이동 2배, 명동 카드 선택 등) · 목적지로 자주 등장'],
-    ['찬스 · 사건', '? 역 도착 시 찬스 카드 · 역마다 화재(진입 불가) · 신호 장애(정차) · 인파(+100, 통행료 2배) · 버스킹(한 번 더)'],
-    ['독점 승리', `명소역 ${HOT_WIN}곳 또는 한 노선 ${LINE_WIN}역 연결 시 즉시 승리 · 1곳 전이면 경고 표시`],
+    ['찬스 · 인파', '? 역 도착 시 찬스 카드 · 인파 역(도착 시 +100, 통행료 2배)은 스킬·명소역으로 발생'],
+    ['독점 승리', `지역 명소역 전부(5곳인 지역은 4곳) 또는 한 노선 ${LINE_WIN}역 연결 시 즉시 승리 · 1곳 전이면 경고 표시`],
     ['승리 조건', '통행료를 못 내면 역 매각 후 파산 · 최후의 1인, 독점, 또는 24:00 막차 시 자산(돈+역 가격) 1위']
   ];
   const s = sheet(`<h2>도움말</h2>
@@ -495,12 +496,12 @@ const TRAIN_ICON = (c) => `<svg viewBox="0 0 64 30" width="64" height="30" aria-
   <circle cx="14" cy="26" r="3" fill="#22201D"/><circle cx="48" cy="26" r="3" fill="#22201D"/></svg>`;
 
 /** 매칭 화면. 최소 3초 동안 상대를 찾고, 사람이 없으면 AI 로 채운다. 출발하면 true, 취소하면 false */
-function matchmaking(me, rivals, daily) {
+function matchmaking(me, rivals, daily, area) {
   app.className = 'app match-app';
   const h = heroById(me), lc = LINES[2].color;
   app.innerHTML = `
     <div class="mm">
-      <div class="mm-head"><b>대결 매칭</b><span>${daily ? '오늘의 대결' : '대결'} · ${rivals.length + 1}명</span></div>
+      <div class="mm-head"><b>대결 매칭</b><span>${daily ? '오늘의 대결' : '대결'} · ${area.name} · ${rivals.length + 1}명</span></div>
       <div class="mm-board">
         <div class="mm-board-top"><i class="mm-dot"></i>매칭<em id="mmClock">0.0초</em></div>
         <div class="mm-led" id="mmLed">${MM_STEPS[0][1]}</div>
@@ -534,7 +535,7 @@ function matchmaking(me, rivals, daily) {
       const people = await humans;
       if (done) return;
       $('#mmCancel').disabled = true;
-      led(people.length ? '매칭 완료!' : 'AI 매칭 완료!', people.length ? '' : '접속 중인 플레이어가 없어 AI와 대결합니다');
+      led(people.length ? '매칭 완료!' : 'AI 매칭 완료!', `${area.name} 지역 · ${area.sub}${people.length ? '' : ' · AI 대결'}`);
       $('#mmPct').textContent = '100%';
       Sound.chime();
       for (const [i, id] of rivals.entries()) {
@@ -593,9 +594,10 @@ async function startGame(daily) {
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
   // 상대는 여덟 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
   const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
-  if (!(await matchmaking(me, rivals, daily))) return;
+  const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
+  if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
-  G.m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
+  G.m = m;
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
   G.hudMoney = {};
   enterGame();
@@ -623,10 +625,10 @@ function enterGame() {
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   Camera.attach($('#board'), $('#cam'), canvasSize());
-  wireGauge($('#throw'));
+  $('#throw').onclick = () => onThrow();
   $('#skillBtn').onclick = onSkill;
   $('#investBtn').onclick = openInvest;
-  $('#zoom').onclick = () => { Sound.click(); if (Camera.showingWhole()) showPlayer(current(M())); else Camera.whole(); setTimeout(drawZoom, 0); };
+  $('#zoom').onclick = () => { Sound.click(); if (G.regionView) showPlayer(current(M())); else showRegion(); };
   $('#help').onclick = () => { if (!G.busy) guide(); };
   $('#mat').onclick = onMapTap;
   drawBoard();
@@ -643,10 +645,10 @@ function enterGame() {
 function intro() {
   const m = M();
   const s = sheet(`
-    <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${m.players.length}명</span>
+    <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name} 지역 · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${p.node}</span></div>`).join('<i>VS</i>')}</div>
-    <p>시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${HOT_WIN}곳 · 한 노선 ${LINE_WIN}역</b> 독점 / <b>24:00 막차</b> 자산 1위</p>
+    <p>시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${m.hotWin}곳 · 한 노선 ${LINE_WIN}역</b> 독점 / <b>24:00 막차</b> 자산 1위</p>
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -722,6 +724,10 @@ async function humanTurn(p) {
   if (m.phase === 'roll' && !p.rest) await turnBanner(p);
   await new Promise((resolve) => { G.wait = resolve; drawControls(); });
   G.wait = null;
+  if (m.phase === 'pick') {
+    const i = await pickDiePrompt();
+    await play(pickDie(m, i));
+  }
   if (m.phase === 'move') {
     const path = await pickPath();
     await play(move(m, path));
@@ -743,23 +749,18 @@ async function aiTurn(p) {
   for (let n = chooseInvest(m); n; n = chooseInvest(m)) await play(invest(m, n));
   if (wantsSkill(m)) await play(useSkill(m));
   await play(roll(m));
+  if (m.phase === 'pick') await play(pickDie(m, chooseDie(m)));
   if (m.phase === 'move') await play(move(m, choosePath(m)));
   if (m.phase === 'choose') { await sleep(300); await play(choose(m, chooseOption(m))); }
   if (m.phase === 'decide') { await sleep(250); await play(decide(m, decideOffer(m))); }
 }
 
-async function onThrow(quality = 'normal') {
+async function onThrow() {
   const m = M();
   if (G.busy || !m || m.phase !== 'roll' || !current(m).human || !G.wait) return;
   Sound.unlock();
   hideFork();
-  // 손맛 게이지: 굿이면 두 번, 퍼펙트면 세 번 굴려 큰 쪽, 삐끗이면 두 번 중 작은 쪽
-  const n = quality === 'perfect' ? 3 : quality === 'good' || quality === 'slip' ? 2 : 1;
-  const tries = Array.from({ length: n }, () => m.rng.next());
-  const pickV = quality === 'slip' ? Math.min(...tries) : Math.max(...tries);
-  let used = false;
-  const rng = { next: () => (used ? m.rng.next() : ((used = true), pickV)), shuffle: (a) => m.rng.shuffle(a) };
-  await play(roll(m, rng));
+  await play(roll(m));
   G.wait?.();
 }
 
@@ -769,6 +770,49 @@ async function onSkill() {
   Sound.unlock();
   await play(useSkill(m));
   drawControls();
+}
+
+// ── 주사위 고르기 ──────────────────────────────────────────
+
+/** 이 눈으로 가면 어떻게 되나(한 줄) */
+function dieNote(m, p, o) {
+  if (o.goal) return '<i class="good">목적지 도착!</i>';
+  if (o.ends.length !== 1) return `도착 후보 ${o.ends.length}곳`;
+  const n = o.ends[0], owner = m.owned[n] ? playerById(m, m.owned[n]) : null;
+  if (owner && owner !== p) return `<i class="bad">${nameOf(owner)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
+  if (owner === p) return `${n} · 내 역`;
+  if (HOTSPOTS[n]) return `<i class="good">${n} · 명소역</i>`;
+  if (isChance(n)) return `${n} · 찬스`;
+  return `${n} · 빈 역 ${priceFor(m, n)}`;
+}
+
+/** 주사위 둘 중 하나 고르기: 눈마다 도착할 곳을 지도 고리와 단추에 보여 준다 */
+function pickDiePrompt() {
+  const m = M(), p = current(m);
+  const opts = [0, 1].map((i) => {
+    const r = m.pending.rolls[i];
+    const list = dieOptions(m, i);
+    return { i, r, steps: dieSteps(m, i), ends: [...new Set(list.map((x) => x[x.length - 1]))], goal: list.some((x) => x.includes(p.goal)) };
+  });
+  clearDest();
+  for (const o of opts) for (const n of o.ends) addDest(n, p, o.ends.length === 1 ? `${o.r.label} · ${n}` : null, o.i);
+  Camera.frame([p.node, ...opts.flatMap((o) => o.ends)].map(nodeXY), { maxZoom: 0.8, minZoom: 0.28, pad: 200 });
+  G.regionView = false; drawZoom();
+  setHint('주사위 선택');
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'die-pick';
+    box.innerHTML = `<div class="dp-row">${opts.map((o) => `
+      <button class="dp-btn opt${o.i} ${o.r.bonus ? 'express' : ''}" data-i="${o.i}">
+        <span class="dp-face">${o.r.bonus ? '급행' : o.r.value}</span>
+        <span class="dp-txt"><b>${o.steps}역${o.r.bonus ? ' + 한 번 더' : ''}</b><em>${dieNote(m, p, o)}</em></span>
+      </button>`).join('')}</div>`;
+    $('#board').appendChild(box);
+    tween(box, [{ transform: 'translateY(30px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
+    box.querySelectorAll('.dp-btn').forEach((b) => {
+      b.onclick = () => { Sound.click(); box.remove(); clearDest(); setHint(''); resolve(Number(b.dataset.i)); };
+    });
+  });
 }
 
 // ── 갈림길 고르기 ──────────────────────────────────────────
@@ -826,6 +870,16 @@ function drawDest(ends, p) {
   }
 }
 function clearDest() { $('#layer')?.querySelectorAll('.dest').forEach((d) => d.remove()); }
+/** 주사위 고르기용 고리 하나: text 가 있으면 말풍선, opt 는 눈마다 색을 달리 */
+function addDest(n, p, text, opt) {
+  const [x, y] = nodeXY(n);
+  const d = document.createElement('div');
+  d.className = `dest opt${opt}` + (text ? ' one' : '');
+  d.style.left = x + 'px'; d.style.top = y + 'px';
+  d.style.setProperty('--pc', opt ? '#22201D' : colorOf(p));
+  d.innerHTML = `<i class="dr"></i>${text ? `<span class="db">${text}</span>` : ''}`;
+  $('#layer').appendChild(d);
+}
 
 /** 갈림길: 갈 수 있는 다음 역마다 화살표 단추(호선 색·역 이름·그 역의 값) */
 function askFork(node, back, next, left, path) {
@@ -960,7 +1014,7 @@ function drawBoard() {
   const owner = {}, linkEdges = [];
   for (const [n, o] of Object.entries(m.owned)) owner[n] = colorOf(playerById(m, o));
   for (const p of m.players) if (!p.out) for (const e of links(m.owned, p.id).edges) linkEdges.push({ ...e, color: colorOf(p) });
-  $('#mat').innerHTML = boardSvg({ owner, level: m.levels, links: linkEdges });
+  $('#mat').innerHTML = boardSvg({ owner, level: m.levels, links: linkEdges, region: areaOf(m).set });
 }
 
 function pieceEl(pid) {
@@ -1025,7 +1079,7 @@ function drawMarks() {
 /** 플레이어 판의 독점 진행: ★ = 가진 명소역 수, 독점 하나 앞이면 빨갛게(판이 좁아 짧게) */
 function monoNote(m, p) {
   const s = monopolyOf(m, p);
-  const near = s.hot >= HOT_WIN - 1 || s.line >= LINE_WIN - 1;
+  const near = s.hot >= m.hotWin - 1 || s.line >= LINE_WIN - 1;
   return s.hot ? ` <i class="${near ? 'near' : ''}" title="명소역 ${s.hot}곳">★${s.hot}</i>` : near ? ' <i class="near">독점!</i>' : '';
 }
 
@@ -1055,11 +1109,10 @@ function drawClock() {
   const pos = (v) => Math.max(0, Math.min(100, (100 * (v - CLOCK.start)) / span));
   const seg = (a, b, cls) => `<i class="${cls}" style="left:${pos(a)}%;width:${pos(b) - pos(a)}%"></i>`;
   const t = timeOf(m);
-  const fx = [m.clock < m.sale ? '세일 중' : '', m.clock < m.boom ? '통행료 2배' : ''].filter(Boolean).join(' · ');
   $('#clock').innerHTML = `<span class="now">${hhmm(m.clock)}</span>
-    <span class="track">${CLOCK.rush.map(([a, b]) => seg(a, b, 'rush')).join('')}${seg(CLOCK.night, CLOCK.last, 'night')}${seg(CLOCK.last, m.end, 'last')}
+    <span class="track">${seg(CLOCK.last, m.end, 'last')}
       <i class="done" style="width:${pos(m.clock)}%"></i><b class="hand" style="left:${pos(m.clock)}%"></b></span>
-    ${TIME_NAME[t] ? `<span class="band time-${t}">${TIME_NAME[t]}</span>` : ''}${fx ? `<span class="band fx">${fx}</span>` : ''}<span class="left">${m.round}바퀴</span>`;
+    ${t === 'last' ? `<span class="band time-last">${TIME_NAME.last}</span>` : ''}<span class="left">${Math.min(m.round, 12)} / 12바퀴</span>`;
 }
 
 function drawControls() {
@@ -1069,8 +1122,8 @@ function drawControls() {
   const tb = $('#throw');
   tb.disabled = !mine;
   const who = current(m);
-  tb.innerHTML = mine ? `출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>길게 눌러 조절</small>'}`
-    : who.human ? `내 차례<small>${m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
+  tb.innerHTML = mine ? `출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>주사위 2개</small>'}`
+    : who.human ? `내 차례<small>${m.phase === 'pick' ? '주사위 선택 중' : m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
   const sb = $('#skillBtn'), h = heroById(me.hero);
   sb.disabled = !mine || !!skillBlocked(m, me);
   sb.innerHTML = `${h.active.name} <b>×${me.skills}</b>`;
@@ -1086,8 +1139,14 @@ function drawControls() {
 }
 
 function setHint(t) { const h = $('#hint'); if (h) h.textContent = t; }
-function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.showingWhole() ? '내 위치' : '전체 지도'; }
-function showPlayer(p) { Camera.follow(nodeXY(p.node), 380); drawZoom(); }
+function drawZoom() { const z = $('#zoom'); if (z) z.textContent = G.regionView ? '내 위치' : '지역 지도'; }
+/** 이 판의 지역 전체를 한눈에 */
+function showRegion(ms) {
+  Camera.frame(areaOf(M()).stations.map(nodeXY), { maxZoom: 0.7, minZoom: 0.1, pad: 140, ms });
+  G.regionView = true;
+  drawZoom();
+}
+function showPlayer(p) { G.regionView = false; Camera.follow(nodeXY(p.node), 380); drawZoom(); }
 
 /** 판 화면 좌표 → 앱 좌표 */
 function toApp([x, y]) { const b = $('#board'); return [x + b.offsetLeft, y + b.offsetTop]; }
@@ -1342,21 +1401,23 @@ const HANDLERS = {
         const board = $('#board');
         const hit = () => { Sound.clatter(); board.removeEventListener('rollhit', hit); };
         board.addEventListener('rollhit', hit);
-        await Roller3D.toss(board, BOARDS.metro, e.roll, 'me');
+        await Roller3D.toss(board, BOARDS.metro, { pair: e.rolls }, 'me');
         board.removeEventListener('rollhit', hit);
       } else {
         const spot = $('#roller');
         spot.classList.add('show');
-        await Roller.animate(spot, BOARDS.metro, e.roll, 'me');
+        await Roller.animate(spot, BOARDS.metro, e.rolls[0], 'me');
         setTimeout(() => spot.classList.remove('show'), 600);
       }
-      stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '');
+      stampText(`${e.rolls[0].label} · ${e.rolls[1].label}`, '', e.rolls[0].face === e.rolls[1].face ? '같은 눈!' : '하나를 고르세요');
       await sleep(250);
-    } else {
-      Sound.clatter();
-      stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', e.fly ? `×2 · ${e.steps}역` : e.dash ? `+${e.dash}역` : '');
-      await sleep(300);
-    }
+    } else Sound.clatter();
+  },
+  async die(e) {
+    const p = playerById(M(), e.player);
+    const sub = e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '';
+    if (p.human) { stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', sub); await sleep(200); }
+    else { stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', sub); await sleep(300); }
   },
   async rest(e) { toast(`${isMe(e.player) ? '나' : nameOf(playerById(M(), e.player))} — 한 턴 휴식`); await sleep(700); },
   async stuck(e) { toast('길이 막혀 이동 불가'); await sleep(600); },
@@ -1423,10 +1484,6 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     await drawCard({ tone: e.good ? 'good' : 'bad', deck: '찬스 카드', title: e.name, short: e.short, art: character(p.hero, 96, e.good ? 'cheer' : 'sad'), quick: !p.human });
   },
-  async news(e) {
-    await drawCard({ tone: e.good ? 'good' : 'bad', deck: '뉴스', title: e.name, short: e.short, art: '<span class="news-art">NEWS</span>' });
-    drawClock();
-  },
   async cash(e) {
     const p = playerById(M(), e.player);
     const at = e.node ? nodeApp(e.node) : panelSpot(p.id);
@@ -1461,8 +1518,8 @@ const HANDLERS = {
   },
   async clock() { drawClock(); },
   async timeShift(e) {
-    const say = { rush: '러시아워 · 통행료 ×1.5', day: '낮 시간', night: '심야 · 통행료 ×1.25', last: '막차 · 목적지 보너스 ×2' };
-    toast(`${hhmm(e.clock)} · ${say[e.time]}`);
+    if (e.time !== 'last') return;
+    toast(`${hhmm(e.clock)} 막차 · 목적지 보너스 ×2`);
     Sound.stamp();
     await sleep(500);
   },
@@ -1515,7 +1572,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     flash(app);
     await drawCard({ tone: p.human ? 'good' : 'bad', deck: '독점 승리', title: `${p.human ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
-      short: e.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[e.line]?.name || ''} ${LINE_WIN}역 연결`, art: character(p.hero, 96, 'dance') });
+      short: e.kind === 'hot' ? `명소역 ${M().hotWin}곳 독점` : `${LINES[e.line]?.name || ''} ${LINE_WIN}역 연결`, art: character(p.hero, 96, 'dance') });
   },
   async over() {}
 };
@@ -1563,7 +1620,7 @@ async function results() {
     return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
       <div><b>${p.human ? '나' : nameOf(p)}</b><span>${r.out ? '파산' : `자산 ${r.assets.toLocaleString()} · 역 ${stationsOf(m, p).length}곳`}</span></div></div>`;
   }).join('');
-  const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
+  const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${m.hotWin}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
   const s = sheet(`
     <div class="rs-head ${win ? 'win' : ''}" style="--pc:${colorOf(me)}">
       <div class="rs-rays"></div>
@@ -1657,50 +1714,6 @@ function sheet(html) {
 }
 function closeSheet() { app.querySelectorAll('.sheet, .sheet-back').forEach((n) => n.remove()); }
 
-// ── 손맛 게이지 ────────────────────────────────────────────
-// 출발 단추를 꾹 누르면 힘 게이지가 오르내린다. 떼는 순간의 힘으로 솜씨가 정해진다.
-
-const GAUGE = { period: 1100, good: [0.7, 0.88], perfect: [0.77, 0.81], slip: 0.96, tap: 180 };
-const gaugeQuality = (p) => p >= GAUGE.perfect[0] && p <= GAUGE.perfect[1] ? 'perfect'
-  : p >= GAUGE.good[0] && p <= GAUGE.good[1] ? 'good' : p > GAUGE.slip ? 'slip' : 'normal';
-const QUALITY_STAMP = { perfect: ['퍼펙트 출발!', '#F2B33D', '#22201D'], good: ['굿 출발!', '#3E9B6A', '#FFFDF7'], slip: ['급출발 삐끗…', '#8C846F', '#FFFDF7'] };
-
-function wireGauge(btn) {
-  const wrap = btn.parentElement;
-  wrap.insertAdjacentHTML('beforeend', `<div class="power" hidden><i class="good"></i><i class="perfect"></i><i class="slip"></i><b class="needle"></b><span>떼면 출발</span></div>`);
-  const meter = wrap.querySelector('.power'), needle = meter.querySelector('.needle');
-  meter.querySelector('.good').style.cssText = `left:${GAUGE.good[0] * 100}%;width:${(GAUGE.good[1] - GAUGE.good[0]) * 100}%`;
-  meter.querySelector('.perfect').style.cssText = `left:${GAUGE.perfect[0] * 100}%;width:${(GAUGE.perfect[1] - GAUGE.perfect[0]) * 100}%`;
-  meter.querySelector('.slip').style.cssText = `left:${GAUGE.slip * 100}%;width:${(1 - GAUGE.slip) * 100}%`;
-  let t0 = 0, raf = 0, holding = false;
-  const ready = () => !G.busy && M()?.phase === 'roll' && current(M()).human && !!G.wait;
-  const power = () => { const u = ((performance.now() - t0) % GAUGE.period) / GAUGE.period; return u < 0.5 ? u * 2 : 2 - u * 2; };
-  const tick = () => { needle.style.left = power() * 100 + '%'; raf = requestAnimationFrame(tick); };
-  const start = () => { if (holding || !ready()) return; Sound.unlock(); holding = true; t0 = performance.now(); meter.hidden = false; tick(); };
-  const release = () => {
-    if (!holding) return;
-    holding = false;
-    cancelAnimationFrame(raf);
-    const held = performance.now() - t0, p = power();
-    meter.hidden = true;
-    const q = held < GAUGE.tap ? 'normal' : gaugeQuality(p);
-    if (QUALITY_STAMP[q]) {
-      const [text, bg, ink] = QUALITY_STAMP[q];
-      const b = wrap.getBoundingClientRect(), a = app.getBoundingClientRect(), k = b.width / wrap.offsetWidth;
-      FX.pow((b.left - a.left) / k + wrap.offsetWidth / 2, (b.top - a.top) / k - 10, text, bg, ink, -4);
-      if (q === 'perfect') Sound.big(); else if (q === 'good') Sound.coin(); else Sound.deny();
-    }
-    onThrow(q);
-  };
-  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); start(); });
-  btn.addEventListener('pointerup', release);
-  btn.addEventListener('pointerleave', release);
-  btn.addEventListener('pointercancel', () => { holding = false; cancelAnimationFrame(raf); meter.hidden = true; });
-  // 게이지 없이 눌린 클릭(키보드·자동 테스트)은 보통 출발
-  btn.addEventListener('click', () => { if (!holding) onThrow('normal'); });
-  G.gauge = { start, release };
-}
-
 // ── 시작 ───────────────────────────────────────────────────
 
 // 화면 틀: 세로(폰) 390×844 고정, 가로가 긴 창(PC)에서는 높이 780 에 창 비율만큼 넓힌다.
@@ -1726,14 +1739,10 @@ window.addEventListener('resize', fit);
 fit();
 
 document.addEventListener('pointerdown', () => Sound.unlock());
-// 키보드: Space/Enter 를 누르고 있으면 게이지, 떼면 출발
+// 키보드: Space/Enter 로 출발
 document.addEventListener('keydown', (e) => {
   if (e.repeat || !M() || app.querySelector('.sheet') || !app.classList.contains('game')) return;
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); G.gauge?.start(); }
-});
-document.addEventListener('keyup', (e) => {
-  if (!M() || app.querySelector('.sheet') || !app.classList.contains('game')) return;
-  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); G.gauge?.release(); }
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onThrow(); }
 });
 
 // 개발 중 콘솔 확인용

@@ -1,6 +1,6 @@
 // 서울 지하철 노선도 — 이 게임의 판. 1~9호선 서울 시내 구간의 역 219곳(좌표는 tools/seoul-layout.mjs 가 만든다).
 //
-// 판 전체가 무대다. 말은 실제 지하철을 타듯 움직인다:
+// 한 판은 서울의 한 지역(72역 — 도심 · 강남 · 서남 · 동부)에서 한다(regionOf). 말은 실제 지하철을 타듯 움직인다:
 //   - 왔던 역으로 바로 되돌아가지 않는다(노선 끝역에서만 되돌아 나온다)
 //   - 환승역에서는 다른 호선으로 갈아탈 수 있다 — 갈림길마다 갈 방향을 고른다
 //   - 불난 역(avoid)은 들어가지 못하고, 신호 장애 역(stopAt)에 닿으면 거기서 멈춘다
@@ -82,7 +82,7 @@ export const dist = (a, b) => DIST[a]?.[b] ?? Infinity;
  *   stopAt : 닿으면 거기서 멈추는 역(신호 장애)
  * 막혀서 더 못 가면 그 자리에서 멈춘다. 돌려주는 길은 도착역마다 하나(goal 을 지나는 길을 먼저).
  */
-export function paths(from, prev, steps, { avoid = null, stopAt = null, goal = null } = {}) {
+export function paths(from, prev, steps, { avoid = null, stopAt = null, goal = null, adj = ADJ } = {}) {
   const out = new Map();
   const keep = (path) => {
     const end = path[path.length - 1];
@@ -92,8 +92,8 @@ export function paths(from, prev, steps, { avoid = null, stopAt = null, goal = n
   };
   const go = (node, back, path, left) => {
     if (left === 0 || (path.length && stopAt?.has(node))) { if (path.length) keep(path); return; }
-    let next = ADJ[node].filter((m) => m !== back && !avoid?.has(m));
-    if (!next.length) next = ADJ[node].filter((m) => !avoid?.has(m)); // 노선 끝역: 되돌아 나온다
+    let next = adj[node].filter((m) => m !== back && !avoid?.has(m));
+    if (!next.length) next = adj[node].filter((m) => !avoid?.has(m)); // 노선 끝역(지역 끝 포함): 되돌아 나온다
     if (!next.length) { if (path.length) keep(path); return; }
     for (const m of next) go(m, node, path.concat(m), left - 1);
   };
@@ -102,12 +102,45 @@ export function paths(from, prev, steps, { avoid = null, stopAt = null, goal = n
 }
 
 /** 시드 하나로 서로 멀리 떨어진 역 count 곳(출발역 나누기) */
-export function spreadStations(rng, count, pool = ALL_STATIONS.filter(isTransfer), minGap = 9) {
+export function spreadStations(rng, count, pool = ALL_STATIONS.filter(isTransfer), minGap = 9, d = dist) {
   const picked = [];
   const cands = rng.shuffle(pool.slice());
   for (const n of cands) {
-    if (picked.every((p) => dist(p, n) >= minGap)) picked.push(n);
+    if (picked.every((p) => d(p, n) >= minGap)) picked.push(n);
     if (picked.length === count) return picked;
   }
-  return minGap > 3 ? spreadStations(rng, count, pool, minGap - 2) : cands.slice(0, count);
+  return minGap > 3 ? spreadStations(rng, count, pool, minGap - 2, d) : cands.slice(0, count);
+}
+
+// ── 지역 맵 ────────────────────────────────────────────────
+// 판을 작게: 가운데 역에서 가까운 순(노선을 따라 넓혀 가며)으로 REGION_SIZE 역을 떼어 한 판의 무대로 쓴다.
+// 지역 끝에서 끊긴 노선은 노선 끝역처럼 되돌아 나온다. 'all' 은 서울 전체(시험·옛 판).
+
+export const REGION_SIZE = 72;
+export const REGIONS = [
+  { id: 'center', name: '도심', sub: '종로 · 명동 · 서울역', center: '종로3가' },
+  { id: 'gangnam', name: '강남', sub: '강남 · 잠실 · 고속터미널', center: '선릉' },
+  { id: 'west', name: '서남', sub: '여의도 · 홍대 · 영등포', center: '신도림' },
+  { id: 'east', name: '동부', sub: '성수 · 건대 · 동대문', center: '건대입구' }
+];
+const REGION_CACHE = {};
+
+/** 지역 하나: { id, name, sub, stations, set, adj, dist(a, b) } */
+export function regionOf(id = 'all') {
+  if (REGION_CACHE[id]) return REGION_CACHE[id];
+  const def = REGIONS.find((r) => r.id === id);
+  if (!def) return (REGION_CACHE.all = { id: 'all', name: '서울 전체', sub: '1~9호선', stations: ALL_STATIONS, set: new Set(ALL_STATIONS), adj: ADJ, dist });
+  const stations = [def.center], set = new Set(stations), q = [def.center];
+  while (q.length && stations.length < REGION_SIZE) {
+    const n = q.shift();
+    for (const m of ADJ[n]) if (!set.has(m) && stations.length < REGION_SIZE) { set.add(m); stations.push(m); q.push(m); }
+  }
+  const adj = {};
+  for (const n of stations) adj[n] = ADJ[n].filter((m) => set.has(m));
+  const D = {};
+  const distIn = (a, b) => {
+    if (!D[a]) { const d = { [a]: 0 }, qq = [a]; while (qq.length) { const n = qq.shift(); for (const m of adj[n] || []) if (d[m] == null) { d[m] = d[n] + 1; qq.push(m); } } D[a] = d; }
+    return D[a][b] ?? Infinity;
+  };
+  return (REGION_CACHE[id] = { ...def, stations, set, adj, dist: distIn });
 }

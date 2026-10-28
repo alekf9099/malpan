@@ -5,7 +5,7 @@
 
 import { dist, isTransfer } from './boards/seoul.js';
 import { links, stationPrice, isHot, HOT_LIST } from './estate.js';
-import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, HOT_WIN, LINE_WIN, takeoverFor } from './match.js';
+import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, LINE_WIN, takeoverFor, dieOptions, hotsOf } from './match.js';
 import { chanceById } from './events.js';
 import { heroById } from './heroes.js';
 
@@ -32,7 +32,7 @@ function threatAt(m, p, n) {
   for (const q of alive(m)) {
     if (q === p) continue;
     const s = monopolyOf(m, q);
-    if (isHot(n) && s.hot >= HOT_WIN - 1) return q;
+    if (isHot(n) && s.hot >= m.hotWin - 1) return q;
     if (s.line >= LINE_WIN - 1) {
       const next = { ...m.owned, [n]: q.id };
       if ((links(next, q.id).at[n]?.len || 1) >= LINE_WIN) return q;
@@ -45,7 +45,7 @@ function threatAt(m, p, n) {
 function monoGain(m, p, n) {
   const s = monopolyOf(m, p);
   let v = 0;
-  if (isHot(n)) v += 60 + s.hot * 70 + (s.hot >= HOT_WIN - 1 ? 2000 : 0);
+  if (isHot(n)) v += 60 + s.hot * 70 + (s.hot >= m.hotWin - 1 ? 2000 : 0);
   const next = { ...m.owned, [n]: p.id };
   const len = links(next, p.id).at[n]?.len || 1;
   if (len >= LINE_WIN) v += 2000;
@@ -89,6 +89,19 @@ function pathValue(m, p, path, rng) {
 }
 
 /** 갈 길 하나 고르기 */
+/** 주사위 둘 중 하나 고르기: 각 눈으로 갈 수 있는 가장 좋은 길을 비교한다(급행은 한 번 더라 덤) */
+export function chooseDie(m, rng = m.rng) {
+  const p = current(m);
+  let best = 0, bestV = -Infinity;
+  for (const i of [0, 1]) {
+    let v = -Infinity;
+    for (const path of dieOptions(m, i)) v = Math.max(v, pathValue(m, p, path, rng));
+    if (m.pending.rolls[i].bonus) v += 60;
+    if (v > bestV) { bestV = v; best = i; }
+  }
+  return best;
+}
+
 export function choosePath(m, rng = m.rng) {
   const p = current(m);
   const all = legalPaths(m);

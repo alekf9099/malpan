@@ -92,9 +92,12 @@ const STAR = (x, y) => `<path d="M ${x} ${y} l 5 10 11 1.4 -8 7.4 2.1 11 -10.1 -
  * state.owner  { 역: 주인 색 } — 동그라미 안을 그 색으로
  * state.level  { 역: 1~3 }    — 2단계 이중 테, 3단계(랜드마크) 별
  * state.links  [{ a, b, color }] — 같은 주인이 이어서 가진 구간: 선 밑에 그 색 띠
+ * state.region Set — 이 판의 지역. 밖의 역·선은 흐리게(이름 없이) 그려 위치만 알려 준다
  */
 export function boardSvg(state = {}) {
   const owner = state.owner || {}, level = state.level || {};
+  const inside = (n) => !state.region || state.region.has(n);
+  const edgeIn = (e) => inside(e.a) && inside(e.b);
   const seg = (e) => { const [x1, y1] = nodeXY(e.a), [x2, y2] = nodeXY(e.b); return `x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"`; };
   let grid = '';
   for (let x = 0; x <= geo.w; x += UNIT * 2) grid += `<line x1="${x}" y1="0" x2="${x}" y2="${geo.h}" stroke="#ECE6D8" stroke-width="2"/>`;
@@ -103,11 +106,13 @@ export function boardSvg(state = {}) {
   // 산 역 둘레의 주인 색 번짐(선 밑)
   const halos = Object.entries(owner).map(([n, c]) => { const [x, y] = nodeXY(n); return `<circle cx="${x}" cy="${y}" r="${isHot(n) ? 52 : isTransfer(n) ? 44 : 38}" fill="${c}" opacity=".32"/>`; }).join('');
   const glow = (state.links || []).map((e) => `<line ${seg(e)} class="mono-glow" stroke="${e.color}" stroke-width="30" stroke-linecap="round" opacity=".55"/>`).join('');
-  const under = ALL_EDGES.map((e) => `<line ${seg(e)} stroke="${INK}" stroke-width="15" stroke-linecap="round"/>`).join('');
-  const over = ALL_EDGES.map((e) => `<line ${seg(e)} stroke="${LINES[e.line].color}" stroke-width="9" stroke-linecap="round"/>`).join('');
+  const faded = ALL_EDGES.filter((e) => !edgeIn(e)).map((e) => `<line ${seg(e)} stroke="#D9CFBE" stroke-width="8" stroke-linecap="round"/>`).join('');
+  const under = ALL_EDGES.filter(edgeIn).map((e) => `<line ${seg(e)} stroke="${INK}" stroke-width="15" stroke-linecap="round"/>`).join('');
+  const over = ALL_EDGES.filter(edgeIn).map((e) => `<line ${seg(e)} stroke="${LINES[e.line].color}" stroke-width="9" stroke-linecap="round"/>`).join('');
   const stations = ALL_STATIONS.map((n) => {
     const [x, y] = nodeXY(n);
     const big = isTransfer(n);
+    if (!inside(n)) return `<circle cx="${x}" cy="${y}" r="${big ? 9 : 7}" fill="#EDE6D8" stroke="#CFC5B3" stroke-width="3"/>`;
     const own = owner[n], lv = level[n] || 0;
     if (isChance(n)) {
       const r = big ? 17 : 13;
@@ -140,6 +145,6 @@ export function boardSvg(state = {}) {
     <rect width="${geo.w}" height="${geo.h}" fill="#F7F3EA"/>
     ${grid}
     <path d="${river}" fill="none" stroke="#CFE7F3" stroke-width="80" stroke-linecap="round"/>
-    <g>${halos}</g><g>${glow}</g><g>${under}</g><g>${over}</g><g>${stations}</g>
+    <g>${faded}</g><g>${halos}</g><g>${glow}</g><g>${under}</g><g>${over}</g><g>${stations}</g>
   </svg>`;
 }

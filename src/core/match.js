@@ -1,8 +1,8 @@
 // 한 판의 규칙 — 역전(驛戰): 역을 차지하라.
 // 화면을 모르고, 할 때마다 "무슨 일이 있었는지" 이벤트 목록을 돌려준다(화면은 그 목록을 차례로 연출).
 //
-// 2~4명이 서울 노선도 위에서 겨룬다. 06:00 첫차 → 24:00 막차가 한 판.
-//   차례: 열차 주사위(1~5역 · 급행 7역+한 번 더)를 굴려 그만큼 달린다. 갈림길에서는 갈 방향을 고른다.
+// 2~4명이 서울의 한 지역(72역 — 도심 · 강남 · 서남 · 동부, 판마다 하나)에서 겨룬다. 06:00 첫차 → 24:00 막차가 한 판.
+//   차례: 열차 주사위 2개(1~5역 · 급행 7역+한 번 더)를 굴려 하나를 고르고 그만큼 달린다. 갈림길에서는 갈 방향을 고른다.
 //   멈춘 역: 빈 역이면 산다 · 내 역이면 증축한다 · 남의 역이면 통행료를 내고, 돈이 되면 인수할 수 있다
 //   지나가는 남의 역: 서지 않아도 통과 요금(통행료의 20%) — 이어서 가진 노선은 유료 도로가 된다
 //   노선 투자: 내 차례에 굴리기 전, 이어진(2역 이상) 내 역은 어디서든 증축할 수 있다(모두의 마블의 건물 짓기)
@@ -10,37 +10,36 @@
 //   찬스 역(?): 서면 찬스 카드를 뽑는다
 //   통행료를 못 내면 역을 팔아서라도 내고, 그래도 모자라면 파산 — 마지막 한 명이 남으면 그 사람이 이긴다
 //   명소역(11곳): 서면 그 역만의 일(KTX 순간이동 · 하늘길 · 쇼핑 …). 목적지는 주로 명소역으로 나온다
-//   독점 승리: 명소역 5곳을 갖거나 한 호선에서 6역을 이어 가지면 그 자리에서 이긴다(하나 남으면 경고)
+//   독점 승리: 그 지역 명소역을 거의 다(지역마다 3~4곳) 갖거나 한 호선에서 6역을 이어 가지면 그 자리에서 이긴다(하나 남으면 경고)
 //   막차 시각이 되면 자산(돈 + 역에 들인 값)이 가장 많은 사람이 이긴다
-// 모두 한 차례씩 돌면 한 바퀴 — 시계가 45분 흐르고, 역 사건·뉴스가 일어난다.
+// 모두 한 차례씩 돌면 한 바퀴 — 시계가 90분 흐른다(한 판 12바퀴). 규칙을 덜려고 뉴스 · 시간대 통행료 · 무작위 역 사건은 뺐다
+// (인파는 스킬·명소역으로만 생긴다).
 
 import { createRng } from './rng.js';
-import { ADJ, ALL_STATIONS, dist, paths, rollDie, spreadStations, isTransfer } from './boards/seoul.js';
+import { paths, rollDie, spreadStations, isTransfer, regionOf, REGIONS } from './boards/seoul.js';
 import { stationPrice, upgradeCost, takeoverPrice, sellValue, invested, baseToll, MAX_LEVEL, links, HOTSPOTS, HOT_LIST, isHot } from './estate.js';
-import { INCIDENTS, INCIDENT_MAX, INCIDENT_CHANCE, pickIncident } from './incidents.js';
-import { CHANCE_CARDS, chanceById, newsById, planNews, pickWeighted } from './events.js';
+import { INCIDENTS } from './incidents.js';
+import { CHANCE_CARDS, chanceById, pickWeighted } from './events.js';
 import { heroById, SKILL_USES } from './heroes.js';
 
-export const START_MONEY = 1200;
+export const START_MONEY = 1000;
 export const GOAL_BONUS = 200;
-export const MIN_GOAL_DIST = 10;
+export const MIN_GOAL_DIST = 6;
 export const CLOCK = {
-  start: 6 * 60, end: 24 * 60, round: 45,
+  start: 6 * 60, end: 24 * 60, round: 90,
   rush: [[7 * 60, 9 * 60], [18 * 60, 20 * 60]],
   night: 22 * 60, last: 23 * 60
 };
-/** 시간대별 통행료 배율: 러시아워 ×1.5 · 심야·막차 ×1.25 */
-export const TIME_TOLL = { rush: 1.5, night: 1.25, last: 1.25, day: 1 };
 /** 남의 역을 지나가기만 해도 내는 통과 요금 = 통행료 × PASS_RATE */
 export const PASS_RATE = 0.2;
 /** 인원이 적으면 서로 만날 일이 적으니 통행료를 키운다 */
 export const CROWD_TOLL = { 2: 1.6, 3: 1.25, 4: 1 };
-/** 독점 승리: 명소역 HOT_WIN 곳 · 한 호선에서 LINE_WIN 역 이어 갖기 */
+/** 독점 승리: 명소역 HOT_WIN 곳(지역 명소역이 4곳 이하면 전부, 5곳 이상이면 하나 빼고) · 한 호선에서 LINE_WIN 역 이어 갖기 */
 export const HOT_WIN = 5;
 export const LINE_WIN = 6;
 /** 새 목적지가 명소역일 확률, 명소역 목적지의 최소 거리 */
 export const HOT_GOAL_CHANCE = 0.6;
-export const HOT_GOAL_DIST = 6;
+export const HOT_GOAL_DIST = 4;
 export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /** 찬스 역: 노선도 곳곳의 한 호선 역. 살 수 없고, 서면 찬스 카드를 뽑는다 */
@@ -53,11 +52,16 @@ export const isChance = (n) => CHANCE_SET.has(n);
 /**
  * 새 판. heroes 는 자리 순서대로 캐릭터 id(첫 자리가 사람). seed 가 같으면 같은 출발역·목적지·사건.
  */
-export function createMatch({ seed = 1, heroes, humans = 1, daily = false }) {
+export function createMatch({ seed = 1, heroes, humans = 1, daily = false, region = null }) {
   const rng = createRng((seed >>> 0) || 1);
-  const starts = spreadStations(rng, heroes.length);
+  const regionId = region || REGIONS[Math.floor(rng.next() * REGIONS.length)].id;
+  const R = regionOf(regionId);
+  const starts = spreadStations(rng, heroes.length, R.stations.filter(isTransfer), 6, R.dist);
+  const hots = HOT_LIST.filter((n) => R.set.has(n));
   const m = {
     seed, daily, rng,
+    region: regionId,
+    hotWin: Math.min(HOT_WIN, hots.length >= 5 ? hots.length - 1 : Math.max(3, hots.length)),
     players: heroes.map((hero, i) => ({
       id: 'p' + i, hero, human: i < humans, money: START_MONEY,
       node: starts[i], prev: null, goal: null, out: false, place: null,
@@ -68,10 +72,8 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false }) {
     levels: {},         // 역 → 단계(1~3)
     turn: 0, round: 1,
     clock: CLOCK.start, end: CLOCK.end,
-    incidents: [],      // { node, kind, until }
-    news: planNews(rng).map((n) => ({ ...n, done: false })),
-    sale: 0, boom: 0,   // 뉴스 효과가 끝나는 시각
-    phase: 'roll',      // roll → move → (choose) → decide → (다음 사람) roll … → over
+    incidents: [],      // { node, kind, until } — 인파(스킬·명소역)
+    phase: 'roll',      // roll → (pick 주사위 고르기) → move → (choose) → decide → (다음 사람) roll … → over
     pending: null, offer: null, choice: null, ranking: null, reason: null, winner: null
   };
   for (const p of m.players) p.goal = pickGoal(m, p);
@@ -79,6 +81,10 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false }) {
 }
 
 export const current = (m) => m.players[m.turn];
+/** 이 판의 지역(regionOf) */
+export const areaOf = (m) => regionOf(m.region);
+/** 이 판에서 갈 수 있는 명소역 */
+export const hotsOf = (m) => HOT_LIST.filter((n) => areaOf(m).set.has(n));
 export const playerById = (m, id) => m.players.find((p) => p.id === id);
 export const alive = (m) => m.players.filter((p) => !p.out);
 
@@ -97,11 +103,13 @@ export function assets(m, p) {
 }
 export const stationsOf = (m, p) => Object.keys(m.owned).filter((n) => m.owned[n] === p.id);
 
-/** 목적지: 주로(60%) 6역 넘게 떨어진 명소역, 아니면 10역 넘게 떨어진 아무 역 — 모두 명소 쪽으로 몰리게 */
+/** 목적지: 주로(60%) 4역 넘게 떨어진 명소역, 아니면 6역 넘게 떨어진 아무 역(지역 안) — 모두 명소 쪽으로 몰리게 */
 function pickGoal(m, p) {
-  const hot = HOT_LIST.filter((n) => n !== p.goal && n !== p.node && dist(p.node, n) >= HOT_GOAL_DIST);
+  const R = areaOf(m);
+  const hot = hotsOf(m).filter((n) => n !== p.goal && n !== p.node && R.dist(p.node, n) >= HOT_GOAL_DIST);
   if (hot.length && m.rng.next() < HOT_GOAL_CHANCE) return hot[Math.floor(m.rng.next() * hot.length)];
-  const far = ALL_STATIONS.filter((n) => dist(p.node, n) >= MIN_GOAL_DIST && n !== p.goal);
+  let far = R.stations.filter((n) => R.dist(p.node, n) >= MIN_GOAL_DIST && n !== p.goal);
+  if (!far.length) far = R.stations.filter((n) => n !== p.node && n !== p.goal);
   return far[Math.floor(m.rng.next() * far.length)];
 }
 
@@ -111,8 +119,8 @@ export const incidentAt = (m, n) => m.incidents.find((i) => i.node === n);
 const fires = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].block).map((i) => i.node));
 const delays = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].stop).map((i) => i.node));
 export const buyable = (n) => !isChance(n);
-export const priceFor = (m, n) => Math.round(stationPrice(n) * (m.clock < m.sale ? 0.5 : 1));
-export const upgradeFor = (m, n, p) => Math.round(upgradeCost(n) * (1 - (heroById(p.hero).buildDiscount || 0)) * (m.clock < m.sale ? 0.5 : 1));
+export const priceFor = (m, n) => stationPrice(n);
+export const upgradeFor = (m, n, p) => Math.round(upgradeCost(n) * (1 - (heroById(p.hero).buildDiscount || 0)));
 /** 인수 값: 들인 값 × 1.5 — 중개인은 30% 싸게, 급매 협상 중이면 들인 값 그대로 */
 export const takeoverFor = (m, n, p = current(m)) => {
   const lv = m.levels[n] || 1;
@@ -125,13 +133,13 @@ export function tollFor(m, n, payer) {
   const owner = m.owned[n];
   if (!owner || owner === payer.id || fires(m).has(n)) return 0;
   const inc = INCIDENTS[incidentAt(m, n)?.kind];
-  const x = (inc?.tollX || 1) * (m.clock < m.boom ? 2 : 1) * TIME_TOLL[timeOf(m)] * (CROWD_TOLL[m.players.length] || 1) * (1 - (heroById(payer.hero).tollDiscount || 0));
+  const x = (inc?.tollX || 1) * (CROWD_TOLL[m.players.length] || 1) * (1 - (heroById(payer.hero).tollDiscount || 0));
   return Math.round(baseToll(m.owned, m.levels, n) * x);
 }
 
 // ── 차례 ───────────────────────────────────────────────────
 
-/** 굴리기. 쉬어야 하는 사람이면 굴리지 않고 넘어간다 */
+/** 굴리기: 주사위 2개. 같은 눈이면 바로 그 눈으로, 다르면 하나를 고른다(pickDie). 쉬어야 하는 사람이면 넘어간다 */
 export function roll(m, rng = m.rng) {
   if (m.phase !== 'roll') throw new Error('지금은 굴릴 차례가 아닙니다: ' + m.phase);
   const p = current(m);
@@ -139,13 +147,37 @@ export function roll(m, rng = m.rng) {
     p.rest--;
     return [{ type: 'rest', player: p.id }, ...endTurn(m)];
   }
-  const r = rollDie(rng);
-  const steps = r.value * (p.fly ? 2 : 1) + p.dash;
-  const events = [{ type: 'roll', player: p.id, roll: r, steps, dash: p.dash, fly: p.fly }];
+  const rolls = [rollDie(rng), rollDie(rng)];
+  m.pending = { rolls, steps: null };
+  m.phase = 'pick';
+  const events = [{ type: 'roll', player: p.id, rolls }];
+  if (rolls[0].face === rolls[1].face) return events.concat(pickDie(m, 0));
+  return events;
+}
+
+/** 주사위 i 를 고르면 몇 역 가나(스킬 급행 +3 · 콜 몰림/하늘길 ×2 포함) */
+export function dieSteps(m, i) {
+  const p = current(m), r = m.pending.rolls[i];
+  return r.value * (p.fly ? 2 : 1) + p.dash;
+}
+/** 주사위 i 로 갈 수 있는 길(도착역마다 하나) — 고르기 전에 보여 주거나 AI 가 따져 본다 */
+export function dieOptions(m, i) {
+  const p = current(m);
+  return paths(p.node, p.prev, dieSteps(m, i), { avoid: fires(m), stopAt: delays(m), goal: p.goal, adj: areaOf(m).adj });
+}
+
+/** 주사위 하나를 고른다. 급행이면 한 번 더 */
+export function pickDie(m, i) {
+  if (m.phase !== 'pick') throw new Error('고를 주사위가 없습니다');
+  const p = current(m);
+  const r = m.pending.rolls[i];
+  if (!r) throw new Error('없는 주사위입니다: ' + i);
+  const steps = dieSteps(m, i);
+  const events = [{ type: 'die', player: p.id, roll: r, index: i, steps, dash: p.dash, fly: p.fly }];
   p.dash = 0;
   p.fly = false;
   if (r.bonus) p.again = true;
-  m.pending = { roll: r, steps };
+  m.pending = { roll: r, rolls: m.pending.rolls, steps };
   m.phase = 'move';
   if (!legalPaths(m).length) {
     events.push({ type: 'stuck', player: p.id });
@@ -158,14 +190,14 @@ export function roll(m, rng = m.rng) {
 /** 지금 갈 수 있는 길(도착역마다 하나). AI 가 쓴다 */
 export function legalPaths(m) {
   const p = current(m);
-  return paths(p.node, p.prev, m.pending.steps, { avoid: fires(m), stopAt: delays(m), goal: p.goal });
+  return paths(p.node, p.prev, m.pending.steps, { avoid: fires(m), stopAt: delays(m), goal: p.goal, adj: areaOf(m).adj });
 }
 
 /** 갈림길에서 고를 수 있는 다음 역(사람이 한 역씩 고를 때). 막히면 빈 목록 */
 export function nextStations(m, node, back) {
-  const avoid = fires(m);
-  let next = ADJ[node].filter((x) => x !== back && !avoid.has(x));
-  if (!next.length) next = ADJ[node].filter((x) => !avoid.has(x));
+  const avoid = fires(m), adj = areaOf(m).adj;
+  let next = adj[node].filter((x) => x !== back && !avoid.has(x));
+  if (!next.length) next = adj[node].filter((x) => !avoid.has(x));
   return next;
 }
 /** 이 역에 닿으면 남은 칸이 있어도 멈추나(신호 장애) */
@@ -224,7 +256,7 @@ function afterLand(m, p, events) {
 /** KTX 로 갈 수 있는 곳: 내 목적지 + 다른 명소역(불난 역 빼고) */
 export function warpOptions(m, p = current(m)) {
   const fire = fires(m);
-  return [...new Set([p.goal, ...HOT_LIST])].filter((n) => n !== p.node && !fire.has(n));
+  return [...new Set([p.goal, ...hotsOf(m)])].filter((n) => n !== p.node && !fire.has(n));
 }
 
 /** 명소역에 서면(주인이어도) 그 역만의 일이 일어난다 */
@@ -294,7 +326,7 @@ export function monopolyOf(m, p) {
   for (const r of links(m.owned, p.id).runs) if (r.stations.length > line) { line = r.stations.length; lineId = r.line; }
   return { hot, line, lineId };
 }
-const monoWin = (s) => s.hot >= HOT_WIN || s.line >= LINE_WIN;
+const monoWin = (m, s) => s.hot >= m.hotWin || s.line >= LINE_WIN;
 
 /** 지나간 남의 역마다 통과 요금(주인별로 묶는다). 도착역은 통행료라서 빼고 센다 */
 export function passFares(m, p, path) {
@@ -397,13 +429,13 @@ export function decide(m, yes) {
     if (o.kind !== 'upgrade') for (const q of alive(m)) { const fee = q !== p && heroById(q.hero).commission; if (fee) { q.money += fee; events.push({ type: 'cash', player: q.id, amount: fee, why: 'commission' }); } }
     if (o.kind !== 'upgrade') {
       const mono = monopolyOf(m, p);
-      if (monoWin(mono)) {
-        const kind = mono.hot >= HOT_WIN ? 'hot' : 'line';
+      if (monoWin(m, mono)) {
+        const kind = mono.hot >= m.hotWin ? 'hot' : 'line';
         events.push({ type: 'monopoly', player: p.id, kind, line: mono.lineId });
         m.mono = { kind, line: mono.lineId };
         return events.concat(finish(m, 'monopoly', p));
       }
-      if (mono.hot === HOT_WIN - 1 && monoBefore.hot < mono.hot) events.push({ type: 'monoWarn', player: p.id, kind: 'hot', have: mono.hot, need: HOT_WIN });
+      if (mono.hot === m.hotWin - 1 && monoBefore.hot < mono.hot) events.push({ type: 'monoWarn', player: p.id, kind: 'hot', have: mono.hot, need: m.hotWin });
       if (mono.line === LINE_WIN - 1 && monoBefore.line < mono.line) events.push({ type: 'monoWarn', player: p.id, kind: 'line', line: mono.lineId, have: mono.line, need: LINE_WIN });
     }
   } else {
@@ -493,26 +525,12 @@ function applyChance(m, p, card, picked = false) {
   return events;
 }
 
-function fireNews(m) {
-  const due = m.news.find((e) => !e.done && m.clock >= e.at);
-  if (!due) return [];
-  due.done = true;
-  const card = newsById(due.id);
-  const events = [{ type: 'news', id: card.id, name: card.name, short: card.short, good: card.good }];
-  if (card.id === 'sale') m.sale = m.clock + 120;
-  else if (card.id === 'boom') m.boom = m.clock + 120;
-  else if (card.id === 'extend') { m.end += 60; events.push({ type: 'extend', end: m.end }); }
-  else if (card.id === 'payday') for (const p of alive(m)) { p.money += 100; events.push({ type: 'cash', player: p.id, amount: 100, why: 'news' }); }
-  else if (card.id === 'inspect') for (const p of alive(m)) { const k = stationsOf(m, p).length; if (k) events.push(...pay(m, p, 15 * k, null, { why: 'inspect' })); }
-  return events;
-}
-
 // ── 역 사건 ────────────────────────────────────────────────
 
-function spawnIncident(m, kind = null, at = null) {
-  const k = kind || pickIncident(m.rng, timeOf(m) === 'rush').id;
+function spawnIncident(m, kind, at = null) {
+  const k = kind;
   const taken = new Set([...m.players.map((p) => p.node), ...m.incidents.map((i) => i.node)]);
-  const spots = at ? [at] : ALL_STATIONS.filter((n) => !taken.has(n) && !isChance(n));
+  const spots = at ? [at] : areaOf(m).stations.filter((n) => !taken.has(n) && !isChance(n));
   if (!spots.length) return [];
   const node = spots[Math.floor(m.rng.next() * spots.length)];
   const info = INCIDENTS[k];
@@ -526,7 +544,6 @@ function tickIncidents(m) {
   const events = [];
   for (const i of m.incidents.filter((x) => m.clock >= x.until)) events.push({ type: 'incidentEnd', node: i.node, kind: i.kind });
   m.incidents = m.incidents.filter((x) => m.clock < x.until);
-  if (m.incidents.length < INCIDENT_MAX && m.rng.next() < INCIDENT_CHANCE) events.push(...spawnIncident(m));
   return events;
 }
 
@@ -557,7 +574,6 @@ function endTurn(m) {
     if (timeOf(m) !== was) events.push({ type: 'timeShift', time: timeOf(m), clock: m.clock });
     if (m.clock >= m.end) return events.concat(finish(m, 'lastTrain'));
     events.push(...tickIncidents(m));
-    events.push(...fireNews(m));
     if (alive(m).length <= 1) return events.concat(finish(m, 'bankrupt'));
   }
   events.push({ type: 'turn', player: current(m).id });

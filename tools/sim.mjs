@@ -2,8 +2,8 @@
 //   node tools/sim.mjs [판 수=500] [인원=4] [시작 시드=1]
 // 본다: 판이 어떻게 끝나나(파산 · 막차 · 독점), 몇 바퀴 도나, 캐릭터별 1등 비율, 끝날 때 자산·가진 역, 거래 횟수
 
-import { createMatch, roll, move, decide, choose, useSkill, invest, assets, stationsOf } from '../src/core/match.js';
-import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
+import { createMatch, roll, pickDie, move, decide, choose, useSkill, invest, assets, stationsOf } from '../src/core/match.js';
+import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
 import { HEROES } from '../src/core/heroes.js';
 
 const N = Number(process.argv[2] || 500);
@@ -25,6 +25,7 @@ for (let k = 0; k < N; k++) {
       if (wantsSkill(m)) useSkill(m);
       ev.push(...roll(m));
     }
+    else if (m.phase === 'pick') ev = pickDie(m, chooseDie(m));
     else if (m.phase === 'move') ev = move(m, choosePath(m));
     else if (m.phase === 'choose') ev = choose(m, chooseOption(m));
     else ev = decide(m, decideOffer(m));

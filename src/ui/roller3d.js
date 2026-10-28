@@ -122,18 +122,23 @@ function scene(aspect, dist, lookY = 0) {
 
 /** 결과로 주사위와 끝 자세를 만든다. roll 이 없으면 대기 모습(급행 면). */
 function build(board, roll, rnd = Math.random) {
-  const face = roll?.face ?? 'express';
-  const o = makeDie(METRO_FACES.map((f) => tex['metro-' + f]), 1.35);
-  const q = faceUp(METRO_FACES.indexOf(face), (rnd() - 0.5) * 0.4);
-  return [{ o, q, pos: new THREE.Vector3(0, 0.5 * 1.35, 0) }];
+  // roll.pair 면 주사위 둘을 나란히
+  const list = roll?.pair || [roll];
+  return list.map((r, i) => {
+    const face = r?.face ?? 'express';
+    const o = makeDie(METRO_FACES.map((f) => tex['metro-' + f]), 1.35);
+    const q = faceUp(METRO_FACES.indexOf(face), (rnd() - 0.5) * 0.4);
+    const x = list.length > 1 ? (i ? 1.1 : -1.1) : 0;
+    return { o, q, pos: new THREE.Vector3(x, 0.5 * 1.35, 0) };
+  });
 }
 
 /** 물체 높이의 가운데 — 카메라가 바닥이 아니라 물체를 보도록 */
 const midY = () => 0.67;
 
 /** 물체들이 화면 폭의 cover 만큼 차지하도록 카메라 거리를 정한다 */
-function distFor(board, aspect, cover) {
-  const [sx, sy] = [1.7, 1.7];
+function distFor(board, aspect, cover, n = 1) {
+  const [sx, sy] = [n > 1 ? 3.9 : 1.7, 1.7];
   // 시야각 28° 일 때 거리 d 에서 보이는 세로 폭 ≈ 0.5 · d, 가로 폭 ≈ 0.5 · d · aspect. 둘 다 넘치지 않게
   return Math.max(sx / (cover * 0.5 * aspect), sy / (Math.min(0.85, cover * 1.6) * 0.5));
 }
@@ -202,8 +207,8 @@ export async function toss(overlay, board, roll, who = 'me', at = null) {
   const fast = who === 'opp';
   const w = overlay.clientWidth, h = overlay.clientHeight;
   size(w, h);
-  const { sc, cam } = scene(w / h, distFor(board, w / h, fast ? 0.3 : 0.42));
   const items = build(board, roll);
+  const { sc, cam } = scene(w / h, distFor(board, w / h, fast ? 0.3 : 0.42, items.length));
   // 시작 자세: 화면 아래쪽 앞에서 위로 던져 올린다. 각자 다른 회전축으로 몇 바퀴 돈다
   for (const it of items) {
     // 주사위 하나짜리(기물·열차)는 커서 카메라에 가까이 오면 판을 가린다 — 판 안쪽에서 출발

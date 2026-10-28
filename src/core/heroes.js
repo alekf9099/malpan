@@ -15,8 +15,8 @@ export const HEROES = [
   },
   {
     id: 'staff', name: '한별', job: '역무원', color: '#F08A2E',
-    skill: '환승 할인', desc: '통행료·통과 요금 50% 할인',
-    tollDiscount: 0.5,
+    skill: '환승 할인', desc: '통행료·통과 요금 40% 할인',
+    tollDiscount: 0.4,
     active: { id: 'again', name: '추가 운행', desc: '턴 종료 후 한 번 더' },
     ai: { name: '신중형', reserve: 250, hub: 0.3, chain: 0.7, build: 0.6 }
   },
@@ -51,15 +51,15 @@ export const HEROES = [
   },
   {
     id: 'nurse', name: '보람', job: '간호사', color: '#17A2A8', price: 200,
-    skill: '교대 근무', desc: '바퀴마다 +15 · 파산 시 1회 구조(300)',
-    shiftPay: 15, rescue: 300,
+    skill: '교대 근무', desc: '바퀴마다 +30 · 파산 시 1회 구조(300)',
+    shiftPay: 30, rescue: 300,
     active: { id: 'aid', name: '응급 처치', desc: '가장 싼 내 역을 원가에 현금화' },
     ai: { name: '버티기형', reserve: 120, hub: 0.3, chain: 0.6, build: 0.7 }
   },
   {
     id: 'broker', name: '오사장', job: '부동산 중개인', color: '#8A5A3B', price: 300,
-    skill: '중개 수수료', desc: '남의 거래마다 +10 · 인수 30% 할인',
-    commission: 10, takeoverDiscount: 0.3,
+    skill: '중개 수수료', desc: '남의 거래마다 +6 · 인수 30% 할인',
+    commission: 6, takeoverDiscount: 0.3,
     active: { id: 'deal', name: '급매 협상', desc: '이번 턴 인수 가격을 원가로' },
     ai: { name: '인수 전문가', reserve: 260, hub: 0.4, chain: 0.7, build: 0.5 }
   }

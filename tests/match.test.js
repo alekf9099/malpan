@@ -1,16 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createMatch, roll, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
-  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, HOT_WIN, warpOptions, takeoverFor
+  createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
+  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor
 } from '../src/core/match.js';
 import { matchPoints } from '../src/core/ranking.js';
 import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
 import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul.js';
-import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
+import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
 
 const rngAlways = (v) => ({ next: () => v, shuffle: (a) => a });
-const game = (n = 2, extra = {}) => createMatch({ seed: 7, heroes: ['driver', 'staff', 'worker', 'student'].slice(0, n), humans: 1, ...extra });
+const game = (n = 2, extra = {}) => createMatch({ seed: 7, heroes: ['driver', 'staff', 'worker', 'student'].slice(0, n), humans: 1, region: 'all', ...extra });
 /** p 를 from 역에 세우고 steps 만큼 굴린 것처럼 */
 function at(m, node, prev, steps = 1) {
   const p = current(m);
@@ -20,10 +20,10 @@ function at(m, node, prev, steps = 1) {
   return p;
 }
 
-test('새 판: 모두 1200점, 서로 다른 출발역, 저마다 10역 넘게 떨어진 목적지', () => {
+test('새 판: 모두 1200점, 서로 다른 출발역, 저마다 멀리 떨어진 목적지', () => {
   const m = game(4);
   assert.equal(new Set(m.players.map((p) => p.node)).size, 4);
-  for (const p of m.players) { assert.equal(p.money, START_MONEY); assert.ok(dist(p.node, p.goal) >= (isHot(p.goal) ? HOT_GOAL_DIST : 10)); }
+  for (const p of m.players) { assert.equal(p.money, START_MONEY); assert.ok(dist(p.node, p.goal) >= (isHot(p.goal) ? HOT_GOAL_DIST : MIN_GOAL_DIST)); }
   assert.equal(m.clock, CLOCK.start);
   for (const n of CHANCE_STATIONS) { assert.ok(ALL_STATIONS.includes(n), n); assert.equal(STATION_LINES[n].length, 1, n); }
 });
@@ -144,6 +144,7 @@ test('한 바퀴마다 시계가 45분 흐르고, 막차가 되면 자산 순위
   const m = game(3);
   for (let g = 0; g < 4000 && m.phase !== 'over'; g++) {
     if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
+    else if (m.phase === 'pick') pickDie(m, chooseDie(m));
     else if (m.phase === 'move') move(m, choosePath(m));
     else if (m.phase === 'choose') choose(m, chooseOption(m));
     else decide(m, decideOffer(m));
@@ -159,7 +160,8 @@ test('AI 만으로 200판: 늘 끝나고, 돈이 음수가 되지 않는다', ()
     let g = 0;
     while (m.phase !== 'over' && g++ < 6000) {
       if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
-      else if (m.phase === 'move') move(m, choosePath(m));
+      else if (m.phase === 'pick') pickDie(m, chooseDie(m));
+    else if (m.phase === 'move') move(m, choosePath(m));
       else if (m.phase === 'choose') choose(m, chooseOption(m));
       else decide(m, decideOffer(m));
       for (const p of m.players) assert.ok(p.money >= 0, `seed ${s}`);
@@ -220,15 +222,15 @@ test('독점: 명소역 하나 앞이면 경고, 다 가지면 그 자리에서 
 
 test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, 중개인 수수료·급매 협상', () => {
   // 라이더: 같은 길에서 통과 요금이 반
-  const a = createMatch({ seed: 7, heroes: ['rider', 'driver'], humans: 1 });
-  const b = createMatch({ seed: 7, heroes: ['driver', 'worker'], humans: 1 });
+  const a = createMatch({ seed: 7, heroes: ['rider', 'driver'], humans: 1 , region: 'all' });
+  const b = createMatch({ seed: 7, heroes: ['driver', 'worker'], humans: 1 , region: 'all' });
   for (const m of [a, b]) { m.owned['숙대입구'] = 'p1'; m.levels['숙대입구'] = 2; }
   const fa = [...passFares(a, a.players[0], ['숙대입구', '삼각지']).values()][0].amount;
   const fb = [...passFares(b, b.players[0], ['숙대입구', '삼각지']).values()][0].amount;
   assert.ok(fb > 0 && Math.abs(fa - fb / 2) <= 1, `${fa} vs ${fb}`);
 
   // 간호사: 통행료를 못 내면 한 번은 300으로 버틴다
-  const n = createMatch({ seed: 7, heroes: ['nurse', 'driver'], humans: 1 });
+  const n = createMatch({ seed: 7, heroes: ['nurse', 'driver'], humans: 1 , region: 'all' });
   const nu = n.players[0];
   n.owned['숙대입구'] = 'p1'; n.levels['숙대입구'] = 3;
   nu.money = 5;
@@ -238,13 +240,13 @@ test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, �
   assert.equal(nu.out, false);
   assert.equal(nu.money, 300);
 
-  // 중개인: 남이 역을 사면 +10, 급매 협상이면 들인 값 그대로(× 0.7) 인수
-  const k = createMatch({ seed: 7, heroes: ['driver', 'broker'], humans: 1 });
+  // 중개인: 남이 역을 사면 +6, 급매 협상이면 들인 값 그대로(× 0.7) 인수
+  const k = createMatch({ seed: 7, heroes: ['driver', 'broker'], humans: 1 , region: 'all' });
   const before = k.players[1].money;
   at(k, '서울역', '시청', 1);
   move(k, ['숙대입구']);
   decide(k, true);
-  assert.equal(k.players[1].money, before + 10);
+  assert.equal(k.players[1].money, before + 6);
   k.turn = 1; k.phase = 'roll';
   const br = current(k);
   br.deal = true;
@@ -255,4 +257,39 @@ test('승점: 판마다 기본 +10, 가진 역 +1(15까지), 1등 보너스', ()
   assert.equal(matchPoints({ place: 4, rivals: 3, knockout: false, stations: 0 }), 10);
   assert.equal(matchPoints({ place: 3, rivals: 3, knockout: false, stations: 40 }), 10 + 15 + 5);
   assert.equal(matchPoints({ place: 1, rivals: 3, knockout: true, stations: 8 }), 10 + 8 + 30 + 15 + 10);
+});
+
+test('지역 맵: 72역 안에서만 출발·목적지·길, 지역 끝에서는 되돌아 나온다', () => {
+  for (const id of ['center', 'gangnam', 'west', 'east']) {
+    const m = createMatch({ seed: 3, heroes: ['driver', 'staff', 'worker', 'student'], humans: 0, region: id });
+    const R = areaOf(m);
+    assert.equal(R.stations.length, 72, id);
+    for (const p of m.players) { assert.ok(R.set.has(p.node), id); assert.ok(R.set.has(p.goal), id); }
+    assert.ok(m.hotWin >= 3 && m.hotWin <= 5, id);
+    for (let g = 0; g < 300 && m.phase !== 'over'; g++) {
+      if (m.phase === 'roll') roll(m);
+      else if (m.phase === 'pick') pickDie(m, chooseDie(m));
+      else if (m.phase === 'move') { const path = choosePath(m); for (const n of path) assert.ok(R.set.has(n), `${id} ${n}`); move(m, path); }
+      else if (m.phase === 'choose') choose(m, chooseOption(m));
+      else decide(m, decideOffer(m));
+    }
+  }
+});
+
+test('주사위 둘: 굴리면 고르기, 고른 눈만큼 간다(같은 눈이면 바로)', () => {
+  const m = game();
+  let ev;
+  for (let s = 0; s < 50; s++) {
+    m.phase = 'roll'; m.turn = 0;
+    ev = roll(m);
+    if (m.phase === 'pick') break;
+  }
+  assert.equal(m.phase, 'pick');
+  assert.equal(ev[0].rolls.length, 2);
+  const want = m.pending.rolls[1].value;
+  assert.ok(dieOptions(m, 1).every((path) => path.length <= want));
+  const e = pickDie(m, 1);
+  assert.equal(e[0].type, 'die');
+  assert.equal(m.pending.steps, want);
+  assert.equal(m.phase, 'move');
 });

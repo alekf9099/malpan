@@ -200,16 +200,16 @@ function pickHero(i = myIndex()) {
 }
 
 const AI_NOTE = {
-  tiger: '남겨 둘 돈을 적게 잡고 보이는 역은 거의 다 산다. 목적지를 향해 곧장 달린다.',
-  rabbit: '돈을 넉넉히 남겨 두고 신중하게 산다. 이어지는 역이면 좀 더 과감해진다.',
-  parrot: '환승역을 좋아해서 큰 역부터 모은다.',
-  panda: '같은 호선을 이어서 사고, 돈이 생기면 증축에 쏟는다.'
+  driver: '남겨 둘 돈을 적게 잡고 보이는 역은 거의 다 산다. 목적지를 향해 곧장 달린다.',
+  staff: '돈을 넉넉히 남겨 두고 신중하게 산다. 이어지는 역이면 좀 더 과감해진다.',
+  worker: '환승역을 좋아해서 큰 역부터 모은다.',
+  student: '같은 호선을 이어서 사고, 돈이 생기면 증축에 쏟는다.'
 };
 
 // ── 도감 ───────────────────────────────────────────────────
 
 const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
-const DEX_LINE = { tiger: '첫차를 모는 기관사', rabbit: '발 빠른 역무원', parrot: '목청 좋은 안내원', panda: '든든한 보안관' };
+const DEX_LINE = { driver: '새벽 첫차를 모는 20년 차 기관사', staff: '노선도를 통째로 외운 역무원', worker: '환승 3번은 기본인 출근길 직장인', student: '정기권 한 장으로 서울을 누비는 새내기' };
 
 function dex(which = 0) {
   app.className = 'app dex-app';

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <title>캐릭터 렌더러</title>
 <!--
-  Kenney Cube Pets(CC0) 3D 모델을 판과 같은 시점(세로 눌림 0.58 = 고도 약 35.4°, 45° 회전)으로
+  Kenney Mini Characters(CC0) 3D 모델을 판과 같은 시점(세로 눌림 0.58 = 고도 약 35.4°, 45° 회전)으로
   찍어 스프라이트 시트(WebP, 동작 5줄 × 8프레임)로 만든다. 개발용 도구 — 게임은 결과 그림만 쓴다.
   tools/save-server.py 로 열고 ?save 를 붙이면 assets/chars/ 에 바로 저장한다.
 -->
@@ -29,7 +29,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 const params = new URLSearchParams(location.search);
 const SAVE = params.has('save');
-// ?icon 이면 앱 아이콘용으로 호랑이 환호 한 장만 크게 찍는다(tools/make-icons.py 가 쓴다)
+// ?icon 이면 앱 아이콘용으로 기관사 환호 한 장만 크게 찍는다(tools/make-icons.py 가 쓴다)
 const ICON = params.has('icon');
 const FRAME = ICON ? 512 : 160; // 한 프레임 크기(px)
 const FRAMES = ICON ? 1 : 8;    // 동작당 프레임 수
@@ -38,16 +38,20 @@ const OUTLINE = 6 * FRAME / 160; // 먹선 두께(px)
 const ELEV = Math.asin(0.58);
 const AZIM = Math.PI / 4;
 
-// 게임 이름 → 모델·꾸밈. horns: 도깨비 뿔, tint: 몸 색 바꾸기
+// 게임 캐릭터 id → 모델. 사람 넷은 Kenney Mini Characters(CC0, assets/models/mini/)이고, 팩마다 크기가 달라 키(height)를 맞춘다.
+// ?set=mini 면 팩의 12명을 다 찍어 비교한다(저장하지 않고 볼 때).
 const CAST = {
-  tiger:   { model: 'animal-tiger' },
-  rabbit:  { model: 'animal-bunny' },
-  parrot:  { model: 'animal-parrot' },
-  panda:   { model: 'animal-panda' },
-  dokkaebiRed:  { model: 'animal-polar', tint: '#E0533D', horns: '#F5D35E' },
-  dokkaebiBlue: { model: 'animal-polar', tint: '#4F7FD0', horns: '#F5D35E' }
+  driver:  { model: 'mini/character-male-c', height: 1.75 },   // 기관사 — 파란 모자 제복
+  staff:   { model: 'mini/character-female-d', height: 1.75 }, // 역무원 — 회색 정장
+  worker:  { model: 'mini/character-male-e', height: 1.75 },   // 직장인 — 흰 셔츠·넥타이·안경
+  student: { model: 'mini/character-female-b', height: 1.75 }  // 대학생 — 노란 옷·양갈래 머리
 };
-const ACTIONS = { idle: 'idle', walk: 'walk', cheer: 'gesture-positive', sad: 'gesture-negative', dance: 'dance' };
+// Mini Characters 에는 춤이 없어 점프로 대신한다
+const ACTIONS = { idle: 'idle', walk: 'walk', cheer: 'emote-yes', sad: 'emote-no', dance: 'jump' };
+if (params.get('set') === 'mini') {
+  for (const k of Object.keys(CAST)) delete CAST[k];
+  for (const g of ['male', 'female']) for (const v of 'abcdef') CAST[`${g}-${v}`] = { model: `mini/character-${g}-${v}`, height: 1.75 };
+}
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
 const RS = FRAME * 2; // 두 배로 찍고 줄여서 가장자리를 부드럽게
@@ -76,41 +80,6 @@ const shift = (FOOT - 0.5) * VIEW;
 cam.top += shift; cam.bottom += shift;
 cam.updateProjectionMatrix();
 
-function tintModel(root, color) {
-  // 흰 털(밝은 픽셀)만 물들이고 눈·코 같은 어두운 부분은 그대로 둔다
-  root.traverse((o) => {
-    if (!o.isMesh) return;
-    o.material = o.material.clone();
-    const c = new THREE.Color(color);
-    o.material.onBeforeCompile = (sh) => {
-      sh.uniforms.tintColor = { value: c };
-      sh.fragmentShader = 'uniform vec3 tintColor;\n' + sh.fragmentShader.replace(
-        '#include <map_fragment>',
-        `#include <map_fragment>
-         float lum = dot(diffuseColor.rgb, vec3(.299,.587,.114));
-         float sat = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));
-         float w = smoothstep(.3, .45, lum) * (1. - smoothstep(.08, .2, sat));
-         diffuseColor.rgb = mix(diffuseColor.rgb, tintColor * (.55 + .5 * lum), w);`);
-    };
-  });
-}
-
-function addHorns(root, color) {
-  const body = root.getObjectByName('body') || root;
-  const box = new THREE.Box3().setFromObject(body);
-  const mat = new THREE.MeshStandardMaterial({ color, roughness: .6 });
-  const top = box.max.y, cz = (box.min.z + box.max.z) / 2, w = box.max.x - box.min.x;
-  for (const sx of [-1, 1]) {
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.42, 4), mat);
-    horn.rotation.y = Math.PI / 4;
-    horn.rotation.z = -sx * 0.22;
-    // 몸 기준 좌표로 붙여 동작을 따라 움직이게 한다
-    const p = body.worldToLocal(new THREE.Vector3(sx * w * 0.22, top + 0.17, cz + 0.05));
-    horn.position.copy(p);
-    body.add(horn);
-  }
-}
-
 function outline(src) {
   // 알파를 둥글게 번지게 해 먹선을 깔고, 그 위에 원본을 얹는다
   const c = document.createElement('canvas');
@@ -134,8 +103,12 @@ function outline(src) {
 async function renderCast(kind, spec) {
   const gltf = await load(spec.model);
   const root = gltf.scene;
-  if (spec.tint) tintModel(root, spec.tint);
-  if (spec.horns) addHorns(root, spec.horns);
+  if (spec.height) {
+    // 팩마다 모델 크기가 달라 키를 맞춘다(발은 땅에)
+    const box = new THREE.Box3().setFromObject(root);
+    root.scale.setScalar(spec.height / (box.max.y - box.min.y));
+    root.position.y -= box.min.y * root.scale.y;
+  }
   scene.add(root);
   const mixer = new THREE.AnimationMixer(root);
   const sheets = {};
@@ -169,7 +142,7 @@ const out = document.getElementById('out');
 const only = params.get('only');
 for (const [kind, spec] of Object.entries(CAST)) {
   if (only && !only.split(',').includes(kind)) continue;
-  if (ICON && kind !== 'tiger') continue;
+  if (ICON && kind !== 'driver') continue;
   document.getElementById('status').textContent = kind + ' 렌더링…';
   const sheets = await renderCast(kind, spec);
   // 한 캐릭터의 동작을 세로로 이어 붙인 시트 하나로 저장한다(행 순서 = ACTIONS 순서)
@@ -181,7 +154,7 @@ for (const [kind, spec] of Object.entries(CAST)) {
   img.src = all.toDataURL();
   img.width = all.width / 2;
   out.append(kind, img);
-  if (SAVE && ICON) { await save('tiger-icon.png', all); continue; }
+  if (SAVE && ICON) { await save('driver-icon.png', all); continue; }
   if (SAVE) await save(`${kind.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}.webp`, all);
 }
 document.getElementById('status').textContent = '끝';

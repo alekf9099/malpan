@@ -9,7 +9,7 @@ import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul
 import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
 
 const rngAlways = (v) => ({ next: () => v, shuffle: (a) => a });
-const game = (n = 2, extra = {}) => createMatch({ seed: 7, heroes: ['tiger', 'rabbit', 'parrot', 'panda'].slice(0, n), humans: 1, ...extra });
+const game = (n = 2, extra = {}) => createMatch({ seed: 7, heroes: ['driver', 'staff', 'worker', 'student'].slice(0, n), humans: 1, ...extra });
 /** p 를 from 역에 세우고 steps 만큼 굴린 것처럼 */
 function at(m, node, prev, steps = 1) {
   const p = current(m);
@@ -154,7 +154,7 @@ test('한 바퀴마다 시계가 45분 흐르고, 막차가 되면 자산 순위
 
 test('AI 만으로 200판: 늘 끝나고, 돈이 음수가 되지 않는다', () => {
   for (let s = 1; s <= 200; s++) {
-    const m = createMatch({ seed: s, heroes: ['tiger', 'rabbit', 'parrot', 'panda'].slice(0, 2 + (s % 3)), humans: 0 });
+    const m = createMatch({ seed: s, heroes: ['driver', 'staff', 'worker', 'student'].slice(0, 2 + (s % 3)), humans: 0 });
     let g = 0;
     while (m.phase !== 'over' && g++ < 6000) {
       if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }

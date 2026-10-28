@@ -1,4 +1,4 @@
-# PWA 아이콘 만들기: 호랑이 스프라이트(assets/chars/tiger.webp, 환호 첫 프레임)를 한지 바탕에 올린다.
+# PWA 아이콘 만들기: 기관사 스프라이트(assets/chars/driver.webp, 환호 첫 프레임)를 한지 바탕에 올린다.
 # 사용: python tools/make-icons.py   (yut 폴더에서)  → assets/icons/*.png
 import os
 from PIL import Image, ImageDraw
@@ -12,12 +12,12 @@ INK = (34, 32, 29, 255)
 
 
 def sprite():
-    # 렌더러에서 ?icon&save 로 찍은 큰 그림(assets/chars/tiger-icon.png, 다 만든 뒤 지워도 된다)이 있으면 그것을, 없으면 게임용 시트를 쓴다
-    big = os.path.join(ROOT, 'assets', 'chars', 'tiger-icon.png')
+    # 렌더러에서 ?icon&save 로 찍은 큰 그림(assets/chars/driver-icon.png, 다 만든 뒤 지워도 된다)이 있으면 그것을, 없으면 게임용 시트를 쓴다
+    big = os.path.join(ROOT, 'assets', 'chars', 'driver-icon.png')
     if os.path.exists(big):
         f = Image.open(big).convert('RGBA')
         return f.crop(f.getbbox())
-    sheet = Image.open(os.path.join(ROOT, 'assets', 'chars', 'tiger.webp')).convert('RGBA')
+    sheet = Image.open(os.path.join(ROOT, 'assets', 'chars', 'driver.webp')).convert('RGBA')
     row = 2  # 환호
     f = sheet.crop((0, row * FRAME, FRAME, (row + 1) * FRAME))
     return f.crop(f.getbbox())

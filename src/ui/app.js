@@ -18,7 +18,8 @@ import { LINES, STATION_LINES, dist, lineOfEdge } from '../core/boards/seoul.js'
 import { BOARDS } from '../core/boards/index.js';
 import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll, HOTSPOTS } from '../core/estate.js';
 import { INCIDENTS } from '../core/incidents.js';
-import { matchPoints } from '../core/ranking.js';
+import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
+import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
 import { boardSvg, nodeXY, depth, pieceSize, canvasSize } from './board-view.js';
 import { hotArt } from './hot-art.js';
@@ -125,8 +126,7 @@ function title(fromSplash = false) {
   document.title = `${GAME_TITLE.main}(${GAME_TITLE.hanja}): 역을 차지하라`;
   const li = myIndex(), h = HERO_DATA[li];
   const rank = Records.summary();
-  const t = rank.title, next = t.next;
-  const xp = next ? Math.min(100, Math.round((100 * (rank.total - t.min)) / (next.min - t.min))) : 100;
+  const tier = rank.tier;
   const banners = lobbyBanners();
   const at = Daily.attendance(), ready = Daily.claimable();
   const today = new Date();
@@ -135,7 +135,7 @@ function title(fromSplash = false) {
       <header class="lb-top">
         <button class="lb-prof" id="lbProf" aria-label="랭킹">
           <span class="lb-ava" style="--pc:${h.color}">${character(h.id, 40)}</span>
-          <span class="lb-pi"><b>${t.name}</b><span class="lb-xp"><i style="width:${xp}%"></i></span><em>${next ? `다음 칭호까지 ${(next.min - rank.total).toLocaleString()}점` : '최고 칭호'}</em></span>
+          <span class="lb-pi"><b>${tierBadge(tier, 16)} ${tier.label}</b><span class="lb-xp"><i style="width:${tier.pct}%;background:${tier.color}"></i></span><em>${tier.hi ? `${rank.rp} / ${tier.hi} RP` : `${rank.rp} RP`}</em></span>
         </button>
         <button class="ticket-btn" id="tix">${ticketPill()}</button>
         <button class="lb-icon" id="snd" aria-label="소리">${Sound.isOn() ? ICON.sound : ICON.mute}</button>
@@ -422,8 +422,7 @@ function dex(which = 0) {
 function ranking() {
   app.className = 'app dex-app';
   const m = Records.summary();
-  const t = m.title, next = t.next;
-  const pct = next ? Math.min(100, Math.round((100 * (m.total - t.min)) / (next.min - t.min))) : 100;
+  const tier = m.tier;
   const date = (at) => { const d = new Date(at); return `${d.getMonth() + 1}/${d.getDate()}`; };
   const rows = m.games.length ? m.games.map((g, i) => `
       <div class="rank-row ${i < 3 ? 'top' + (i + 1) : ''}">
@@ -434,14 +433,13 @@ function ranking() {
   app.innerHTML = `
     <div class="dex">
       <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>랭킹</b></div>
-      <div class="rank-me">
-        <span class="kind">내 기록</span>
-        <h3>${t.name}</h3>
-        <div class="rank-total"><b>${m.total.toLocaleString()}</b><span>누적 승점 · ${m.plays || 0}판 ${m.wins || 0}승</span></div>
-        <div class="bar rank-bar"><i style="width:${pct}%"></i></div>
-        <p>${next ? `${next.name}까지 ${(next.min - m.total).toLocaleString()}점` : '최고 칭호 달성'}</p>
+      <div class="rank-me tier-card" style="--tc:${tier.color}">
+        <span class="kind">랭크</span>
+        <div class="tc-main">${tierBadge(tier, 72)}<div><h3>${tier.label}</h3><div class="rank-total"><b>${m.rp.toLocaleString()}</b><span>RP · ${m.plays || 0}판 ${m.wins || 0}승</span></div></div></div>
+        <div class="bar rank-bar"><i style="width:${tier.pct}%;background:${tier.color}"></i></div>
+        <p>${tier.hi ? `다음 단계까지 ${tier.hi - m.rp} RP` : '최고 티어'} · 누적 승점 ${m.total.toLocaleString()}</p>
       </div>
-      <div class="rank-rule">판당 +10 · 보유 역 +1 · 1등 +30(상대당 +5, 파산·독점 승리 +10) · 2등 +15 · 3등 +5 · 승점만큼 승차권 지급(보유 ${Records.tickets()}장)</div>
+      <div class="rank-rule">RP(4인) 1등 +${RP_TABLE[4][0]} · 2등 +${RP_TABLE[4][1]} · 3등 ${RP_TABLE[4][2]} · 4등 ${RP_TABLE[4][3]} · 조기 승리 +5 · 티어 바닥 아래로는 내려가지 않음<br>승점: 판당 +10 · 보유 역 +1 · 1등 +30 · 2등 +15 · 3등 +5 · 승점만큼 승차권 지급(보유 ${Records.tickets()}장)</div>
       <div class="rank-list">${rows}</div>
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
@@ -599,6 +597,7 @@ async function startGame(daily) {
   G.daily = daily;
   G.m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
+  G.hudMoney = {};
   enterGame();
 }
 
@@ -664,10 +663,63 @@ async function loop() {
   if (m === M() && m.phase === 'over') await results();
 }
 
+// ── 손맛: 내 차례 배너 · 진동 · 큰 통행료 · 돈 카운트업 ──
+
+/** 휴대폰 진동(지원하는 기기에서, 소리를 켠 경우만) */
+const buzz = (pattern) => {
+  // 화면을 한 번이라도 누른 뒤에만(브라우저가 막는다)
+  if (!Sound.isOn() || !navigator.vibrate || navigator.userActivation?.hasBeenActive === false) return;
+  try { navigator.vibrate(pattern); } catch { /* 진동 없음 */ }
+};
+
+/** 내 차례 배너: 캐릭터와 "내 차례!"가 가로질러 들어온다 */
+async function turnBanner(p) {
+  const m = M();
+  const el = document.createElement('div');
+  el.className = 'turn-banner';
+  el.style.setProperty('--pc', colorOf(p));
+  el.innerHTML = `<div class="tbn-in">${character(p.hero, 76, 'cheer')}<div><b>내 차례!</b><span>${hhmm(m.clock)} · ${m.round}바퀴</span></div></div>`;
+  app.appendChild(el);
+  Sound.heung(2);
+  buzz(25);
+  const inner = el.querySelector('.tbn-in');
+  await tween(inner, [{ transform: 'translateX(-130%) skewX(-12deg)' }, { transform: 'translateX(5%) skewX(-12deg)', offset: 0.65 }, { transform: 'translateX(0) skewX(-12deg)' }], { duration: 360, easing: 'cubic-bezier(.2,.9,.3,1.2)', fill: 'forwards' });
+  await sleep(520);
+  await tween(el, [{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(40%)' }], { duration: 220, easing: 'ease-in', fill: 'forwards' });
+  el.remove();
+}
+
+/** 큰 통행료: 화면 가운데 큰 숫자 + 흔들림 + 진동 */
+async function bigHit(text, color) {
+  const el = document.createElement('div');
+  el.className = 'big-hit';
+  el.style.setProperty('--hc', color);
+  el.innerHTML = `<b>${text}</b>`;
+  app.appendChild(el);
+  Sound.boss();
+  flash(app);
+  shake(app, 12, 500);
+  buzz([70, 40, 110]);
+  await tween(el.firstChild, [{ transform: 'scale(3)', opacity: 0 }, { transform: 'scale(.9)', opacity: 1, offset: 0.55 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.2,.9,.3,1)', fill: 'forwards' });
+  await sleep(650);
+  await tween(el, [{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
+  el.remove();
+}
+
+/** 숫자가 from → to 로 차오른다(탭이 가려져도 끝값은 꼭 맞춘다) */
+function countUp(el, from, to, ms = 480) {
+  const t0 = performance.now();
+  const set = (v) => { el.textContent = Math.round(v).toLocaleString(); };
+  const step = () => { const k = Math.min(1, (performance.now() - t0) / ms); set(from + (to - from) * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  step();
+  setTimeout(() => set(to), ms + 60);
+}
+
 /** 내 차례: 출발·스킬·노선 투자를 기다린다. 달리는 중엔 갈림길을 고르고, 거래 제안엔 답한다 */
 async function humanTurn(p) {
   const m = M();
   showPlayer(p);
+  if (m.phase === 'roll' && !p.rest) await turnBanner(p);
   await new Promise((resolve) => { G.wait = resolve; drawControls(); });
   G.wait = null;
   if (m.phase === 'move') {
@@ -982,8 +1034,18 @@ function drawHud() {
   $('#players').innerHTML = m.players.map((p) => `
     <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${p.human ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
       <span class="pa">${character(p.hero, 34)}</span>
-      <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} ${p.out ? '파산' : p.money.toLocaleString()}</span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
+      <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
     </div>`).join('');
+  // 돈이 바뀌었으면 숫자가 차오르고(늘면 초록, 줄면 빨강) 반짝인다
+  G.hudMoney ||= {};
+  for (const p of m.players) {
+    const prev = G.hudMoney[p.id];
+    if (prev != null && prev !== p.money && !p.out) {
+      const el = $(`#players [data-player="${p.id}"] .money`);
+      if (el) { countUp(el.querySelector('.mv'), prev, p.money); el.classList.add(p.money > prev ? 'gain' : 'loss'); }
+    }
+    G.hudMoney[p.id] = p.money;
+  }
   drawClock();
 }
 
@@ -1303,6 +1365,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     const at = nodeApp(e.node);
     Sound.home();
+    if (p.human) buzz(30);
     FX.confetti(at[0], at[1] - 30, p.human ? 34 : 14);
     FX.pow(at[0], at[1] - 70, `목적지 도착 +${e.bonus}`, colorOf(p), '#FFFDF7', -5);
     await moneyFly(at, panelSpot(p.id), e.bonus);
@@ -1316,7 +1379,8 @@ const HANDLERS = {
     const node = e.node || (e.nodes ? e.nodes[e.nodes.length - 1] : p.node);
     const at = nodeApp(node);
     const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : `−${e.amount}`;
-    if (e.why === 'toll') { Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); }
+    if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
+    if (e.why === 'toll') { Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
     else Sound.coin();
     FX.pow(at[0], at[1] - (e.why === 'pass' ? 50 : 70), label, to ? colorOf(to) : '#6E6A5E', '#FFFDF7', e.why === 'pass' ? 4 : -6);
     if (e.why === 'toll') shake($(`#players [data-player="${p.id}"]`), 6, 300);
@@ -1347,8 +1411,11 @@ const HANDLERS = {
     await drawCard({ tone: 'bad', deck: '파산', title: `${p.human ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 보유 역 모두 반납`, art: character(p.hero, 96, 'sad') });
     drawMarks();
   },
-  async buy(e) { await estateFx(e, '사기!', Sound.buy); },
-  async upgrade(e) { await estateFx(e, e.level >= MAX_LEVEL ? '랜드마크!' : e.free ? '무료 증축!' : '증축!', Sound.big); },
+  async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); },
+  async upgrade(e) {
+    if (e.level >= MAX_LEVEL && isMe(e.player)) await bigHit('랜드마크!', '#F2B33D');
+    await estateFx(e, e.level >= MAX_LEVEL ? '랜드마크!' : e.free ? '무료 증축!' : '증축!', Sound.big);
+  },
   async takeover(e) { flash(app); await estateFx(e, '인수!', Sound.capture); },
   async pass() {},
   async offer() {},
@@ -1474,32 +1541,111 @@ async function estateFx(e, word, sound) {
 
 const winnerName = (m) => { const w = playerById(m, m.winner); return w?.human ? '나' : nameOf(w); };
 
+const CHEST = `<svg viewBox="0 0 80 64" width="104" height="83" aria-hidden="true">
+  <rect x="8" y="28" width="64" height="32" rx="5" fill="#C9822E" stroke="#22201D" stroke-width="3"/>
+  <rect x="8" y="40" width="64" height="7" fill="#F2B33D" stroke="#22201D" stroke-width="2.4"/>
+  <g class="lid"><path d="M8 30 V20 Q8 8 40 8 Q72 8 72 20 V30 Z" fill="#DE9A3E" stroke="#22201D" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M12 26 H68" stroke="#F2B33D" stroke-width="4"/></g>
+  <rect x="34" y="32" width="12" height="13" rx="3" fill="#F2B33D" stroke="#22201D" stroke-width="2.4"/><circle cx="40" cy="38" r="2" fill="#22201D"/></svg>`;
+
 async function results() {
   const m = M();
   const me = ME();
   const win = me.place === 1;
-  await sleep(300);
-  if (win) { Sound.win(); FX.confetti(app.clientWidth / 2, 300, 70, 1.8); } else Sound.lose();
   const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason !== 'lastTrain', stations: me.out ? 0 : stationsOf(m, me).length });
-  const rec = Records.record({ points: pts, place: me.place, size: m.players.length, hero: me.hero, daily: G.daily, seed: m.seed });
+  const rp = rpDelta({ place: me.place, size: m.players.length, knockout: m.reason !== 'lastTrain' });
+  const rec = Records.record({ points: pts, rp, place: me.place, size: m.players.length, hero: me.hero, daily: G.daily, seed: m.seed });
   const canOpen = HERO_DATA.find((x) => !isOpen(x.id) && rec.tickets >= x.price);
-  const fresh = Daily.addMatch({ ...G.stats, play: 1, win: me.place === 1 ? 1 : 0 });
+  const fresh = Daily.addMatch({ ...G.stats, play: 1, win: win ? 1 : 0 });
+  const got = rec.rp - rec.rpBefore;
   const rows = m.ranking.map((r) => {
     const p = playerById(m, r.id);
     return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
       <div><b>${p.human ? '나' : nameOf(p)}</b><span>${r.out ? '파산' : `자산 ${r.assets.toLocaleString()} · 역 ${stationsOf(m, p).length}곳`}</span></div></div>`;
   }).join('');
+  const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
   const s = sheet(`
-    <h2>${win ? '승리!' : `${me.place}등`}</h2>
-    <p>${m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`}</p>
-    <div class="res-list">${rows}</div>
-    <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '최고 기록!' : `기록 ${rec.rank}위`) : '10위 밖'}</em></div>
-      <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호 상승!</i>' : ''}</div>
-      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name} 해금 가능!</i>` : ''}</div>
-      ${fresh.length ? `<div class="pf-ms">미션 완료 · ${fresh.map((x) => x.text).join(' · ')} <i>미션 탭에서 받기</i></div>` : ''}</div>
+    <div class="rs-head ${win ? 'win' : ''}" style="--pc:${colorOf(me)}">
+      <div class="rs-rays"></div>
+      <div class="rs-hero">${character(me.hero, 104, win ? 'dance' : 'sad')}</div>
+      <b class="rs-place">${win ? '승리!' : `${me.place}등`}</b><span>${reason}</span>
+    </div>
+    <div class="res-list rs-hide">${rows}</div>
+    <div class="rs-reward">
+      <button class="rs-chest" id="rsChest">${CHEST}<span>터치하여 열기</span></button>
+      <div class="rs-gain"><div class="rs-tix">${ticketPill(rec.tickets - pts)}<b>+<i id="rsTix">0</i>장</b></div>
+        <span>승점 +${pts}${rec.best ? ' · 최고 기록!' : ''}</span></div>
+    </div>
+    <div class="rs-tier" style="--tc:${rec.tierBefore.color}">
+      <span class="rs-badge" id="rsBadge">${tierBadge(rec.tierBefore, 44)}</span>
+      <div class="rs-tb"><b id="rsTierName">${rec.tierBefore.label}</b><div class="bar"><i id="rsBar" style="width:${rec.tierBefore.pct}%;background:${rec.tierBefore.color}"></i></div><span><i id="rsRp">${rec.rpBefore}</i> RP</span></div>
+      <em class="rs-delta ${got >= 0 ? 'up' : 'down'}">${got >= 0 ? '+' : ''}${got} RP${got > rp ? '<small>강등 보호</small>' : ''}</em>
+    </div>
+    <div class="rs-extra">${canOpen ? `<i class="hot">${canOpen.job} ${canOpen.name} 해금 가능!</i>` : ''}${fresh.length ? `<i>미션 완료 · ${fresh.map((x) => x.text).join(' · ')}</i>` : ''}</div>
     <div class="row"><button class="btn white" id="home">로비</button><button class="btn" id="again">다시 하기</button></div>`);
+  s.classList.add('result-sheet');
   s.querySelector('#home').onclick = () => { closeSheet(); title(); };
   s.querySelector('#again').onclick = () => { closeSheet(); startGame(G.daily); };
+  const live = () => document.body.contains(s);
+
+  // 1) 등수 발표
+  if (win) { Sound.win(); buzz([40, 30, 40, 30, 90]); } else Sound.lose();
+  await tween(s.querySelector('.rs-head'), [{ transform: 'translateY(-60px) scale(.8)', opacity: 0 }, { transform: 'translateY(6px) scale(1.04)', opacity: 1, offset: 0.7 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
+  if (win) { const r = s.querySelector('.rs-head').getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / s.querySelector('.rs-head').offsetWidth; FX.confetti((r.left - a.left) / k + 160, (r.top - a.top) / k + 40, 70, 1.6); }
+  // 2) 순위 줄이 아래 등수부터 하나씩
+  const list = s.querySelector('.res-list');
+  list.classList.remove('rs-hide');
+  const rowsEl = [...list.children].reverse();
+  for (const r of rowsEl) {
+    if (!live()) return;
+    r.classList.add('show');
+    Sound.click();
+    await sleep(150);
+  }
+  // 3) 보상 상자: 누르거나 1.4초 뒤 열린다
+  const chest = s.querySelector('#rsChest');
+  chest.classList.add('ready');
+  await Promise.race([sleep(1400), new Promise((ok) => { chest.onclick = ok; })]);
+  if (!live()) return;
+  chest.classList.remove('ready');
+  chest.classList.add('open');
+  chest.onclick = null;
+  Sound.big(); buzz(40);
+  const cr = chest.getBoundingClientRect(), ar = app.getBoundingClientRect(), ck = cr.width / chest.offsetWidth;
+  FX.confetti((cr.left - ar.left) / ck + chest.offsetWidth / 2, (cr.top - ar.top) / ck + 20, 36, 1.3);
+  FX.sparkle((cr.left - ar.left) / ck + chest.offsetWidth / 2, (cr.top - ar.top) / ck, 14, '#F2B33D');
+  s.querySelector('.rs-gain').classList.add('show');
+  countUp(s.querySelector('#rsTix'), 0, pts, 700);
+  const pill = s.querySelector('.rs-tix .tickets b');
+  if (pill) countUp(pill, rec.tickets - pts, rec.tickets, 700);
+  await sleep(760);
+  if (!live()) return;
+  // 4) 랭크 막대
+  const bar = s.querySelector('#rsBar');
+  countUp(s.querySelector('#rsRp'), rec.rpBefore, rec.rp, 800);
+  if (rec.tierUp || rec.tierDown) {
+    bar.style.transition = 'width .45s ease-in';
+    bar.style.width = rec.tierUp ? '100%' : '0%';
+    await sleep(480);
+    if (!live()) return;
+    const badge = s.querySelector('#rsBadge');
+    badge.innerHTML = tierBadge(rec.tier, 44);
+    s.querySelector('.rs-tier').style.setProperty('--tc', rec.tier.color);
+    s.querySelector('#rsTierName').textContent = rec.tier.label;
+    bar.style.transition = 'none';
+    bar.style.width = rec.tierUp ? '0%' : '100%';
+    bar.style.background = rec.tier.color;
+    void bar.offsetWidth;
+    if (rec.tierUp) {
+      Sound.big(); buzz([50, 40, 120]);
+      tween(badge, [{ transform: 'scale(.3) rotate(-30deg)' }, { transform: 'scale(1.5) rotate(8deg)', offset: 0.6 }, { transform: 'scale(1)' }], { duration: 520, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+      const br = badge.getBoundingClientRect(), bk = br.width / (badge.offsetWidth || 1);
+      FX.pow((br.left - ar.left) / bk + 60, (br.top - ar.top) / bk, '승급!', rec.tier.color, '#22201D', -6);
+      FX.confetti((br.left - ar.left) / bk + 22, (br.top - ar.top) / bk, 40, 1.4);
+    } else Sound.lose();
+  }
+  bar.style.transition = 'width .6s cubic-bezier(.3,.7,.3,1)';
+  bar.style.width = rec.tier.pct + '%';
 }
 
 // ── 겹쳐 뜨는 판 ───────────────────────────────────────────

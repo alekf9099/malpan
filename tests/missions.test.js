@@ -19,3 +19,20 @@ test('출석: 7일 달력을 돌고 7일째가 가장 크다', () => {
   assert.equal(nextAttend(6).reward, Math.max(...ATTEND_REWARDS));
   assert.equal(nextAttend(7).index, 0);
 });
+
+import { tierOf, rpDelta, applyRp, TIERS } from '../src/core/ranking.js';
+
+test('티어: RP 로 티어·단계, 지면 내려가도 티어 바닥은 지킨다', () => {
+  assert.equal(tierOf(0).label, '브론즈 III');
+  assert.equal(tierOf(149).label, '브론즈 I');
+  assert.equal(tierOf(150).label, '실버 III');
+  assert.equal(tierOf(1800).label, '마스터');
+  assert.equal(tierOf(5000).hi, null);
+  for (const t of TIERS) assert.equal(tierOf(t.min).id, t.id);
+  assert.equal(rpDelta({ place: 1, size: 4 }), 30);
+  assert.equal(rpDelta({ place: 1, size: 4, knockout: true }), 35);
+  assert.equal(rpDelta({ place: 4, size: 4 }), -14);
+  assert.equal(applyRp(155, -14), 150, '실버 바닥에서 멈춘다');
+  assert.equal(applyRp(10, -14), 0);
+  assert.equal(applyRp(140, 30), 170);
+});

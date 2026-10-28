@@ -2,7 +2,7 @@
 // 승점만큼 승차권이 쌓이고, 승차권으로 잠긴 캐릭터를 연다(칭호는 누적 승점 그대로).
 // 저장이 막혀 있어도(사생활 보호 창 등) 게임은 그대로 돌아가고, 기록만 남지 않는다.
 
-import { rankOf } from '../core/ranking.js';
+import { rankOf, tierOf, applyRp } from '../core/ranking.js';
 import { STARTERS } from '../core/heroes.js';
 
 const KEY = 'yeokjeon.records.v1';
@@ -15,17 +15,18 @@ function load() {
       // 승차권이 생기기 전 기록이면 그동안 모은 승점을 승차권으로 쳐 준다
       if (typeof d.tickets !== 'number') d.tickets = d.total || 0;
       if (!Array.isArray(d.unlocked)) d.unlocked = [];
+      if (typeof d.rp !== 'number') d.rp = 0;
       return d;
     }
   } catch { /* 저장소를 못 쓰면 빈 기록 */ }
-  return { total: 0, plays: 0, wins: 0, games: [], tickets: 0, unlocked: [] };
+  return { total: 0, plays: 0, wins: 0, games: [], tickets: 0, unlocked: [], rp: 0 };
 }
 function store(d) {
   try { localStorage.setItem(KEY, JSON.stringify(d)); } catch { /* 저장 못 해도 진행 */ }
 }
 
 /**
- * 끝난 판 하나를 기록한다. entry = { points, place, size, hero, daily, seed }
+ * 끝난 판 하나를 기록한다. entry = { points, rp(이번 판 RP 변화), place, size, hero, daily, seed }
  * 이번 기록의 순위(10위 밖이면 null)와 누적 승점·칭호를 돌려준다.
  */
 export function record(entry) {
@@ -34,6 +35,8 @@ export function record(entry) {
   const before = rankOf(d.total);
   d.total += e.points;
   d.tickets += e.points;
+  const rpBefore = d.rp;
+  d.rp = applyRp(d.rp, e.rp || 0);
   d.plays = (d.plays || 0) + 1;
   if (e.place === 1) d.wins = (d.wins || 0) + 1;
   d.games.push(e);
@@ -42,7 +45,11 @@ export function record(entry) {
   store(d);
   const rank = d.games.indexOf(e) + 1 || null;
   const now = rankOf(d.total);
-  return { rank, best: rank === 1 && e.points > 0, total: d.total, tickets: d.tickets, title: now, promoted: now.name !== before.name };
+  const tierBefore = tierOf(rpBefore), tier = tierOf(d.rp);
+  return {
+    rank, best: rank === 1 && e.points > 0, total: d.total, tickets: d.tickets, title: now, promoted: now.name !== before.name,
+    rpBefore, rp: d.rp, tierBefore, tier, tierUp: tier.label !== tierBefore.label && d.rp > rpBefore, tierDown: tier.label !== tierBefore.label && d.rp < rpBefore
+  };
 }
 
 /** 가진 승차권 */
@@ -69,5 +76,5 @@ export function unlock(id, price) {
 
 export function summary() {
   const d = load();
-  return { ...d, title: rankOf(d.total) };
+  return { ...d, title: rankOf(d.total), tier: tierOf(d.rp) };
 }

@@ -28,3 +28,42 @@ export function rankOf(total) {
   const next = RANKS[RANKS.indexOf(r) + 1] || null;
   return { ...r, next };
 }
+
+// ── 티어 랭크 ──────────────────────────────────────────────
+// 랭크 점수(RP)로 정한다. 이기면 오르고 지면 내린다 — 다만 지금 티어 바닥 밑으로는 떨어지지 않는다(강등 보호).
+// 마스터 전 티어는 III → II → I 세 단계로 나눈다.
+
+export const TIERS = [
+  { id: 'bronze', name: '브론즈', min: 0, color: '#C07A3E' },
+  { id: 'silver', name: '실버', min: 150, color: '#A7B3BF' },
+  { id: 'gold', name: '골드', min: 400, color: '#F2B33D' },
+  { id: 'platinum', name: '플래티넘', min: 750, color: '#3EC3B0' },
+  { id: 'diamond', name: '다이아', min: 1200, color: '#5B95EE' },
+  { id: 'master', name: '마스터', min: 1800, color: '#9A62D6' }
+];
+const DIVS = ['III', 'II', 'I'];
+
+/** RP → { id, name, color, min, div, label, lo, hi(다음 단계 시작, 마스터면 null), pct(이번 단계 진행 %) } */
+export function tierOf(rp) {
+  let i = 0;
+  while (i + 1 < TIERS.length && rp >= TIERS[i + 1].min) i++;
+  const t = TIERS[i], nextTier = TIERS[i + 1];
+  if (!nextTier) return { ...t, div: '', label: t.name, lo: t.min, hi: null, pct: 100 };
+  const step = (nextTier.min - t.min) / 3;
+  const d = Math.min(2, Math.floor((rp - t.min) / step));
+  const lo = Math.round(t.min + d * step), hi = Math.round(t.min + (d + 1) * step);
+  return { ...t, div: DIVS[d], label: `${t.name} ${DIVS[d]}`, lo, hi, pct: Math.round((100 * (rp - lo)) / (hi - lo)) };
+}
+
+/** 한 판의 RP 변화: 인원별 등수 표, 막차 전에 이기면 +5 */
+export const RP_TABLE = { 2: [20, -10], 3: [26, 4, -10], 4: [30, 12, -6, -14] };
+export function rpDelta({ place, size, knockout = false }) {
+  const row = RP_TABLE[size] || RP_TABLE[4];
+  return (row[place - 1] ?? row[row.length - 1]) + (place === 1 && knockout ? 5 : 0);
+}
+
+/** RP 에 변화를 더한다. 0 밑으로, 지금 티어 바닥 밑으로는 내려가지 않는다 */
+export function applyRp(rp, delta) {
+  const next = rp + delta;
+  return delta >= 0 ? next : Math.max(tierOf(rp).min, next, 0);
+}

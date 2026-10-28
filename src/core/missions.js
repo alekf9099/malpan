@@ -6,15 +6,15 @@ import { createRng } from './rng.js';
 
 /** stat = 한 판에서 센 값의 이름(ui 가 판 끝에 넘긴다) */
 export const MISSIONS = [
-  { id: 'play', stat: 'play', goal: 1, reward: 10, text: '대결 1판 하기' },
-  { id: 'win', stat: 'win', goal: 1, reward: 30, text: '대결에서 1등 하기' },
-  { id: 'buy', stat: 'buy', goal: 8, reward: 15, text: '역 8곳 사기' },
-  { id: 'hot', stat: 'hot', goal: 3, reward: 15, text: '명소역에 3번 서기' },
-  { id: 'goal', stat: 'goal', goal: 3, reward: 15, text: '목적지에 3번 닿기' },
-  { id: 'upgrade', stat: 'upgrade', goal: 5, reward: 15, text: '역 5번 증축하기' },
-  { id: 'toll', stat: 'toll', goal: 300, reward: 20, text: '통행료·통과 요금 300점 받기' },
-  { id: 'takeover', stat: 'takeover', goal: 1, reward: 20, text: '남의 역 1곳 인수하기' },
-  { id: 'landmark', stat: 'landmark', goal: 1, reward: 20, text: '랜드마크 1곳 짓기' }
+  { id: 'play', stat: 'play', goal: 1, reward: 10, text: '대결 1회 플레이' },
+  { id: 'win', stat: 'win', goal: 1, reward: 30, text: '1등 달성' },
+  { id: 'buy', stat: 'buy', goal: 8, reward: 15, text: '역 8곳 구매' },
+  { id: 'hot', stat: 'hot', goal: 3, reward: 15, text: '명소역 3회 도착' },
+  { id: 'goal', stat: 'goal', goal: 3, reward: 15, text: '목적지 3회 도착' },
+  { id: 'upgrade', stat: 'upgrade', goal: 5, reward: 15, text: '증축 5회' },
+  { id: 'toll', stat: 'toll', goal: 300, reward: 20, text: '통행료 300 받기' },
+  { id: 'takeover', stat: 'takeover', goal: 1, reward: 20, text: '역 1곳 인수' },
+  { id: 'landmark', stat: 'landmark', goal: 1, reward: 20, text: '랜드마크 1곳 건설' }
 ];
 export const missionById = (id) => MISSIONS.find((x) => x.id === id);
 

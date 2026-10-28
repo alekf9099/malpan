@@ -137,7 +137,7 @@ test('스킬은 한 판에 두 번, 굴리기 전에', () => {
   const p = current(m);
   useSkill(m); assert.equal(p.dash, 3);
   useSkill(m); assert.equal(p.dash, 6);
-  assert.match(skillBlocked(m), /다 썼다/);
+  assert.match(skillBlocked(m), /사용 완료/);
 });
 
 test('한 바퀴마다 시계가 45분 흐르고, 막차가 되면 자산 순위로 끝난다', () => {

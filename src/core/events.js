@@ -6,20 +6,20 @@
 export const CHANCE_CARDS = [
   { id: 'bonus', name: '단체 승객', short: '+150', good: true, weight: 3 },
   { id: 'refund', name: '정기권 환급', short: '+80', good: true, weight: 3 },
-  { id: 'express', name: '급행 환승권', short: '다음 굴림 +3역', good: true, weight: 2 },
-  { id: 'coupon', name: '통행료 면제권', short: '다음 통행료 한 번 면제', good: true, weight: 2 },
-  { id: 'build', name: '역세권 개발', short: '내 역 하나 무료 증축', good: true, weight: 2 },
+  { id: 'express', name: '급행 환승권', short: '다음 이동 +3역', good: true, weight: 2 },
+  { id: 'coupon', name: '통행료 면제권', short: '다음 통행료 1회 면제', good: true, weight: 2 },
+  { id: 'build', name: '역세권 개발', short: '내 역 1곳 무료 증축', good: true, weight: 2 },
   { id: 'fine', name: '무임승차 단속', short: '−100', good: false, weight: 3 },
-  { id: 'repair', name: '역사 보수', short: '내 역 하나마다 −20', good: false, weight: 2 },
-  { id: 'rest', name: '신호 대기', short: '다음 차례 한 번 쉰다', good: false, weight: 2 }
+  { id: 'repair', name: '역사 보수', short: '보유 역마다 −20', good: false, weight: 2 },
+  { id: 'rest', name: '신호 대기', short: '한 턴 휴식', good: false, weight: 2 }
 ];
 
 export const NEWS_CARDS = [
-  { id: 'sale', name: '역세권 세일', short: '2시간 동안 역 값 반값', good: true, weight: 3 },
-  { id: 'boom', name: '역세권 호재', short: '2시간 동안 통행료 2배', good: true, weight: 3 },
+  { id: 'sale', name: '역세권 세일', short: '2시간 역 가격 50%', good: true, weight: 3 },
+  { id: 'boom', name: '역세권 호재', short: '2시간 통행료 2배', good: true, weight: 3 },
   { id: 'extend', name: '연장 운행', short: '막차 1시간 연장', good: true, weight: 2 },
-  { id: 'payday', name: '교통비 지원', short: '모두 +100', good: true, weight: 2 },
-  { id: 'inspect', name: '안전 점검', short: '모두 내 역 하나마다 −15', good: false, weight: 2 }
+  { id: 'payday', name: '교통비 지원', short: '전원 +100', good: true, weight: 2 },
+  { id: 'inspect', name: '안전 점검', short: '보유 역마다 −15', good: false, weight: 2 }
 ];
 
 export const chanceById = (id) => CHANCE_CARDS.find((c) => c.id === id);

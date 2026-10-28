@@ -7,10 +7,10 @@
 //   short  : 사건 카드에 쓰는 한 줄
 
 export const INCIDENTS = {
-  fire: { id: 'fire', name: '화재', minutes: 120, block: true, weight: 2, short: '2시간 동안 아무도 못 들어간다' },
-  delay: { id: 'delay', name: '신호 장애', minutes: 150, stop: true, weight: 3, short: '지나가던 열차가 여기서 멈춘다' },
-  crowd: { id: 'crowd', name: '인파 몰림', minutes: 120, cash: 100, tollX: 2, weight: 3, short: '서면 +100 · 주인 있으면 통행료 2배' },
-  busk: { id: 'busk', name: '역 버스킹', minutes: 120, again: true, weight: 2, short: '서면 한 번 더 굴린다' }
+  fire: { id: 'fire', name: '화재', minutes: 120, block: true, weight: 2, short: '2시간 진입 불가' },
+  delay: { id: 'delay', name: '신호 장애', minutes: 150, stop: true, weight: 3, short: '지나가는 열차 정차' },
+  crowd: { id: 'crowd', name: '인파 몰림', minutes: 120, cash: 100, tollX: 2, weight: 3, short: '도착 시 +100 · 통행료 2배' },
+  busk: { id: 'busk', name: '역 버스킹', minutes: 120, again: true, weight: 2, short: '도착 시 한 번 더' }
 };
 
 /** 한 번에 노선도에 있을 수 있는 사건 수 · 한 바퀴마다 새 사건이 생길 확률 */

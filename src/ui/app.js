@@ -68,7 +68,7 @@ function splash() {
         <div class="sp-sub">${GAME_TITLE.sub}</div>
       </div>
       <div class="sp-cast">${HERO_DATA.filter((h) => STARTERS.includes(h.id)).map((h, i) => `<span style="animation-delay:${1.3 + i * 0.12}s">${character(h.id, 64, 'cheer')}</span>`).join('')}</div>
-      <div class="sp-tap">화면을 눌러 시작</div>
+      <div class="sp-tap">터치하여 시작</div>
     </div>`;
   let gone = false;
   const go = () => {
@@ -109,13 +109,13 @@ const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비']
 function lobbyBanners() {
   const out = [];
   const at = Daily.attendance(), left = Daily.missions().filter((m) => !m.done).length, ready = Daily.claimable();
-  if (!at.today) out.push({ go: 'attend', tag: '출석', text: `오늘 출석하면 승차권 ${at.next.reward}장`, tone: 'red' });
-  if (ready) out.push({ go: 'mission', tag: '미션', text: `받을 미션 보상 ${ready}개!`, tone: 'red' });
+  if (!at.today) out.push({ go: 'attend', tag: '출석', text: `출석 보상 · 승차권 ${at.next.reward}장`, tone: 'red' });
+  if (ready) out.push({ go: 'mission', tag: '미션', text: `미션 보상 ${ready}개 수령 가능`, tone: 'red' });
   else if (left) out.push({ go: 'mission', tag: '미션', text: `오늘의 미션 ${left}개 남음`, tone: 'blue' });
   const lock = HERO_DATA.find((x) => !isOpen(x.id));
-  if (lock) out.push({ go: 'chars', tag: '새 캐릭터', text: Records.tickets() >= lock.price ? `${lock.job} ${lock.name}을(를) 열 수 있다!` : `${lock.job} ${lock.name} · 승차권 ${lock.price}장`, tone: Records.tickets() >= lock.price ? 'red' : 'green' });
+  if (lock) out.push({ go: 'chars', tag: '새 캐릭터', text: Records.tickets() >= lock.price ? `${lock.job} ${lock.name} 해금 가능!` : `${lock.job} ${lock.name} · 승차권 ${lock.price}장`, tone: Records.tickets() >= lock.price ? 'red' : 'green' });
   const t = new Date();
-  out.push({ go: 'daily', tag: '오늘의 대결', text: `${t.getMonth() + 1}월 ${t.getDate()}일 — 오늘은 누구나 같은 판`, tone: 'ink' });
+  out.push({ go: 'daily', tag: '오늘의 대결', text: `${t.getMonth() + 1}월 ${t.getDate()}일 · 모두 같은 맵`, tone: 'ink' });
   return out;
 }
 
@@ -135,7 +135,7 @@ function title(fromSplash = false) {
       <header class="lb-top">
         <button class="lb-prof" id="lbProf" aria-label="랭킹">
           <span class="lb-ava" style="--pc:${h.color}">${character(h.id, 40)}</span>
-          <span class="lb-pi"><b>${t.name}</b><span class="lb-xp"><i style="width:${xp}%"></i></span><em>${next ? `${next.name}까지 ${(next.min - rank.total).toLocaleString()}점` : '최고 칭호'}</em></span>
+          <span class="lb-pi"><b>${t.name}</b><span class="lb-xp"><i style="width:${xp}%"></i></span><em>${next ? `다음 칭호까지 ${(next.min - rank.total).toLocaleString()}점` : '최고 칭호'}</em></span>
         </button>
         <button class="ticket-btn" id="tix">${ticketPill()}</button>
         <button class="lb-icon" id="snd" aria-label="소리">${Sound.isOn() ? ICON.sound : ICON.mute}</button>
@@ -151,14 +151,14 @@ function title(fromSplash = false) {
         </div>
         <div class="lb-side right">
           <button class="lb-float" data-go="daily">${ICON.today}<b>${today.getMonth() + 1}/${today.getDate()}<br>오늘의 대결</b></button>
-          <button class="lb-float" data-go="guide">${ICON.help}<b>하는 법</b></button>
+          <button class="lb-float" data-go="guide">${ICON.help}<b>도움말</b></button>
         </div>
         <div class="lb-hero" id="homeHero">${character(h.id, 200, 'idle')}</div>
         <div class="lb-name"><b>${h.job} ${h.name}</b><em>${h.skill} · 스킬 ${h.active.name}</em></div>
-        <button class="lb-change" id="pickBtn">캐릭터 변경</button>
+        <button class="lb-change" id="pickBtn">변경</button>
       </div>
       <div class="lb-play">
-        <button class="lb-rivals" id="lbRivals" aria-label="상대 수 바꾸기"><span>상대</span><b id="rvN">${Prefs.getRivals()}명</b><i>탭해서 바꾸기</i></button>
+        <button class="lb-rivals" id="lbRivals" aria-label="상대 수 바꾸기"><span>상대</span><b id="rvN">${Prefs.getRivals()}명</b><i>변경</i></button>
         <button class="btn lb-start" id="start">대결 시작<small>06:00 첫차 → 24:00 막차</small></button>
       </div>
       <nav class="lb-tabs">${TABS.map(([k, n]) => `<button data-go="${k}" class="${k === 'lobby' ? 'on' : ''}">${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>
@@ -220,8 +220,8 @@ function openAttendance() {
     return `<button class="at-cell ${got ? 'got' : ''} ${now ? 'now' : ''} ${i === 6 ? 'big' : ''}" ${now ? 'id="atClaim"' : 'disabled'}>
       <span>${i + 1}일</span><b>${r}</b><em>장</em>${got ? '<i class="at-stamp">받음</i>' : ''}</button>`;
   }).join('');
-  const s = sheet(`<span class="kind">출석 보상</span><h2 style="margin-top:6px">${at.today ? '오늘은 받았어요' : '오늘의 출석!'}</h2>
-    <p>하루 한 번, 7일째엔 승차권 100장. 빠진 날이 있어도 이어서 받는다.</p>
+  const s = sheet(`<span class="kind">출석 보상</span><h2 style="margin-top:6px">${at.today ? '출석 완료' : '출석 체크'}</h2>
+    <p>매일 1회 · 7일차 승차권 100장</p>
     <div class="at-grid">${cells}</div>
     <div class="row"><button class="btn ${at.today ? 'white' : ''}" id="atOk">${at.today ? '닫기' : '받기'}</button></div>`);
   const claim = () => {
@@ -252,15 +252,15 @@ function missionsPage() {
   const rows = list.map((m) => `
     <div class="ms-row ${m.claimed ? 'claimed' : m.done ? 'done' : ''}">
       <div class="ms-txt"><b>${m.text}</b><div class="ms-bar"><i style="width:${(100 * m.have) / m.goal}%"></i></div><span>${m.have.toLocaleString()} / ${m.goal.toLocaleString()}</span></div>
-      <button class="ms-btn" data-id="${m.id}" ${m.done && !m.claimed ? '' : 'disabled'}><b>+${m.reward}</b><span>${m.claimed ? '받음' : m.done ? '받기' : '진행 중'}</span></button>
+      <button class="ms-btn" data-id="${m.id}" ${m.done && !m.claimed ? '' : 'disabled'}><b>+${m.reward}</b><span>${m.claimed ? '완료' : m.done ? '받기' : '진행 중'}</span></button>
     </div>`).join('');
   app.innerHTML = `
     <div class="dex">
       <div class="dex-head"><button class="btn small white" id="msBack">← 로비</button><b>미션</b>${ticketPill()}</div>
-      <button class="ms-attend" id="msAttend">${ICON.cal}<div><b>출석 보상 ${at.count % 7 + (at.today ? 0 : 1)}일차</b><span>${at.today ? '오늘은 받았어요 · 내일 또!' : `지금 받으면 승차권 ${at.next.reward}장`}</span></div><i>${at.today ? '보기' : '받기'}</i></button>
+      <button class="ms-attend" id="msAttend">${ICON.cal}<div><b>출석 보상 ${at.count % 7 + (at.today ? 0 : 1)}일차</b><span>${at.today ? '수령 완료 · 내일 다시' : `승차권 ${at.next.reward}장`}</span></div><i>${at.today ? '보기' : '받기'}</i></button>
       <div class="ms-head"><b>오늘의 미션</b><span>초기화까지 ${hh}시간 ${mm}분</span></div>
       <div class="ms-list">${rows}</div>
-      <p class="ms-note">미션은 대결이 끝날 때 채워진다. 날짜가 같으면 누구나 같은 미션.</p>
+      <p class="ms-note">대결 종료 시 진행도 반영 · 매일 0시 초기화</p>
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
@@ -287,11 +287,11 @@ function pickHero(i = myIndex()) {
   const mine = i === myIndex();
   const open = isOpen(h.id), have = Records.tickets();
   const thumbs = HERO_DATA.map((x, j) => `<button class="pk-thumb ${j === i ? 'on' : ''} ${isOpen(x.id) ? '' : 'locked'}" data-i="${j}">${charOrShadow(x.id, 40)}${j === myIndex() ? '<i class="crown">내 캐릭터</i>' : ''}${isOpen(x.id) ? '' : `<i class="lock">${x.price}</i>`}<span class="pk-tn">${x.name}</span></button>`).join('');
-  const choose = open ? `<button class="btn ${mine ? 'white' : 'yellow'}" id="pkChoose" ${mine ? 'disabled' : ''}>${mine ? '지금 내 캐릭터' : '이 캐릭터로'}</button>`
-    : `<button class="btn ${have >= h.price ? 'yellow' : 'white'}" id="pkUnlock" ${have >= h.price ? '' : 'disabled'}><b>${h.price}장으로 열기</b><small>${have >= h.price ? `승차권 ${have}장 있음` : `${h.price - have}장 더 모으면 열린다`}</small></button>`;
+  const choose = open ? `<button class="btn ${mine ? 'white' : 'yellow'}" id="pkChoose" ${mine ? 'disabled' : ''}>${mine ? '사용 중' : '선택'}</button>`
+    : `<button class="btn ${have >= h.price ? 'yellow' : 'white'}" id="pkUnlock" ${have >= h.price ? '' : 'disabled'}><b>잠금 해제</b><small>${have >= h.price ? `승차권 ${h.price}장` : `승차권 ${h.price - have}장 부족`}</small></button>`;
   app.innerHTML = `
     <div class="pick">
-      <div class="dex-head"><button class="btn small white" id="pkBack">← 로비</button><b>캐릭터 선택</b>${ticketPill(have)}</div>
+      <div class="dex-head"><button class="btn small white" id="pkBack">← 로비</button><b>캐릭터</b>${ticketPill(have)}</div>
       <div class="pk-stage" style="--hc:${h.color}">
         <div class="pk-spot"></div>
         <button class="pk-arrow left" id="pkPrev" aria-label="이전">◀</button>
@@ -300,13 +300,13 @@ function pickHero(i = myIndex()) {
         <div class="pk-name"><b>${h.job} ${h.name}</b><span>${i + 1} / ${HERO_DATA.length}</span></div>
       </div>
       <div class="pk-cards">
-        <div class="pk-card"><span class="pk-kind">능력 · ${h.skill}</span><p>${h.desc}</p></div>
-        <div class="pk-card skill"><span class="pk-kind">스킬 · ${h.active.name} (한 판에 ${SKILL_USES}번)</span><p>${h.active.desc}</p></div>
-        <div class="pk-card lead"><span class="pk-kind">AI 가 맡으면 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
+        <div class="pk-card"><span class="pk-kind">패시브 · ${h.skill}</span><p>${h.desc}</p></div>
+        <div class="pk-card skill"><span class="pk-kind">스킬 · ${h.active.name} (판당 ${SKILL_USES}회)</span><p>${h.active.desc}</p></div>
+        <div class="pk-card lead"><span class="pk-kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
       </div>
       <div class="pk-thumbs">${thumbs}</div>
       <div class="pk-btns">
-        <button class="btn white" id="pkDex">자세히 보기</button>
+        <button class="btn white" id="pkDex">정보</button>
         ${choose}
       </div>
     </div>
@@ -341,7 +341,7 @@ function pickHero(i = myIndex()) {
       hero.classList.remove('locked');
       hero.querySelector('.pk-lock')?.remove();
       flash(app);
-      burst('새 캐릭터!');
+      burst('해금!');
       act(hero, 'cheer', 1400);
       await sleep(1200);
       pickHero(i);
@@ -352,7 +352,7 @@ function pickHero(i = myIndex()) {
     Prefs.setLeader(h.id);
     Sound.unlock(); Sound.big();
     act($('#pkHero'), 'cheer', 1400);
-    burst('결정!');
+    burst('선택 완료!');
     $('#pkChoose').disabled = true;
     await sleep(1000);
     title();
@@ -360,14 +360,14 @@ function pickHero(i = myIndex()) {
 }
 
 const AI_NOTE = {
-  driver: '남겨 둘 돈을 적게 잡고 보이는 역은 거의 다 산다. 목적지를 향해 곧장 달린다.',
-  staff: '돈을 넉넉히 남겨 두고 신중하게 산다. 이어지는 역이면 좀 더 과감해진다.',
-  worker: '환승역을 좋아해서 큰 역부터 모은다.',
-  student: '같은 호선을 이어서 사고, 돈이 생기면 증축에 쏟는다.',
-  youtuber: '명소역을 찾아다니고, 명소역이 보이면 생방송을 켠다.',
-  rider: '목적지까지 멀면 콜 몰림으로 단숨에 달려간다. 남의 노선도 겁내지 않는다.',
-  nurse: '한 번은 버틸 수 있으니 돈을 적게 남기고 과감하게 산다.',
-  broker: '남의 역에 서는 걸 반긴다 — 돈이 되면 바로 인수한다.'
+  driver: '보이는 역은 대부분 구매 · 목적지로 직진',
+  staff: '여유 자금 유지 · 연결되는 역만 적극 구매',
+  worker: '환승역 우선 수집',
+  student: '같은 노선 연결 · 증축 집중',
+  youtuber: '명소역 위주 이동 · 명소 근처에서 생방송',
+  rider: '먼 목적지는 콜 몰림으로 단숨에 이동',
+  nurse: '구조를 믿고 공격적으로 구매',
+  broker: '남의 역 도착 시 적극 인수'
 };
 
 // ── 도감 ───────────────────────────────────────────────────
@@ -382,20 +382,20 @@ function dex(which = 0) {
   app.className = 'app dex-app';
   const h = HERO_DATA[which];
   const tabs = HERO_DATA.map((x, i) => `<button class="dex-tab ${which === i ? 'on' : ''}" data-tab="${i}">${charOrShadow(x.id, 34)}<span>${x.name}</span></button>`).join('');
-  const lockNote = isOpen(h.id) ? '' : `<div class="dex-card lockcard"><span class="kind">잠김</span><p>승차권 <b>${h.price}장</b>으로 연다(가진 승차권 ${Records.tickets()}장). 잠겨 있어도 AI 상대로는 나온다.</p></div>`;
+  const lockNote = isOpen(h.id) ? '' : `<div class="dex-card lockcard"><span class="kind">잠김</span><p>승차권 <b>${h.price}장</b>으로 해금(보유 ${Records.tickets()}장) · 잠겨 있어도 AI 상대로 등장</p></div>`;
   app.innerHTML = `
     <div class="dex">
-      <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>캐릭터 도감</b></div>
+      <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>도감</b></div>
       <div class="dex-tabs">${tabs}</div>
       <div class="dex-body">
         <div class="dex-stage"><div class="dex-floor"></div><div class="dex-char">${character(h.id, 210)}</div>
           <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div></div>
         <div class="dex-info">
           <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>${lockNote}
-          <div class="dex-card"><span class="kind">능력 · 늘 켜져 있다</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
-          <div class="dex-card skill"><span class="kind">스킬 · 한 판에 ${SKILL_USES}번</span><h3>${h.active.name}</h3><p>${h.active.desc}</p>
-            <div class="dex-rule">내 차례에 · 굴리기 전에</div><button class="btn small yellow" id="dexSkill">스킬 연출 보기</button></div>
-          <div class="dex-card tip"><span class="kind">AI 가 맡으면 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
+          <div class="dex-card"><span class="kind">패시브</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
+          <div class="dex-card skill"><span class="kind">스킬 · 판당 ${SKILL_USES}회</span><h3>${h.active.name}</h3><p>${h.active.desc}</p>
+            <div class="dex-rule">내 턴 · 주사위 전에 사용</div><button class="btn small yellow" id="dexSkill">미리 보기</button></div>
+          <div class="dex-card tip"><span class="kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
         </div>
       </div>
     </div>
@@ -430,18 +430,18 @@ function ranking() {
         <span class="no">${i + 1}</span>
         <div class="what"><b>${character(g.hero, 26)} ${g.place}등 / ${g.size}명</b><span>${g.daily ? '오늘의 대결' : '대결'} · ${date(g.at)}</span></div>
         <b class="pts">${g.points}</b>
-      </div>`).join('') : '<p class="rank-empty">아직 기록이 없다. 대결에서 등수에 들면 승점이 쌓인다.</p>';
+      </div>`).join('') : '<p class="rank-empty">기록 없음 · 첫 대결을 시작해 보세요</p>';
   app.innerHTML = `
     <div class="dex">
       <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>랭킹</b></div>
       <div class="rank-me">
-        <span class="kind">이 기기의 내 기록</span>
+        <span class="kind">내 기록</span>
         <h3>${t.name}</h3>
         <div class="rank-total"><b>${m.total.toLocaleString()}</b><span>누적 승점 · ${m.plays || 0}판 ${m.wins || 0}승</span></div>
         <div class="bar rank-bar"><i style="width:${pct}%"></i></div>
-        <p>${next ? `${next.name}까지 ${(next.min - m.total).toLocaleString()}점` : '가장 높은 칭호에 올랐다'}</p>
+        <p>${next ? `${next.name}까지 ${(next.min - m.total).toLocaleString()}점` : '최고 칭호 달성'}</p>
       </div>
-      <div class="rank-rule">판마다 +10 · 가진 역마다 +1 · 1등 +30(상대 한 명마다 +5, 파산·독점으로 이기면 +10) · 2등 +15 · 3등 +5 — 받은 승점만큼 승차권도 쌓인다(가진 승차권 ${Records.tickets()}장)</div>
+      <div class="rank-rule">판당 +10 · 보유 역 +1 · 1등 +30(상대당 +5, 파산·독점 승리 +10) · 2등 +15 · 3등 +5 · 승점만큼 승차권 지급(보유 ${Records.tickets()}장)</div>
       <div class="rank-list">${rows}</div>
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
@@ -451,21 +451,21 @@ function ranking() {
 
 function guide(then = null) {
   const steps = [
-    ['열차 출발', '열차 주사위(1~5역 · 급행 7역+한 번 더)만큼 달린다. 꾹 눌렀다 떼면 손맛 게이지 — 초록에서 떼면 좋은 결과.'],
-    ['갈림길', '환승역에서 갈 방향을 고른다. 노란 화살표를 누른다. 왔던 역으로는 되돌아가지 않는다.'],
-    ['역 사기 · 증축', '빈 역에 서면 산다(일반역 100 · 환승역 180 · 큰 환승역 260). 내 역에 다시 서면 증축 — 2단계, 3단계는 랜드마크.'],
-    ['통행료 · 통과 요금', '남의 역에 서면 통행료, 지나가기만 해도 통행료의 20%. 같은 호선에서 이어진 역이 많을수록(×2~×4), 단계가 높을수록(×3 · ×7) 비싸다.'],
-    ['인수', '남의 역은 통행료를 낸 뒤 1.5배 값에 빼앗을 수 있다. 랜드마크는 못 빼앗는다.'],
-    ['노선 투자', '내 차례에 굴리기 전, 이어진(2역 이상) 내 역은 어디서든 증축할 수 있다.'],
-    ['목적지', `저마다 목적지 역이 있다. 지나가거나 서면 +${GOAL_BONUS}, 새 목적지를 받는다.`],
-    ['명소역', '그림 간판이 달린 역 11곳(서울역 · 강남 · 잠실 …). 값이 1.5배이고, 서면 그 역만의 일이 일어난다 — 서울역 KTX 순간이동, 김포공항 다음 굴림 2배, 명동 찬스 카드 골라 갖기 …. 목적지도 주로 명소역으로 나온다.'],
-    ['찬스 역 · 역 사건', '? 역에 서면 찬스 카드. 화재(못 들어감) · 신호 장애(거기서 멈춤) · 인파(+100, 통행료 2배) · 버스킹(한 번 더)이 역마다 터진다.'],
-    ['독점 승리', `명소역 ${HOT_WIN}곳을 갖거나, 한 호선에서 ${LINE_WIN}역을 이어 가지면 그 자리에서 이긴다. 누가 한 곳 앞이면 경고가 뜬다 — 그 역을 먼저 사거나 인수해서 막자.`],
-    ['이기기', '통행료를 못 내면 역을 팔아서라도 내고, 그래도 모자라면 파산. 마지막 한 명이 남거나, 독점하거나, 24:00 막차 때 자산(돈+역 값) 1등이 이긴다.']
+    ['이동', '주사위만큼 이동(1~5역 · 급행 7역+한 번 더). 길게 눌렀다 초록 구간에서 떼면 좋은 결과'],
+    ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
+    ['구매 · 증축', '빈 역 도착 시 구매(일반 100 · 환승 180 · 3개 노선 260) · 내 역 재도착 시 증축, 3단계는 랜드마크'],
+    ['통행료', '남의 역 도착 시 통행료, 지나가기만 해도 20% · 같은 노선 연결 ×2~×4 · 단계 ×3 · ×7'],
+    ['인수', '통행료를 낸 뒤 1.5배 가격에 인수 · 랜드마크는 인수 불가'],
+    ['노선 투자', '주사위 전, 연결된 내 역(2역 이상)은 어디서든 증축'],
+    ['목적지', `목적지를 지나거나 도착 시 +${GOAL_BONUS} · 새 목적지 지급`],
+    ['명소역', '그림 간판이 있는 역 11곳 · 가격 1.5배 · 도착 시 특수 효과(서울역 KTX, 김포공항 이동 2배, 명동 카드 선택 등) · 목적지로 자주 등장'],
+    ['찬스 · 사건', '? 역 도착 시 찬스 카드 · 역마다 화재(진입 불가) · 신호 장애(정차) · 인파(+100, 통행료 2배) · 버스킹(한 번 더)'],
+    ['독점 승리', `명소역 ${HOT_WIN}곳 또는 한 노선 ${LINE_WIN}역 연결 시 즉시 승리 · 1곳 전이면 경고 표시`],
+    ['승리 조건', '통행료를 못 내면 역 매각 후 파산 · 최후의 1인, 독점, 또는 24:00 막차 시 자산(돈+역 가격) 1위']
   ];
-  const s = sheet(`<h2>하는 법</h2>
+  const s = sheet(`<h2>도움말</h2>
     <div class="howto">${steps.map(([t, d], i) => `<div class="ht"><b>${i + 1}</b><div><h4>${t}</h4><p>${d}</p></div></div>`).join('')}</div>
-    <div class="row"><button class="btn" id="gOk">${then ? '알겠다! 출발' : '닫기'}</button></div>`);
+    <div class="row"><button class="btn" id="gOk">${then ? '시작' : '닫기'}</button></div>`);
   s.querySelector('#gOk').onclick = () => { Sound.click(); Prefs.markGuide(); closeSheet(); if (then) then(); };
 }
 
@@ -477,17 +477,17 @@ const MATCH_MIN_MS = 3000;
 /** 온라인 상대 찾기(서버를 붙일 자리). 지금은 아무도 없다 */
 const findHumans = async () => [];
 const MM_STEPS = [
-  [0, '상대를 찾는 중', '같은 시각에 출발할 승객을 찾고 있어요'],
-  [0.35, '노선 확인 중', '1~9호선 승객에게 신호를 보내는 중'],
-  [0.7, '응답 기다리는 중', '아직 대답한 승객이 없어요']
+  [0, '상대 찾는 중', '대결 가능한 플레이어 탐색'],
+  [0.35, '노선 확인 중', '1~9호선 플레이어 확인'],
+  [0.7, '응답 대기 중', '잠시만 기다려 주세요']
 ];
 const MM_STOPS = ['출발', '탐색', '신호', '응답', '매칭'];
 const MM_TIPS = [
-  '명소역 5곳을 모으면 그 자리에서 이긴다',
-  '남의 역은 지나가기만 해도 통과 요금을 낸다',
-  '서울역에 서면 KTX 로 명소역까지 순간이동',
-  '같은 호선에서 이어 가진 역은 통행료가 최대 4배',
-  '판이 끝나면 승차권 — 새 캐릭터를 연다'
+  '명소역 5곳 독점 시 즉시 승리',
+  '남의 역은 지나가기만 해도 통과 요금',
+  '서울역 도착 시 KTX 순간이동',
+  '같은 노선 연결 시 통행료 최대 4배',
+  '승차권으로 새 캐릭터 해금'
 ];
 const TRAIN_ICON = (c) => `<svg viewBox="0 0 64 30" width="64" height="30" aria-hidden="true">
   <path d="M3 25 V9 Q3 4 8 4 H50 Q60 4 62 14 V25 Z" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/>
@@ -504,7 +504,7 @@ function matchmaking(me, rivals, daily) {
     <div class="mm">
       <div class="mm-head"><b>대결 매칭</b><span>${daily ? '오늘의 대결' : '대결'} · ${rivals.length + 1}명</span></div>
       <div class="mm-board">
-        <div class="mm-board-top"><i class="mm-dot"></i>역전 매칭 안내<em id="mmClock">0.0초</em></div>
+        <div class="mm-board-top"><i class="mm-dot"></i>매칭<em id="mmClock">0.0초</em></div>
         <div class="mm-led" id="mmLed">${MM_STEPS[0][1]}</div>
         <div class="mm-sub" id="mmSub">${MM_STEPS[0][2]}</div>
       </div>
@@ -536,7 +536,7 @@ function matchmaking(me, rivals, daily) {
       const people = await humans;
       if (done) return;
       $('#mmCancel').disabled = true;
-      led(people.length ? '상대 찾음!' : 'AI 승객과 매칭!', people.length ? '' : '지금은 함께할 사람이 없어 AI 승객이 대신 탑니다');
+      led(people.length ? '매칭 완료!' : 'AI 매칭 완료!', people.length ? '' : '접속 중인 플레이어가 없어 AI와 대결합니다');
       $('#mmPct').textContent = '100%';
       Sound.chime();
       for (const [i, id] of rivals.entries()) {
@@ -553,7 +553,7 @@ function matchmaking(me, rivals, daily) {
       }
       await sleep(550);
       if (done) return;
-      led('곧 출발합니다', `${hhmm(CLOCK.start)} 첫차 · 문이 닫힙니다`);
+      led('곧 출발', `${hhmm(CLOCK.start)} 첫차`);
       Sound.whoosh();
       tween($('#mmTrain'), [{ transform: 'translateX(0)' }, { transform: 'translateX(60vw)' }], { duration: 600, easing: 'ease-in', fill: 'forwards' });
       await sleep(650);
@@ -612,12 +612,12 @@ function enterGame() {
     <div class="board-wrap" id="board"><div id="cam"><div id="mat"></div><div id="layer"></div></div>
       <div class="stamp-spot" id="stampSpot"></div><div class="roller-float" id="roller"></div>
       <div class="hint" id="hint"></div>
-      <button class="btn small white zoom-btn" id="zoom">서울 전체</button>
-      <button class="btn small white help-btn2" id="help" aria-label="하는 법">?</button></div>
+      <button class="btn small white zoom-btn" id="zoom">전체 지도</button>
+      <button class="btn small white help-btn2" id="help" aria-label="도움말">?</button></div>
     <div class="dock" id="dock">
       <div class="me-row" id="meRow"></div>
       <div class="controls">
-        <div class="throw-wrap"><button class="btn main" id="throw">열차 출발</button></div>
+        <div class="throw-wrap"><button class="btn main" id="throw">출발</button></div>
         <div class="side"><button class="btn small white" id="skillBtn"></button><button class="btn small white" id="investBtn"></button></div>
       </div>
     </div>
@@ -645,10 +645,10 @@ function intro() {
   const m = M();
   const s = sheet(`
     <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${m.players.length}명</span>
-    <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차 출발!</h2>
+    <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${p.node}</span></div>`).join('<i>VS</i>')}</div>
-    <p>모두 <b>${START_MONEY.toLocaleString()}점</b>으로 시작. 역을 사서 통행료로 상대를 <b>파산</b>시키거나, <b>명소역 ${HOT_WIN}곳 · 한 호선 ${LINE_WIN}역</b>을 독점하거나, <b>24:00 막차</b> 때 자산 1등이 이긴다.</p>
-    <div class="row"><button class="btn white" id="how">하는 법</button><button class="btn" id="go">출발!</button></div>`);
+    <p>시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${HOT_WIN}곳 · 한 노선 ${LINE_WIN}역</b> 독점 / <b>24:00 막차</b> 자산 1위</p>
+    <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
 }
@@ -782,7 +782,7 @@ function askFork(node, back, next, left, path) {
   const pts = [node, ...next, ...ends.flat()].map(nodeXY);
   Camera.frame(pts, { maxZoom: 0.9, minZoom: 0.28, pad: 220 });
   drawZoom();
-  setHint(`갈림길 — 갈 방향을 고르세요 · 남은 ${left}역`);
+  setHint(`방향 선택 · 남은 ${left}역`);
   Sound.click();
   return new Promise((resolve) => {
     hideFork();
@@ -794,7 +794,7 @@ function askFork(node, back, next, left, path) {
       const info = owner && owner !== p.id ? `<em class="bad">${owner === p.id ? '' : '남의 역'}</em>`
         : owner === p.id ? '<em class="mine">내 역</em>' : isChance(n) ? '<em class="chance">찬스</em>' : '';
       const toward = dist(n, p.goal) < dist(node, p.goal) ? '<em class="goal">목적지 쪽</em>' : '';
-      const end = ends[i].length === 1 ? `<em class="arrive">도착 ${ends[i][0]}</em>` : `<em class="arrive">도착 ${ends[i].length}곳 중</em>`;
+      const end = ends[i].length === 1 ? `<em class="arrive">도착 ${ends[i][0]}</em>` : `<em class="arrive">도착 후보 ${ends[i].length}</em>`;
       const el = document.createElement('button');
       el.className = 'fork';
       el.style.left = x + 'px';
@@ -833,15 +833,15 @@ function choicePrompt() {
         const k = chanceById(id);
         return `<button class="pick-card ${k.good ? 'good' : 'bad'}" data-v="${id}"><span class="pk-deck">찬스 카드</span><b>${k.name}</b><em>${k.short}</em></button>`;
       }).join('');
-      s = sheet(`<span class="kind">${hotArt('명동', 22)} 명동 · 쇼핑 거리</span><h2 style="margin-top:6px">어느 카드를 가질까?</h2><div class="pick-cards">${cards}</div>`);
+      s = sheet(`<span class="kind">${hotArt('명동', 22)} 명동 · 쇼핑 거리</span><h2 style="margin-top:6px">카드 선택</h2><div class="pick-cards">${cards}</div>`);
     } else {
       const rows = c.options.map((n) => {
         const o = m.owned[n] ? playerById(m, m.owned[n]) : null;
         const note = n === p.goal ? `<em class="goal">내 목적지 +${GOAL_BONUS}</em>` : '';
-        const own = !o ? (isChance(n) ? '찬스 역' : `빈 역 · 값 ${priceFor(m, n)}`) : o === p ? '내 역' : `<i class="bad">${nameOf(o)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
-        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || '<span class="wr-flag">목적지</span>'}<div><b>${n}</b><span>${own} · ${dist(p.node, n)}역 거리</span></div>${note}</button>`;
+        const own = !o ? (isChance(n) ? '찬스 역' : `빈 역 · ${priceFor(m, n)}`) : o === p ? '내 역' : `<i class="bad">${nameOf(o)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
+        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || '<span class="wr-flag">목적지</span>'}<div><b>${n}</b><span>${own} · ${dist(p.node, n)}역</span></div>${note}</button>`;
       }).join('');
-      s = sheet(`<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">어디로 날아갈까?</h2><div class="warp-list">${rows}</div>`);
+      s = sheet(`<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">도착역 선택</h2><div class="warp-list">${rows}</div>`);
     }
     s.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { Sound.click(); closeSheet(); resolve(b.dataset.v); }; });
   });
@@ -856,8 +856,8 @@ function offerPrompt() {
   const chain = Math.min(4, links(nextOwned, p.id).at[o.node]?.len || 1);
   const lvAfter = o.kind === 'upgrade' ? o.level : m.levels[o.node] || 1;
   const toll = Math.round(stationPrice(o.node) * 0.3 * LEVEL_MULT[lvAfter] * chain);
-  const title = o.kind === 'buy' ? '이 역을 살까?' : o.kind === 'upgrade' ? `${LEVEL_NAME[o.level]}(으)로 증축할까?` : `${nameOf(playerById(m, o.from))}의 역을 인수할까?`;
-  const btn = o.kind === 'buy' ? '사기' : o.kind === 'upgrade' ? '증축' : '인수';
+  const title = o.kind === 'buy' ? '역 구매' : o.kind === 'upgrade' ? `${LEVEL_NAME[o.level]} 증축` : `${nameOf(playerById(m, o.from))}의 역 인수`;
+  const btn = o.kind === 'buy' ? '구매' : o.kind === 'upgrade' ? '증축' : '인수';
   Camera.follow([nodeXY(o.node)[0], nodeXY(o.node)[1] + 110], 300);
   return new Promise((resolve) => {
     const card = document.createElement('div');
@@ -865,8 +865,8 @@ function offerPrompt() {
     card.innerHTML = `
       <div class="oc-sign">${lines}<b>${o.node}</b>${HOTSPOTS[o.node] ? `<em class="oc-hot">${hotArt(o.node, 18)} 명소역 · ${HOTSPOTS[o.node].tag}</em>` : ''}</div>
       <div class="oc-body"><span>${title}</span>
-        <em>값 <b>${o.price.toLocaleString()}점</b> · 남는 돈 ${(p.money - o.price).toLocaleString()} · 통행료 약 <b>${toll}</b>${chain > 1 ? ` · <strong>${chain}역 연결 ×${chain}</strong>` : ''}</em></div>
-      <div class="oc-btns"><button class="btn small white" data-a="no">지나치기</button><button class="btn small yellow" data-a="yes">${o.price.toLocaleString()}점에 ${btn}</button></div>`;
+        <em>가격 <b>${o.price.toLocaleString()}</b> · 잔액 ${(p.money - o.price).toLocaleString()} · 예상 통행료 <b>${toll}</b>${chain > 1 ? ` · <strong>${chain}역 연결 ×${chain}</strong>` : ''}</em></div>
+      <div class="oc-btns"><button class="btn small white" data-a="no">패스</button><button class="btn small yellow" data-a="yes">${btn} · ${o.price.toLocaleString()}</button></div>`;
     $('#board').appendChild(card);
     tween(card, [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
     card.querySelector('[data-a=no]').onclick = () => { Sound.click(); card.remove(); resolve(false); };
@@ -880,7 +880,7 @@ function openInvest() {
   const m = M();
   if (G.busy || !current(m).human || m.phase !== 'roll') { Sound.deny(); return; }
   const can = investable(m);
-  if (!can.length) { Sound.deny(); toast('이어진 내 역(2역 이상)이 있어야 어디서든 증축할 수 있다'); return; }
+  if (!can.length) { Sound.deny(); toast('연결된 내 역(2역 이상)이 필요해요'); return; }
   Sound.click();
   const p = current(m);
   const rows = can.map((n) => {
@@ -888,7 +888,7 @@ function openInvest() {
     const now = baseToll(m.owned, m.levels, n), after = baseToll(m.owned, { ...m.levels, [n]: lv + 1 }, n);
     return `<button class="inv-row" data-n="${n}"><b>${n}</b><span>${LEVEL_NAME[lv]} → ${LEVEL_NAME[lv + 1]}</span><em>통행료 ${now} → ${after}</em><i>${upgradeFor(m, n, p)}점</i></button>`;
   }).join('');
-  const s = sheet(`<h2>노선 투자</h2><p>이어진 내 역은 어디서든 증축할 수 있다. 가진 돈 <b>${p.money.toLocaleString()}점</b></p>
+  const s = sheet(`<h2>노선 투자</h2><p>연결된 내 역은 어디서든 증축 · 보유 <b>${p.money.toLocaleString()}</b></p>
     <div class="inv-list">${rows}</div><div class="row"><button class="btn white" id="invClose">닫기</button></div>`);
   s.querySelectorAll('.inv-row').forEach((b) => {
     b.onclick = async () => {
@@ -1007,8 +1007,8 @@ function drawControls() {
   const tb = $('#throw');
   tb.disabled = !mine;
   const who = current(m);
-  tb.innerHTML = mine ? `열차 출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>꾹 눌렀다 떼기</small>'}`
-    : who.human ? `내 차례<small>${m.phase === 'move' ? '갈 길을 고르는 중' : '달리는 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
+  tb.innerHTML = mine ? `출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>길게 눌러 조절</small>'}`
+    : who.human ? `내 차례<small>${m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
   const sb = $('#skillBtn'), h = heroById(me.hero);
   sb.disabled = !mine || !!skillBlocked(m, me);
   sb.innerHTML = `${h.active.name} <b>×${me.skills}</b>`;
@@ -1017,14 +1017,14 @@ function drawControls() {
   ib.disabled = !can;
   ib.innerHTML = `노선 투자${can ? ` <b>${can}</b>` : ''}`;
   $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
-    <div class="me-goal"><span>내 목적지</span><b>${me.goal}</b><em>${dist(me.node, me.goal)}역 남음 · +${GOAL_BONUS + (h.goalBonus || 0)}</em></div>
+    <div class="me-goal"><span>내 목적지</span><b>${me.goal}</b><em>${dist(me.node, me.goal)}역 · +${GOAL_BONUS + (h.goalBonus || 0)}</em></div>
     <button class="btn small white" id="goalBtn">보기</button>`;
   $('#goalBtn').onclick = () => { Sound.click(); Camera.frame([nodeXY(me.node), nodeXY(me.goal)], { maxZoom: 0.8, minZoom: 0.25, pad: 120 }); drawZoom(); };
-  if (mine && !$('#hint').dataset.keep) setHint(me.rest ? '' : '내 차례 — 열차 출발!');
+  if (mine && !$('#hint').dataset.keep) setHint(me.rest ? '' : '내 차례');
 }
 
 function setHint(t) { const h = $('#hint'); if (h) h.textContent = t; }
-function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.showingWhole() ? '돌아가기' : '서울 전체'; }
+function drawZoom() { const z = $('#zoom'); if (z) z.textContent = Camera.showingWhole() ? '내 위치' : '전체 지도'; }
 function showPlayer(p) { Camera.follow(nodeXY(p.node), 380); drawZoom(); }
 
 /** 판 화면 좌표 → 앱 좌표 */
@@ -1050,10 +1050,10 @@ function onMapTap(ev) {
   if (!best) return;
   const me = ME(), o = m.owned[best] ? playerById(m, m.owned[best]) : null;
   const lines = STATION_LINES[best].map((l) => LINES[l].name).join('·');
-  const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag} — ${HOTSPOTS[best].desc}(값 1.5배)` : '';
-  const text = isChance(best) ? `${best} · 찬스 역(서면 카드)`
+  const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag}: ${HOTSPOTS[best].desc}` : '';
+  const text = isChance(best) ? `${best} · 찬스 역`
     : o ? `${best}(${lines}) · ${o.human ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
-      : `${best}(${lines}) · 빈 역 · 값 ${stationPrice(best)}`;
+      : `${best}(${lines}) · 빈 역 · ${stationPrice(best)}`;
   toast(text + hot);
 }
 
@@ -1107,7 +1107,7 @@ async function drawCard({ tone, deck, title, short, art, place = null, to = null
           ${place ? `<div class="cf-place">${place}역</div>` : ''}
           <div class="cf-title">${title}</div>
           <div class="cf-short">${short}</div>
-          <div class="cf-tap">누르면 계속</div>
+          <div class="cf-tap">터치하여 계속</div>
         </div>
       </div>
     </div>`;
@@ -1288,16 +1288,16 @@ const HANDLERS = {
         await Roller.animate(spot, BOARDS.metro, e.roll, 'me');
         setTimeout(() => spot.classList.remove('show'), 600);
       }
-      stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', e.fly ? `하늘길 ×2 · 모두 ${e.steps}역` : e.dash ? `+${e.dash}역 · 모두 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '');
+      stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '');
       await sleep(250);
     } else {
       Sound.clatter();
-      stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', e.fly ? `하늘길 · ${e.steps}역` : e.dash ? `+${e.dash}역` : '');
+      stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', e.fly ? `×2 · ${e.steps}역` : e.dash ? `+${e.dash}역` : '');
       await sleep(300);
     }
   },
-  async rest(e) { toast(`${isMe(e.player) ? '나' : nameOf(playerById(M(), e.player))} — 신호 대기로 한 번 쉰다`); await sleep(700); },
-  async stuck(e) { toast('갈 길이 막혀 움직이지 못했다'); await sleep(600); },
+  async rest(e) { toast(`${isMe(e.player) ? '나' : nameOf(playerById(M(), e.player))} — 한 턴 휴식`); await sleep(700); },
+  async stuck(e) { toast('길이 막혀 이동 불가'); await sleep(600); },
   async move(e) { await travel(e.player, e.from, e.path); },
   async goal(e) {
     const p = playerById(M(), e.player);
@@ -1308,7 +1308,7 @@ const HANDLERS = {
     await moneyFly(at, panelSpot(p.id), e.bonus);
     bump(p.id);
     drawMarks();
-    if (p.human) toast(`새 목적지: ${e.next}역 (${dist(p.node, e.next)}역 떨어짐)`);
+    if (p.human) toast(`새 목적지 ${e.next} (${dist(p.node, e.next)}역)`);
     await sleep(p.human ? 500 : 200);
   },
   async pay(e) {
@@ -1333,7 +1333,7 @@ const HANDLERS = {
   },
   async sell(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} — ${e.node}역을 ${e.aid ? '응급 처치로 돈으로 바꿨다' : '팔았다'} (+${e.amount})`);
+    toast(`${p.human ? '나' : nameOf(p)} · ${e.node} ${e.aid ? '현금화' : '매각'} +${e.amount}`);
     drawBoard();
     await sleep(350);
   },
@@ -1344,7 +1344,7 @@ const HANDLERS = {
     act(el, 'sad');
     await knockOut(el, 1);
     el.style.display = 'none';
-    await drawCard({ tone: 'bad', deck: '파산', title: `${p.human ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 가진 역이 모두 빈 역이 됐다`, art: character(p.hero, 96, 'sad') });
+    await drawCard({ tone: 'bad', deck: '파산', title: `${p.human ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 보유 역 모두 반납`, art: character(p.hero, 96, 'sad') });
     drawMarks();
   },
   async buy(e) { await estateFx(e, '사기!', Sound.buy); },
@@ -1389,21 +1389,21 @@ const HANDLERS = {
   },
   async again(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} — 한 번 더!`);
+    toast(`${p.human ? '나' : nameOf(p)} · 한 번 더!`);
     await sleep(400);
   },
   async clock() { drawClock(); },
   async timeShift(e) {
-    const say = { rush: '러시아워! 통행료 1.5배', day: '한산한 시간', night: '심야 — 통행료 1.25배', last: '막차 시간! 목적지 보너스 2배' };
+    const say = { rush: '러시아워 · 통행료 ×1.5', day: '낮 시간', night: '심야 · 통행료 ×1.25', last: '막차 · 목적지 보너스 ×2' };
     toast(`${hhmm(e.clock)} · ${say[e.time]}`);
     Sound.stamp();
     await sleep(500);
   },
-  async extend(e) { toast(`막차가 ${hhmm(e.end)}로 늦춰졌다`); drawClock(); await sleep(400); },
+  async extend(e) { toast(`막차 연장 · ${hhmm(e.end)}`); drawClock(); await sleep(400); },
   async skill(e) { await skillCutin(e); },
   async rescue(e) {
     const p = playerById(M(), e.player);
-    await drawCard({ tone: 'good', deck: '응급 대기', title: `${p.human ? '나' : nameOf(p)} — 파산 직전 구조!`, short: `빚 ${e.debt}을 털고 ${e.amount}으로 다시 달린다(한 판에 한 번)`, art: character(p.hero, 96, 'cheer'), quick: !p.human });
+    await drawCard({ tone: 'good', deck: '응급 대기', title: `${p.human ? '나' : nameOf(p)} 긴급 구조!`, short: `빚 ${e.debt} 탕감 · ${e.amount}으로 재출발 (1회)`, art: character(p.hero, 96, 'cheer'), quick: !p.human });
     drawHud();
   },
   async hotspot(e) {
@@ -1435,20 +1435,20 @@ const HANDLERS = {
   async newGoal(e) {
     const p = playerById(M(), e.player);
     drawMarks();
-    if (p.human) toast(`새 목적지: ${e.goal}역 (${dist(p.node, e.goal)}역 떨어짐)`);
+    if (p.human) toast(`새 목적지 ${e.goal} (${dist(p.node, e.goal)}역)`);
     await sleep(p.human ? 500 : 150);
   },
   async monoWarn(e) {
     const p = playerById(M(), e.player);
     const what = e.kind === 'hot' ? `명소역 ${e.have}/${e.need}곳` : `${LINES[e.line]?.name || ''} ${e.have}역 연결`;
-    await drawCard({ tone: p.human ? 'good' : 'warn', deck: '독점 경고', title: `${p.human ? '나' : nameOf(p)} — 독점까지 한 곳!`,
-      short: p.human ? `${what} · 한 곳만 더 가지면 이긴다` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : '노선 끝 역'}을 먼저 사거나 인수해서 막자`, art: character(p.hero, 96, 'cheer') });
+    await drawCard({ tone: p.human ? 'good' : 'warn', deck: '독점 경고', title: `${p.human ? '나' : nameOf(p)} 독점 1곳 전!`,
+      short: p.human ? `${what} · 1곳 더 가지면 승리` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : '노선 끝 역'}을 견제하세요`, art: character(p.hero, 96, 'cheer') });
   },
   async monopoly(e) {
     const p = playerById(M(), e.player);
     flash(app);
     await drawCard({ tone: p.human ? 'good' : 'bad', deck: '독점 승리', title: `${p.human ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
-      short: e.kind === 'hot' ? `명소역 ${HOT_WIN}곳을 모두 차지했다` : `${LINES[e.line]?.name || ''}에서 ${LINE_WIN}역을 이어 가졌다`, art: character(p.hero, 96, 'dance') });
+      short: e.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[e.line]?.name || ''} ${LINE_WIN}역 연결`, art: character(p.hero, 96, 'dance') });
   },
   async over() {}
 };
@@ -1472,9 +1472,7 @@ async function estateFx(e, word, sound) {
 
 // ── 결과 ───────────────────────────────────────────────────
 
-/** 받침 있으면 이, 없으면 가 */
-const iga = (w) => { const c = w.charCodeAt(w.length - 1) - 0xAC00; return c >= 0 && c < 11172 && c % 28 ? '이' : '가'; };
-const winnerName = (m) => { const w = playerById(m, m.winner); return w?.human ? '내가' : nameOf(w) + iga(nameOf(w)); };
+const winnerName = (m) => { const w = playerById(m, m.winner); return w?.human ? '나' : nameOf(w); };
 
 async function results() {
   const m = M();
@@ -1493,13 +1491,13 @@ async function results() {
   }).join('');
   const s = sheet(`
     <h2>${win ? '승리!' : `${me.place}등`}</h2>
-    <p>${m.reason === 'bankrupt' ? '상대가 모두 파산했다' : m.reason === 'monopoly' ? `${winnerName(m)} ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}으로 끝났다` : `${hhmm(m.end)} 막차 — 자산 순위로 끝났다`}</p>
+    <p>${m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`}</p>
     <div class="res-list">${rows}</div>
-    <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '내 최고 기록!' : `내 기록 ${rec.rank}위`) : '10위 밖'}</em></div>
-      <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호가 올랐다!</i>' : ''}</div>
-      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name}을(를) 열 수 있다!</i>` : ''}</div>
-      ${fresh.length ? `<div class="pf-ms">미션 완료 — ${fresh.map((x) => x.text).join(' · ')} <i>로비 › 미션에서 받기</i></div>` : ''}</div>
-    <div class="row"><button class="btn white" id="home">로비로</button><button class="btn" id="again">다시 대결</button></div>`);
+    <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '최고 기록!' : `기록 ${rec.rank}위`) : '10위 밖'}</em></div>
+      <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호 상승!</i>' : ''}</div>
+      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name} 해금 가능!</i>` : ''}</div>
+      ${fresh.length ? `<div class="pf-ms">미션 완료 · ${fresh.map((x) => x.text).join(' · ')} <i>미션 탭에서 받기</i></div>` : ''}</div>
+    <div class="row"><button class="btn white" id="home">로비</button><button class="btn" id="again">다시 하기</button></div>`);
   s.querySelector('#home').onclick = () => { closeSheet(); title(); };
   s.querySelector('#again').onclick = () => { closeSheet(); startGame(G.daily); };
 }

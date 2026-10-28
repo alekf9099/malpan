@@ -579,14 +579,14 @@ function finish(m, reason, winner = null) {
 
 export function skillBlocked(m, p = current(m)) {
   const h = heroById(p.hero);
-  if (m.phase !== 'roll' || current(m) !== p) return '내 차례에 굴리기 전에만 쓸 수 있다';
-  if (p.skills <= 0) return '이번 판에 다 썼다';
-  if (h.active.id === 'call' && !stationsOf(m, p).length) return '인파를 부를 내 역이 없다';
-  if (h.active.id === 'shield' && p.coupon) return '이미 면제권이 있다';
-  if (h.active.id === 'live' && p.live) return '이미 생방송 중이다';
-  if (h.active.id === 'boost' && p.fly) return '이미 다음 굴림이 2배다';
-  if (h.active.id === 'aid' && !stationsOf(m, p).length) return '돈으로 바꿀 내 역이 없다';
-  if (h.active.id === 'deal' && p.deal) return '이미 급매 협상 중이다';
+  if (m.phase !== 'roll' || current(m) !== p) return '주사위 전에만 사용 가능';
+  if (p.skills <= 0) return '이번 판 사용 완료';
+  if (h.active.id === 'call' && !stationsOf(m, p).length) return '보유 역 없음';
+  if (h.active.id === 'shield' && p.coupon) return '이미 면제권 보유';
+  if (h.active.id === 'live' && p.live) return '이미 생방송 중';
+  if (h.active.id === 'boost' && p.fly) return '이미 이동 2배 적용 중';
+  if (h.active.id === 'aid' && !stationsOf(m, p).length) return '보유 역 없음';
+  if (h.active.id === 'deal' && p.deal) return '이미 급매 협상 중';
   return null;
 }
 

@@ -1,6 +1,6 @@
 // 화면 컨트롤러 — 역전(驛戰): 역을 차지하라.
 // 규칙은 core(match.js)가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 차례로 연출한다.
-//   스플래시 → 메인 홈(내 캐릭터·상대 수) → 캐릭터 선택 · 도감 · 랭킹 → 대결 매칭 → 대결 화면 → 결과
+//   스플래시 → 로비(위 프로필·승차권, 배너, 내 캐릭터, 출석·미션, 대결 시작, 아래 탭) → 캐릭터 · 미션 · 랭킹 · 도감 → 대결 매칭 → 대결 화면 → 결과
 // 대결 화면: 위 플레이어 판(돈·역 수·차례) + 시계 / 가운데 서울 노선도 / 아래 내 조작판(출발·스킬·노선 투자)
 // 내 차례에는 갈림길마다 갈 방향을 고르고, AI 차례는 저절로 빠르게 흘러간다.
 // 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
@@ -29,6 +29,8 @@ import * as Roller from './roller.js';
 import * as Roller3D from './roller3d.js';
 import * as Records from './records.js';
 import * as Prefs from './prefs.js';
+import * as Daily from './daily.js';
+import { ATTEND_REWARDS } from '../core/missions.js';
 import { Sound } from './sound.js';
 
 // 게임 이름은 여기 한 곳에서만 바꾼다
@@ -88,65 +90,193 @@ const ticketPill = (n = Records.tickets()) => `<span class="tickets" title="승�
 /** 잠긴 캐릭터는 그림자로 */
 const charOrShadow = (id, size, start) => `<span class="${isOpen(id) ? '' : 'shadow'}">${character(id, size, start)}</span>`;
 
+/** 아래 탭·옆 단추 그림(먹선 아이콘) */
+const ICON = {
+  chars: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21 Q4 14 12 14 Q20 14 20 21 Z"/></svg>',
+  mission: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 9 L10.5 11.5 L15.5 6.5 M8 16 H16"/></svg>',
+  lobby: '<svg viewBox="0 0 24 24"><path d="M3 11 L12 4 L21 11 V20 H15 V14 H9 V20 H3 Z"/></svg>',
+  rank: '<svg viewBox="0 0 24 24"><path d="M7 4 H17 V9 Q17 14 12 14 Q7 14 7 9 Z M12 14 V18 M8 20 H16 M7 6 H4 Q4 10 7 10 M17 6 H20 Q20 10 17 10"/></svg>',
+  dex: '<svg viewBox="0 0 24 24"><path d="M4 5 Q8 3 12 6 Q16 3 20 5 V19 Q16 17 12 20 Q8 17 4 19 Z M12 6 V20"/></svg>',
+  cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10 H21 M8 3 V7 M16 3 V7"/></svg>',
+  help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5 Q9.5 7 12 7 Q14.5 7 14.5 9.3 Q14.5 11 12 12 V14 M12 17 V17.2"/></svg>',
+  today: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7 V12 L15 14"/></svg>',
+  sound: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 Q18 12 16 15 M18.5 7 Q22 12 18.5 17"/></svg>',
+  mute: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 L21 15 M21 9 L16 15"/></svg>'
+};
+const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비'], ['rank', '랭킹'], ['dex', '도감']];
+
+/** 로비 배너: 지금 할 만한 일을 돌아가며 보여 준다 */
+function lobbyBanners() {
+  const out = [];
+  const at = Daily.attendance(), left = Daily.missions().filter((m) => !m.done).length, ready = Daily.claimable();
+  if (!at.today) out.push({ go: 'attend', tag: '출석', text: `오늘 출석하면 승차권 ${at.next.reward}장`, tone: 'red' });
+  if (ready) out.push({ go: 'mission', tag: '미션', text: `받을 미션 보상 ${ready}개!`, tone: 'red' });
+  else if (left) out.push({ go: 'mission', tag: '미션', text: `오늘의 미션 ${left}개 남음`, tone: 'blue' });
+  const lock = HERO_DATA.find((x) => !isOpen(x.id));
+  if (lock) out.push({ go: 'chars', tag: '새 캐릭터', text: Records.tickets() >= lock.price ? `${lock.job} ${lock.name}을(를) 열 수 있다!` : `${lock.job} ${lock.name} · 승차권 ${lock.price}장`, tone: Records.tickets() >= lock.price ? 'red' : 'green' });
+  const t = new Date();
+  out.push({ go: 'daily', tag: '오늘의 대결', text: `${t.getMonth() + 1}월 ${t.getDate()}일 — 오늘은 누구나 같은 판`, tone: 'ink' });
+  return out;
+}
+
 function title(fromSplash = false) {
   G.m = null;
   app.className = 'app home-app';
   document.title = `${GAME_TITLE.main}(${GAME_TITLE.hanja}): 역을 차지하라`;
   const li = myIndex(), h = HERO_DATA[li];
   const rank = Records.summary();
-  const rivals = Prefs.getRivals();
+  const t = rank.title, next = t.next;
+  const xp = next ? Math.min(100, Math.round((100 * (rank.total - t.min)) / (next.min - t.min))) : 100;
+  const banners = lobbyBanners();
+  const at = Daily.attendance(), ready = Daily.claimable();
   const today = new Date();
   app.innerHTML = `
-    <div class="home ${fromSplash ? 'enter' : ''}">
-      <div class="home-top">
-        <div class="logo3 small"><b>${GAME_TITLE.main}</b><i>${GAME_TITLE.hanja}</i></div>
-        <div class="home-top-r"><button class="ticket-btn" id="tix">${ticketPill()}</button>
-        <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button></div>
+    <div class="lobby ${fromSplash ? 'enter' : ''}">
+      <header class="lb-top">
+        <button class="lb-prof" id="lbProf" aria-label="랭킹">
+          <span class="lb-ava" style="--pc:${h.color}">${character(h.id, 40)}</span>
+          <span class="lb-pi"><b>${t.name}</b><span class="lb-xp"><i style="width:${xp}%"></i></span><em>${next ? `${next.name}까지 ${(next.min - rank.total).toLocaleString()}점` : '최고 칭호'}</em></span>
+        </button>
+        <button class="ticket-btn" id="tix">${ticketPill()}</button>
+        <button class="lb-icon" id="snd" aria-label="소리">${Sound.isOn() ? ICON.sound : ICON.mute}</button>
+      </header>
+      <button class="lb-banner tone-${banners[0].tone}" id="lbBanner"><i>${banners[0].tag}</i><span>${banners[0].text}</span><b>›</b></button>
+      <div class="lb-stage" style="--hc:${h.color}">
+        <div class="lb-wall" aria-hidden="true">${[1, 2, 3, 4].map((id) => `<i style="--lc:${LINES[id].color}"></i>`).join('')}</div>
+        <div class="lb-sign" aria-hidden="true"><span>${GAME_TITLE.main}</span><em>${GAME_TITLE.hanja}</em></div>
+        <div class="lb-floor" aria-hidden="true"><i></i></div>
+        <div class="lb-side left">
+          <button class="lb-float" data-go="attend">${ICON.cal}<b>출석</b>${at.today ? '' : '<i class="dot"></i>'}</button>
+          <button class="lb-float" data-go="mission">${ICON.mission}<b>미션</b>${ready ? `<i class="dot n">${ready}</i>` : ''}</button>
+        </div>
+        <div class="lb-side right">
+          <button class="lb-float" data-go="daily">${ICON.today}<b>${today.getMonth() + 1}/${today.getDate()}<br>오늘의 대결</b></button>
+          <button class="lb-float" data-go="guide">${ICON.help}<b>하는 법</b></button>
+        </div>
+        <div class="lb-hero" id="homeHero">${character(h.id, 200, 'idle')}</div>
+        <div class="lb-name"><b>${h.job} ${h.name}</b><em>${h.skill} · 스킬 ${h.active.name}</em></div>
+        <button class="lb-change" id="pickBtn">캐릭터 변경</button>
       </div>
-      <div class="home-stage">
-        <div class="home-lines" aria-hidden="true">${[1, 2, 3, 4, 5].map((id) => `<i style="--lc:${LINES[id].color}"></i>`).join('')}</div>
-        <div class="home-pad"></div>
-        <div class="home-hero" id="homeHero">${character(h.id, 220, 'idle')}</div>
-        <div class="home-name"><span class="crown" style="background:${h.color}">내 캐릭터</span><b>${h.job} ${h.name}</b><em>${h.skill} · 스킬 ${h.active.name}</em></div>
-        <button class="btn yellow pick-btn" id="pickBtn">${character(h.id, 30)}캐릭터 선택</button>
+      <div class="lb-play">
+        <button class="lb-rivals" id="lbRivals" aria-label="상대 수 바꾸기"><span>상대</span><b id="rvN">${Prefs.getRivals()}명</b><i>탭해서 바꾸기</i></button>
+        <button class="btn lb-start" id="start">대결 시작<small>06:00 첫차 → 24:00 막차</small></button>
       </div>
-      <div class="rival-row">
-        <span>상대</span>
-        <button class="btn small white" id="rvMinus" aria-label="상대 줄이기">−</button>
-        <div class="rv-faces">${Array.from({ length: rivals }, () => '<i class="rv-q">?</i>').join('')}<em>매 판 무작위</em></div>
-        <b>${rivals}명</b>
-        <button class="btn small white" id="rvPlus" aria-label="상대 늘리기">+</button>
-      </div>
-      <div class="home-play">
-        <button class="btn" id="start">대결 시작<small class="btn-sub">06:00 첫차 → 24:00 막차 · 파산시키거나 자산 1등</small></button>
-        <button class="btn white daily-btn" id="daily"><b>오늘의 대결</b><span>${today.getMonth() + 1}월 ${today.getDate()}일 · 오늘은 누구나 같은 판</span></button>
-      </div>
-      <nav class="home-nav">
-        <button data-go="pick"><span class="ic">${character(h.id, 34)}</span><b>캐릭터</b></button>
-        <button data-go="dex"><span class="ic book">도감</span><b>도감</b></button>
-        <button data-go="rank"><span class="ic trophy">${rank.wins || 0}</span><b>랭킹</b></button>
-        <button data-go="guide"><span class="ic qm">?</span><b>하는 법</b></button>
-      </nav>
+      <nav class="lb-tabs">${TABS.map(([k, n]) => `<button data-go="${k}" class="${k === 'lobby' ? 'on' : ''}">${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
-  $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); $('#snd').textContent = Sound.isOn() ? '♪' : '✕'; };
-  $('#pickBtn').onclick = () => { Sound.unlock(); Sound.click(); pickHero(li); };
-  $('#tix').onclick = () => { Sound.unlock(); Sound.click(); const lock = HERO_DATA.findIndex((x) => !isOpen(x.id)); pickHero(lock < 0 ? li : lock); };
+  const go = (k) => {
+    Sound.unlock(); Sound.click();
+    if (k === 'chars') pickHero(li);
+    else if (k === 'mission') missionsPage();
+    else if (k === 'rank') ranking();
+    else if (k === 'dex') dex(li);
+    else if (k === 'guide') guide();
+    else if (k === 'attend') openAttendance();
+    else if (k === 'daily') startGame(true);
+  };
+  app.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => go(b.dataset.go); });
+  $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); $('#snd').innerHTML = Sound.isOn() ? ICON.sound : ICON.mute; };
+  $('#lbProf').onclick = () => go('rank');
+  $('#pickBtn').onclick = () => go('chars');
   $('#homeHero').onclick = () => { Sound.unlock(); Sound.click(); act($('#homeHero'), 'cheer', 1200); };
-  $('#rvMinus').onclick = () => { Sound.click(); Prefs.setRivals(Math.max(1, rivals - 1)); title(); };
-  $('#rvPlus').onclick = () => { Sound.click(); Prefs.setRivals(Math.min(3, rivals + 1)); title(); };
-  app.querySelectorAll('.home-nav [data-go]').forEach((b) => {
+  $('#tix').onclick = () => { Sound.unlock(); Sound.click(); const lock = HERO_DATA.findIndex((x) => !isOpen(x.id)); pickHero(lock < 0 ? li : lock); };
+  $('#lbRivals').onclick = () => {
+    Sound.click();
+    const n = (Prefs.getRivals() % 3) + 1;
+    Prefs.setRivals(n);
+    $('#rvN').textContent = n + '명';
+    tween($('#rvN'), [{ transform: 'scale(1.4)' }, { transform: 'scale(1)' }], { duration: 220 });
+  };
+  $('#start').onclick = () => startGame(false);
+  // 배너는 3.5초마다 넘어간다(누르면 그 일로)
+  let bi = 0;
+  const banner = $('#lbBanner');
+  banner.onclick = () => go(banners[bi].go);
+  clearInterval(G.bannerTimer);
+  if (banners.length > 1) G.bannerTimer = setInterval(() => {
+    if (!document.body.contains(banner)) { clearInterval(G.bannerTimer); return; }
+    bi = (bi + 1) % banners.length;
+    const x = banners[bi];
+    banner.className = `lb-banner tone-${x.tone}`;
+    banner.innerHTML = `<i>${x.tag}</i><span>${x.text}</span><b>›</b>`;
+    tween(banner, [{ transform: 'translateY(6px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 260 });
+  }, 3500);
+  if (fromSplash) setTimeout(() => act($('#homeHero'), 'cheer', 1000), 350);
+  // 오늘 출석을 안 했으면 로비에 들어오자마자 출석 판을 띄운다
+  if (!at.today) setTimeout(() => { if (app.classList.contains('home-app') && !app.querySelector('.sheet')) openAttendance(); }, fromSplash ? 700 : 300);
+  Roller3D.load();
+}
+
+// ── 출석 · 미션 ────────────────────────────────────────────
+
+/** 7일 출석 판. 오늘 칸을 누르면 승차권 */
+function openAttendance() {
+  const at = Daily.attendance();
+  const cycle = Math.floor(at.count / 7) * 7; // 이번 7일 묶음이 시작한 횟수
+  const doneInCycle = at.count - cycle;
+  const cells = ATTEND_REWARDS.map((r, i) => {
+    const got = i < doneInCycle, now = !at.today && i === doneInCycle;
+    return `<button class="at-cell ${got ? 'got' : ''} ${now ? 'now' : ''} ${i === 6 ? 'big' : ''}" ${now ? 'id="atClaim"' : 'disabled'}>
+      <span>${i + 1}일</span><b>${r}</b><em>장</em>${got ? '<i class="at-stamp">받음</i>' : ''}</button>`;
+  }).join('');
+  const s = sheet(`<span class="kind">출석 보상</span><h2 style="margin-top:6px">${at.today ? '오늘은 받았어요' : '오늘의 출석!'}</h2>
+    <p>하루 한 번, 7일째엔 승차권 100장. 빠진 날이 있어도 이어서 받는다.</p>
+    <div class="at-grid">${cells}</div>
+    <div class="row"><button class="btn ${at.today ? 'white' : ''}" id="atOk">${at.today ? '닫기' : '받기'}</button></div>`);
+  const claim = () => {
+    const n = Daily.checkIn();
+    if (!n) { closeSheet(); return; }
+    Sound.unlock(); Sound.big();
+    const cell = s.querySelector('#atClaim');
+    if (cell) {
+      cell.classList.add('got'); cell.classList.remove('now');
+      cell.insertAdjacentHTML('beforeend', '<i class="at-stamp">받음</i>');
+      const r = cell.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / cell.offsetWidth;
+      FX.confetti((r.left - a.left) / k + cell.offsetWidth / 2, (r.top - a.top) / k, 30, 1.2);
+    }
+    s.querySelector('h2').textContent = `승차권 +${n}장!`;
+    const ok = s.querySelector('#atOk');
+    ok.textContent = '닫기'; ok.className = 'btn white';
+    ok.onclick = () => { Sound.click(); closeSheet(); if (app.classList.contains('home-app')) title(); else if (app.classList.contains('mission-app')) missionsPage(); };
+  };
+  s.querySelector('#atOk').onclick = at.today ? () => { Sound.click(); closeSheet(); } : claim;
+  s.querySelector('#atClaim')?.addEventListener('click', claim);
+}
+
+/** 미션 탭: 출석 한 줄 + 오늘의 미션 3개 */
+function missionsPage() {
+  app.className = 'app dex-app mission-app';
+  const at = Daily.attendance(), list = Daily.missions();
+  const ms = Daily.untilReset(), hh = Math.floor(ms / 3600000), mm = Math.floor((ms % 3600000) / 60000);
+  const rows = list.map((m) => `
+    <div class="ms-row ${m.claimed ? 'claimed' : m.done ? 'done' : ''}">
+      <div class="ms-txt"><b>${m.text}</b><div class="ms-bar"><i style="width:${(100 * m.have) / m.goal}%"></i></div><span>${m.have.toLocaleString()} / ${m.goal.toLocaleString()}</span></div>
+      <button class="ms-btn" data-id="${m.id}" ${m.done && !m.claimed ? '' : 'disabled'}><b>+${m.reward}</b><span>${m.claimed ? '받음' : m.done ? '받기' : '진행 중'}</span></button>
+    </div>`).join('');
+  app.innerHTML = `
+    <div class="dex">
+      <div class="dex-head"><button class="btn small white" id="msBack">← 로비</button><b>미션</b>${ticketPill()}</div>
+      <button class="ms-attend" id="msAttend">${ICON.cal}<div><b>출석 보상 ${at.count % 7 + (at.today ? 0 : 1)}일차</b><span>${at.today ? '오늘은 받았어요 · 내일 또!' : `지금 받으면 승차권 ${at.next.reward}장`}</span></div><i>${at.today ? '보기' : '받기'}</i></button>
+      <div class="ms-head"><b>오늘의 미션</b><span>초기화까지 ${hh}시간 ${mm}분</span></div>
+      <div class="ms-list">${rows}</div>
+      <p class="ms-note">미션은 대결이 끝날 때 채워진다. 날짜가 같으면 누구나 같은 미션.</p>
+    </div>
+    <div class="fx-layer" id="fx"></div>`;
+  FX.useLayer($('#fx'));
+  $('#msBack').onclick = () => { Sound.click(); title(); };
+  $('#msAttend').onclick = () => { Sound.click(); openAttendance(); };
+  app.querySelectorAll('.ms-btn').forEach((b) => {
     b.onclick = () => {
-      Sound.unlock(); Sound.click();
-      const go = b.dataset.go;
-      if (go === 'pick') pickHero(li); else if (go === 'dex') dex(li); else if (go === 'rank') ranking(); else guide();
+      const n = Daily.claim(b.dataset.id);
+      if (!n) return;
+      Sound.unlock(); Sound.big();
+      const r = b.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / b.offsetWidth;
+      FX.confetti((r.left - a.left) / k + b.offsetWidth / 2, (r.top - a.top) / k, 24, 1.1);
+      FX.pow((r.left - a.left) / k, (r.top - a.top) / k - 10, `승차권 +${n}`, '#F2B33D', '#22201D', -5);
+      setTimeout(missionsPage, 700);
     };
   });
-  $('#start').onclick = () => startGame(false);
-  $('#daily').onclick = () => startGame(true);
-  if (fromSplash) setTimeout(() => act($('#homeHero'), 'cheer', 1000), 350);
-  Roller3D.load();
 }
 
 // ── 캐릭터 선택 ─────────────────────────────────────────────
@@ -161,7 +291,7 @@ function pickHero(i = myIndex()) {
     : `<button class="btn ${have >= h.price ? 'yellow' : 'white'}" id="pkUnlock" ${have >= h.price ? '' : 'disabled'}><b>${h.price}장으로 열기</b><small>${have >= h.price ? `승차권 ${have}장 있음` : `${h.price - have}장 더 모으면 열린다`}</small></button>`;
   app.innerHTML = `
     <div class="pick">
-      <div class="dex-head"><button class="btn small white" id="pkBack">← 처음으로</button><b>캐릭터 선택</b>${ticketPill(have)}</div>
+      <div class="dex-head"><button class="btn small white" id="pkBack">← 로비</button><b>캐릭터 선택</b>${ticketPill(have)}</div>
       <div class="pk-stage" style="--hc:${h.color}">
         <div class="pk-spot"></div>
         <button class="pk-arrow left" id="pkPrev" aria-label="이전">◀</button>
@@ -255,7 +385,7 @@ function dex(which = 0) {
   const lockNote = isOpen(h.id) ? '' : `<div class="dex-card lockcard"><span class="kind">잠김</span><p>승차권 <b>${h.price}장</b>으로 연다(가진 승차권 ${Records.tickets()}장). 잠겨 있어도 AI 상대로는 나온다.</p></div>`;
   app.innerHTML = `
     <div class="dex">
-      <div class="dex-head"><button class="btn small white" id="dexBack">← 처음으로</button><b>캐릭터 도감</b></div>
+      <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>캐릭터 도감</b></div>
       <div class="dex-tabs">${tabs}</div>
       <div class="dex-body">
         <div class="dex-stage"><div class="dex-floor"></div><div class="dex-char">${character(h.id, 210)}</div>
@@ -303,7 +433,7 @@ function ranking() {
       </div>`).join('') : '<p class="rank-empty">아직 기록이 없다. 대결에서 등수에 들면 승점이 쌓인다.</p>';
   app.innerHTML = `
     <div class="dex">
-      <div class="dex-head"><button class="btn small white" id="dexBack">← 처음으로</button><b>랭킹</b></div>
+      <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>랭킹</b></div>
       <div class="rank-me">
         <span class="kind">이 기기의 내 기록</span>
         <h3>${t.name}</h3>
@@ -398,10 +528,10 @@ function matchmaking(me, rivals, daily) {
     if (small != null) $('#mmSub').textContent = small;
   };
   return new Promise((resolve) => {
-    let done = false, raf = 0, passed = 0, tip = 0, lastTip = 0;
+    let done = false, timer = 0, passed = 0, tip = 0, lastTip = 0;
     const t0 = performance.now();
     const humans = findHumans();
-    $('#mmCancel').onclick = () => { if (done) return; done = true; cancelAnimationFrame(raf); Sound.click(); title(); resolve(false); };
+    $('#mmCancel').onclick = () => { if (done) return; done = true; clearInterval(timer); Sound.click(); title(); resolve(false); };
     const found = async () => {
       const people = await humans;
       if (done) return;
@@ -431,8 +561,10 @@ function matchmaking(me, rivals, daily) {
       done = true;
       resolve(true);
     };
-    const tick = (now) => {
-      if (done) return;
+    // 타이머로 돌린다(탭이 가려져도 시간대로 흘러 3초 뒤 매칭이 끝난다)
+    const tick = () => {
+      const now = performance.now();
+      if (done) { clearInterval(timer); return; }
       const t = Math.min(1, (now - t0) / MATCH_MIN_MS);
       const p = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // 천천히 출발해 천천히 선다
       $('#mmFill').style.width = p * 100 + '%';
@@ -444,10 +576,10 @@ function matchmaking(me, rivals, daily) {
       const step = MM_STEPS.filter(([at]) => t >= at).pop();
       led(step[1], step[2]);
       if (now - lastTip > 1500 && t < 1) { lastTip = now; tip = (tip + 1) % MM_TIPS.length; if (now - t0 > 100) $('#mmTip').textContent = 'TIP · ' + MM_TIPS[tip]; }
-      if (t < 1) raf = requestAnimationFrame(tick); else found();
+      if (t >= 1) { clearInterval(timer); found(); }
     };
     app.querySelectorAll('.mm-st')[0].classList.add('on');
-    raf = requestAnimationFrame(tick);
+    timer = setInterval(tick, 33);
   });
 }
 
@@ -466,6 +598,7 @@ async function startGame(daily) {
   if (!(await matchmaking(me, rivals, daily))) return;
   G.daily = daily;
   G.m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
+  G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
   enterGame();
 }
 
@@ -1044,10 +1177,26 @@ async function skillCutin(e) {
 
 // ── 이벤트 연출 ────────────────────────────────────────────
 
+/** 일일 미션용: 이번 판에 내가 한 일을 센다 */
+function countForMissions(e) {
+  const s = G.stats, m = M();
+  if (!s || !m) return;
+  const me = ME();
+  if (e.player === me.id) {
+    if (e.type === 'buy') s.buy++;
+    if (e.type === 'upgrade') { s.upgrade++; if (e.level >= MAX_LEVEL) s.landmark++; }
+    if (e.type === 'takeover') s.takeover++;
+    if (e.type === 'goal') s.goal++;
+    if (e.type === 'hotspot') s.hot++;
+  }
+  if (e.type === 'pay' && e.to === me.id && (e.why === 'toll' || e.why === 'pass')) s.toll += e.amount;
+}
+
 async function play(events) {
   G.busy = true;
   drawControls();
   for (const e of events) {
+    countForMissions(e);
     const h = HANDLERS[e.type];
     if (h) await h(e);
   }
@@ -1336,6 +1485,7 @@ async function results() {
   const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason !== 'lastTrain', stations: me.out ? 0 : stationsOf(m, me).length });
   const rec = Records.record({ points: pts, place: me.place, size: m.players.length, hero: me.hero, daily: G.daily, seed: m.seed });
   const canOpen = HERO_DATA.find((x) => !isOpen(x.id) && rec.tickets >= x.price);
+  const fresh = Daily.addMatch({ ...G.stats, play: 1, win: me.place === 1 ? 1 : 0 });
   const rows = m.ranking.map((r) => {
     const p = playerById(m, r.id);
     return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
@@ -1347,8 +1497,9 @@ async function results() {
     <div class="res-list">${rows}</div>
     <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '내 최고 기록!' : `내 기록 ${rec.rank}위`) : '10위 밖'}</em></div>
       <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호가 올랐다!</i>' : ''}</div>
-      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name}을(를) 열 수 있다!</i>` : ''}</div></div>
-    <div class="row"><button class="btn white" id="home">처음으로</button><button class="btn" id="again">다시 대결</button></div>`);
+      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name}을(를) 열 수 있다!</i>` : ''}</div>
+      ${fresh.length ? `<div class="pf-ms">미션 완료 — ${fresh.map((x) => x.text).join(' · ')} <i>로비 › 미션에서 받기</i></div>` : ''}</div>
+    <div class="row"><button class="btn white" id="home">로비로</button><button class="btn" id="again">다시 대결</button></div>`);
   s.querySelector('#home').onclick = () => { closeSheet(); title(); };
   s.querySelector('#again').onclick = () => { closeSheet(); startGame(G.daily); };
 }

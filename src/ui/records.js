@@ -49,6 +49,13 @@ export function record(entry) {
 export const tickets = () => load().tickets;
 /** 쓸 수 있는 캐릭터: 처음부터 있는 넷 + 승차권으로 연 캐릭터 */
 export const unlocked = () => [...STARTERS, ...load().unlocked];
+/** 미션·출석 보상: 승차권만 늘린다(칭호용 누적 승점은 그대로) */
+export function addTickets(n) {
+  const d = load();
+  d.tickets += n;
+  store(d);
+  return d.tickets;
+}
 /** 승차권으로 캐릭터를 연다. 모자라면 false */
 export function unlock(id, price) {
   const d = load();

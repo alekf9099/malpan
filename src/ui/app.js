@@ -1,6 +1,6 @@
 // 화면 컨트롤러 — 역전(驛戰): 역을 차지하라.
 // 규칙은 core(match.js)가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 차례로 연출한다.
-//   스플래시 → 메인 홈(내 캐릭터·상대 수) → 캐릭터 선택 · 도감 · 랭킹 → 대결 화면 → 결과
+//   스플래시 → 메인 홈(내 캐릭터·상대 수) → 캐릭터 선택 · 도감 · 랭킹 → 대결 매칭 → 대결 화면 → 결과
 // 대결 화면: 위 플레이어 판(돈·역 수·차례) + 시계 / 가운데 서울 노선도 / 아래 내 조작판(출발·스킬·노선 투자)
 // 내 차례에는 갈림길마다 갈 방향을 고르고, AI 차례는 저절로 빠르게 흘러간다.
 // 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
@@ -339,9 +339,121 @@ function guide(then = null) {
   s.querySelector('#gOk').onclick = () => { Sound.click(); Prefs.markGuide(); closeSheet(); if (then) then(); };
 }
 
+// ── 대결 매칭 ──────────────────────────────────────────────
+// 다른 사람과 붙는 온라인 대결 자리. 아직 서버가 없어 findHumans 는 늘 빈 목록이고, 빈자리는 AI 승객이 채운다.
+// 로딩 바는 노선 모양 — 열차가 역을 하나씩 지나며 최소 MATCH_MIN_MS 동안 상대를 찾는다.
+
+const MATCH_MIN_MS = 3000;
+/** 온라인 상대 찾기(서버를 붙일 자리). 지금은 아무도 없다 */
+const findHumans = async () => [];
+const MM_STEPS = [
+  [0, '상대를 찾는 중', '같은 시각에 출발할 승객을 찾고 있어요'],
+  [0.35, '노선 확인 중', '1~9호선 승객에게 신호를 보내는 중'],
+  [0.7, '응답 기다리는 중', '아직 대답한 승객이 없어요']
+];
+const MM_STOPS = ['출발', '탐색', '신호', '응답', '매칭'];
+const MM_TIPS = [
+  '명소역 5곳을 모으면 그 자리에서 이긴다',
+  '남의 역은 지나가기만 해도 통과 요금을 낸다',
+  '서울역에 서면 KTX 로 명소역까지 순간이동',
+  '같은 호선에서 이어 가진 역은 통행료가 최대 4배',
+  '판이 끝나면 승차권 — 새 캐릭터를 연다'
+];
+const TRAIN_ICON = (c) => `<svg viewBox="0 0 64 30" width="64" height="30" aria-hidden="true">
+  <path d="M3 25 V9 Q3 4 8 4 H50 Q60 4 62 14 V25 Z" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/>
+  <path d="M3 18 H62" stroke="${c}" stroke-width="4"/>
+  <rect x="8" y="8" width="9" height="6" rx="1.5" fill="#9FD3EC" stroke="#22201D" stroke-width="2"/><rect x="21" y="8" width="9" height="6" rx="1.5" fill="#9FD3EC" stroke="#22201D" stroke-width="2"/><rect x="34" y="8" width="9" height="6" rx="1.5" fill="#9FD3EC" stroke="#22201D" stroke-width="2"/>
+  <path d="M50 8 Q57 8 59 14 H50 Z" fill="#9FD3EC" stroke="#22201D" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="14" cy="26" r="3" fill="#22201D"/><circle cx="48" cy="26" r="3" fill="#22201D"/></svg>`;
+
+/** 매칭 화면. 최소 3초 동안 상대를 찾고, 사람이 없으면 AI 로 채운다. 출발하면 true, 취소하면 false */
+function matchmaking(me, rivals, daily) {
+  app.className = 'app match-app';
+  const h = heroById(me), lc = LINES[2].color;
+  app.innerHTML = `
+    <div class="mm">
+      <div class="mm-head"><b>대결 매칭</b><span>${daily ? '오늘의 대결' : '대결'} · ${rivals.length + 1}명</span></div>
+      <div class="mm-board">
+        <div class="mm-board-top"><i class="mm-dot"></i>역전 매칭 안내<em id="mmClock">0.0초</em></div>
+        <div class="mm-led" id="mmLed">${MM_STEPS[0][1]}</div>
+        <div class="mm-sub" id="mmSub">${MM_STEPS[0][2]}</div>
+      </div>
+      <div class="mm-slots">
+        <div class="mm-slot me" style="--pc:${h.color}"><div class="mm-face">${character(me, 64, 'idle')}</div><b>나</b><span>${h.job}</span></div>
+        ${rivals.map((_, i) => `<div class="mm-slot wait" data-i="${i}"><div class="mm-face"><i class="mm-ring"></i><b class="mm-q">?</b></div><b>찾는 중</b><span>&nbsp;</span></div>`).join('')}
+      </div>
+      <div class="mm-line" style="--lc:${lc}">
+        <div class="mm-rail"><i class="mm-fill" id="mmFill"></i></div>
+        ${MM_STOPS.map((n, i) => `<div class="mm-st" style="left:${i * 25}%"><i></i><span>${n}</span></div>`).join('')}
+        <div class="mm-train" id="mmTrain">${TRAIN_ICON(lc)}</div>
+      </div>
+      <div class="mm-meta"><b id="mmPct">0%</b><span id="mmTip">TIP · ${MM_TIPS[0]}</span></div>
+      <button class="btn white" id="mmCancel">취소</button>
+    </div>
+    <div class="fx-layer" id="fx"></div>`;
+  FX.useLayer($('#fx'));
+  const led = (big, small) => {
+    const el = $('#mmLed');
+    if (el.textContent !== big) { el.textContent = big; tween(el, [{ opacity: 0.2 }, { opacity: 1 }], { duration: 220 }); }
+    if (small != null) $('#mmSub').textContent = small;
+  };
+  return new Promise((resolve) => {
+    let done = false, raf = 0, passed = 0, tip = 0, lastTip = 0;
+    const t0 = performance.now();
+    const humans = findHumans();
+    $('#mmCancel').onclick = () => { if (done) return; done = true; cancelAnimationFrame(raf); Sound.click(); title(); resolve(false); };
+    const found = async () => {
+      const people = await humans;
+      if (done) return;
+      $('#mmCancel').disabled = true;
+      led(people.length ? '상대 찾음!' : 'AI 승객과 매칭!', people.length ? '' : '지금은 함께할 사람이 없어 AI 승객이 대신 탑니다');
+      $('#mmPct').textContent = '100%';
+      Sound.chime();
+      for (const [i, id] of rivals.entries()) {
+        await sleep(280);
+        if (done) return;
+        const r = heroById(id);
+        const slot = app.querySelector(`.mm-slot[data-i="${i}"]`);
+        slot.classList.remove('wait');
+        slot.classList.add('found');
+        slot.style.setProperty('--pc', r.color);
+        slot.innerHTML = `<div class="mm-face">${character(id, 64, 'cheer')}</div><b>${r.name}</b><span><i class="mm-ai">AI</i>${r.job}</span>`;
+        tween(slot, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'scale(1.08)', opacity: 1, offset: 0.7 }, { transform: 'scale(1)', opacity: 1 }], { duration: 320, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+        Sound.coin();
+      }
+      await sleep(550);
+      if (done) return;
+      led('곧 출발합니다', `${hhmm(CLOCK.start)} 첫차 · 문이 닫힙니다`);
+      Sound.whoosh();
+      tween($('#mmTrain'), [{ transform: 'translateX(0)' }, { transform: 'translateX(60vw)' }], { duration: 600, easing: 'ease-in', fill: 'forwards' });
+      await sleep(650);
+      if (done) return;
+      done = true;
+      resolve(true);
+    };
+    const tick = (now) => {
+      if (done) return;
+      const t = Math.min(1, (now - t0) / MATCH_MIN_MS);
+      const p = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // 천천히 출발해 천천히 선다
+      $('#mmFill').style.width = p * 100 + '%';
+      $('#mmTrain').style.left = `calc(${p} * (100% - 64px))`; // 열차 앞머리가 마지막 역에 닿게
+      $('#mmPct').textContent = Math.floor(p * 99) + '%';
+      $('#mmClock').textContent = ((now - t0) / 1000).toFixed(1) + '초';
+      const st = Math.min(4, Math.floor(p * 4 + 0.02));
+      while (passed < st) { passed++; app.querySelectorAll('.mm-st')[passed].classList.add('on'); Sound.step(passed); }
+      const step = MM_STEPS.filter(([at]) => t >= at).pop();
+      led(step[1], step[2]);
+      if (now - lastTip > 1500 && t < 1) { lastTip = now; tip = (tip + 1) % MM_TIPS.length; if (now - t0 > 100) $('#mmTip').textContent = 'TIP · ' + MM_TIPS[tip]; }
+      if (t < 1) raf = requestAnimationFrame(tick); else found();
+    };
+    app.querySelectorAll('.mm-st')[0].classList.add('on');
+    raf = requestAnimationFrame(tick);
+  });
+}
+
 // ── 대결 시작 ──────────────────────────────────────────────
 
-function startGame(daily) {
+async function startGame(daily) {
   Sound.unlock(); Sound.click();
   const me = Prefs.getLeader(Records.unlocked());
   const q = new URLSearchParams(location.search);
@@ -351,6 +463,7 @@ function startGame(daily) {
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
   // 상대는 여덟 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
   const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
+  if (!(await matchmaking(me, rivals, daily))) return;
   G.daily = daily;
   G.m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
   enterGame();

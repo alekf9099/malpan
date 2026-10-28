@@ -1,6 +1,6 @@
 // 오프라인 캐시. 인터넷이 되면 늘 새 파일을 받고(네트워크 우선), 끊기면 마지막으로 받아 둔 것을 쓴다.
 // 한 번 끝까지 열어 두면 글꼴·캐릭터 그림까지 캐시에 남아 비행기 모드에서도 할 수 있다.
-const CACHE = 'malpan-v18';
+const CACHE = 'malpan-v19';
 const CORE = ['./', 'index.html', 'src/ui/styles.css', 'src/ui/app.js', 'manifest.webmanifest', 'assets/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

@@ -70,6 +70,8 @@ export const Sound = {
   chip(n = 0) { tone(PENTA[Math.min(9, 3 + n)], 0.07, { type: 'square', vol: 0.045 }); },
   mult(n = 0) { tone(PENTA[Math.min(9, 5 + n)], 0.09, { type: 'square', vol: 0.05 }); knock(2600, { vol: 0.1, dur: 0.04 }); },
   score() { tone(PENTA[4], 0.1, { vol: 0.1 }); tone(PENTA[7], 0.16, { vol: 0.1, delay: 0.08 }); },
+  /** 지하철 안내 차임(띵-동) */
+  chime() { tone(784, 0.4, { type: 'sine', vol: 0.1 }); tone(622, 0.6, { type: 'sine', vol: 0.1, delay: 0.32 }); },
   coin() { tone(1318, 0.06, { type: 'square', vol: 0.05 }); tone(1760, 0.12, { type: 'square', vol: 0.05, delay: 0.06 }); },
   click() { knock(1800, { vol: 0.15, dur: 0.03, q: 10 }); },
   deny() { tone(150, 0.15, { type: 'square', vol: 0.05 }); },

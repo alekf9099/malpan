@@ -12,8 +12,8 @@ let home = null;   // [[x0, y0], [x1, y1]] — 처음 보여 줄 곳
 let wired = false;
 export const MAX_ZOOM = 1.0;
 // 노선도가 크기 때문에, 고를 때·따라갈 때 이보다 멀어지면 역 이름이 안 읽힌다(서울 전체는 whole()로만)
-export const MIN_ZOOM = 0.5;
-const FOLLOW_ZOOM = 0.95;
+export const MIN_ZOOM = 0.4;
+const FOLLOW_ZOOM = 0.55;
 
 export function attach(viewEl, camEl, canvas) {
   view = viewEl;

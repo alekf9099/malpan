@@ -1,48 +1,38 @@
-// 원정대 캐릭터 — 노선도를 지키는 역 직원들. 정기권처럼 훅으로만 건다 — round.js 는 캐릭터 이름을 모른다.
-//
-// 훅
-//   score(ctx)        이동 한 번의 점수 계산 중. ctx.heroes = 이번에 움직인 말들의 캐릭터,
-//                     ctx.groupHeroes = 도착 역에서 한 묶음이 된 말들 전부의 캐릭터
-//   escape            잡혔을 때 하루 한 번 피한다(round.js 가 이 표시를 본다)
-//
-// 스킬(active): 플레이어가 눌러 쓰는 고유 기술. 하루 한 번, 그 캐릭터가 노선 위에 나와 있을 때
-// 출발 전에 쓸 수 있다. 효과는 round.js 의 useSkill 이 active.id 로 풀어낸다.
+// 캐릭터 넷 — 서로 겨루는 지하철 직원들. 하나는 내가, 나머지는 AI 가 맡는다.
+// 패시브(늘 켜짐)는 match.js 가 id 로 본다. 스킬은 한 판에 두 번, 내 차례에 굴리기 전에 쓴다.
+// ai 는 AI 가 맡을 때의 성격(ai.js): reserve 남겨 둘 돈 · hub 환승역 선호 · chain 이어 사기 선호 · build 증축 선호
+
+export const SKILL_USES = 2;
 
 export const HEROES = [
   {
-    id: 'tiger', name: '호랑이', job: '기관사', skill: '돌파',
-    desc: '호랑이가 도깨비 열차를 잡으면 배수 ×2',
-    score(c) { if (c.captured > 0 && c.heroes.includes('tiger')) c.times(2, '호랑이 돌파'); },
-    active: { id: 'roar', name: '경적', desc: '가장 앞선 도깨비 열차를 차고로 돌려보낸다' }
+    id: 'tiger', name: '호랑이', job: '기관사', color: '#F08A2E',
+    skill: '기관사 수당', desc: '목적지에 닿으면 보너스 +60',
+    goalBonus: 60,
+    active: { id: 'dash', name: '급행 운행', desc: '이번 굴림에 3역 더 간다' },
+    ai: { name: '돌격형', reserve: 150, hub: 0, chain: 0.5, build: 0.6 }
   },
   {
-    id: 'rabbit', name: '토끼', job: '역무원', skill: '안전 요원',
-    desc: '하루 한 번, 잡히는 대신 그 도깨비 열차를 차고로 돌려보낸다',
-    escape: true,
-    active: { id: 'hop', name: '추가 운행', desc: '한 번 더 달린다 — 이 운행은 시간이 들지 않는다' }
+    id: 'rabbit', name: '토끼', job: '역무원', color: '#F2A7BB',
+    skill: '환승 할인', desc: '내가 내는 통행료·통과 요금 30% 할인',
+    tollDiscount: 0.3,
+    active: { id: 'again', name: '추가 운행', desc: '이번 차례가 끝나면 한 번 더 굴린다' },
+    ai: { name: '신중형', reserve: 250, hub: 0.3, chain: 0.7, build: 0.6 }
   },
   {
-    id: 'parrot', name: '앵무새', job: '안내원', skill: '안내방송',
-    desc: '움직일 때마다 칩 +15, 인파 몰린 역에 서면 칩 +40 더',
-    score(c) {
-      if (!c.heroes.includes('parrot')) return;
-      c.chip(15, '앵무새 안내방송');
-      if (c.incident === 'crowd') c.chip(40, '앵무새 안내방송');
-    },
-    active: { id: 'chatter', name: '승객 호출', desc: '역 두 곳에 인파를 부른다 — 멈추면 칩 +40' }
+    id: 'parrot', name: '앵무새', job: '안내원', color: '#E0533D',
+    skill: '안내방송', desc: '인파 몰린 역에 서면 받는 돈 2배',
+    crowdBonus: 2,
+    active: { id: 'call', name: '승객 호출', desc: '내 역 두 곳에 인파가 몰린다(통행료 2배)' },
+    ai: { name: '환승역 수집가', reserve: 280, hub: 1, chain: 0.3, build: 0.5 }
   },
   {
-    id: 'panda', name: '판다', job: '보안관', skill: '만원 열차',
-    desc: '판다가 낀 묶음은 함께 타기 배수 2배',
-    score(c) { if (c.stack > 1 && c.groupHeroes.includes('panda')) c.mult(c.stack - 1, '판다 만원 열차'); },
-    active: { id: 'shield', name: '스크린도어', desc: '다음 도깨비 차례 동안 내 말은 잡히지 않는다' }
+    id: 'panda', name: '판다', job: '보안관', color: '#3E9B6A',
+    skill: '보안 점검', desc: '증축 비용 10% 할인',
+    buildDiscount: 0.1,
+    active: { id: 'shield', name: '스크린도어', desc: '다음 통행료 한 번 면제' },
+    ai: { name: '노선 건설가', reserve: 300, hub: 0.2, chain: 0.9, build: 0.6 }
   }
 ];
-
-/** 내 말 id(m0~m3) → 캐릭터. 도깨비(d…)는 null. */
-export function heroOf(pieceId) {
-  if (!pieceId || pieceId[0] !== 'm') return null;
-  return HEROES[Number(pieceId.slice(1)) % HEROES.length];
-}
 
 export const heroById = (id) => HEROES.find((h) => h.id === id);

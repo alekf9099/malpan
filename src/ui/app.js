@@ -3,20 +3,24 @@
 //   스플래시 → 메인 홈(내 캐릭터·상대 수) → 캐릭터 선택 · 도감 · 랭킹 → 대결 화면 → 결과
 // 대결 화면: 위 플레이어 판(돈·역 수·차례) + 시계 / 가운데 서울 노선도 / 아래 내 조작판(출발·스킬·노선 투자)
 // 내 차례에는 갈림길마다 갈 방향을 고르고, AI 차례는 저절로 빠르게 흘러간다.
+// 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
 
 import {
-  createMatch, roll, move, decide, useSkill, skillBlocked, invest, investable, current, playerById, alive, assets, stationsOf,
-  tollFor, upgradeFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt
+  createMatch, roll, move, decide, choose, useSkill, skillBlocked, invest, investable, current, playerById, alive, assets, stationsOf,
+  tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
+  monopolyOf, HOT_WIN, LINE_WIN
 } from '../core/match.js';
-import { choosePath, decideOffer, wantsSkill, chooseInvest } from '../core/ai.js';
+import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
+import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, SKILL_USES } from '../core/heroes.js';
 import { LINES, STATION_LINES, dist, lineOfEdge } from '../core/boards/seoul.js';
 import { BOARDS } from '../core/boards/index.js';
-import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll } from '../core/estate.js';
+import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll, HOTSPOTS } from '../core/estate.js';
 import { INCIDENTS } from '../core/incidents.js';
 import { matchPoints } from '../core/ranking.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
 import { boardSvg, nodeXY, depth, pieceSize, canvasSize } from './board-view.js';
+import { hotArt } from './hot-art.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
 import * as FX from './fx.js';
@@ -286,8 +290,10 @@ function guide(then = null) {
     ['인수', '남의 역은 통행료를 낸 뒤 1.5배 값에 빼앗을 수 있다. 랜드마크는 못 빼앗는다.'],
     ['노선 투자', '내 차례에 굴리기 전, 이어진(2역 이상) 내 역은 어디서든 증축할 수 있다.'],
     ['목적지', `저마다 목적지 역이 있다. 지나가거나 서면 +${GOAL_BONUS}, 새 목적지를 받는다.`],
+    ['명소역', '그림 간판이 달린 역 11곳(서울역 · 강남 · 잠실 …). 값이 1.5배이고, 서면 그 역만의 일이 일어난다 — 서울역 KTX 순간이동, 김포공항 다음 굴림 2배, 명동 찬스 카드 골라 갖기 …. 목적지도 주로 명소역으로 나온다.'],
     ['찬스 역 · 역 사건', '? 역에 서면 찬스 카드. 화재(못 들어감) · 신호 장애(거기서 멈춤) · 인파(+100, 통행료 2배) · 버스킹(한 번 더)이 역마다 터진다.'],
-    ['이기기', '통행료를 못 내면 역을 팔아서라도 내고, 그래도 모자라면 파산. 마지막 한 명이 남거나 24:00 막차 때 자산(돈+역 값) 1등이 이긴다.']
+    ['독점 승리', `명소역 ${HOT_WIN}곳을 갖거나, 한 호선에서 ${LINE_WIN}역을 이어 가지면 그 자리에서 이긴다. 누가 한 곳 앞이면 경고가 뜬다 — 그 역을 먼저 사거나 인수해서 막자.`],
+    ['이기기', '통행료를 못 내면 역을 팔아서라도 내고, 그래도 모자라면 파산. 마지막 한 명이 남거나, 독점하거나, 24:00 막차 때 자산(돈+역 값) 1등이 이긴다.']
   ];
   const s = sheet(`<h2>하는 법</h2>
     <div class="howto">${steps.map(([t, d], i) => `<div class="ht"><b>${i + 1}</b><div><h4>${t}</h4><p>${d}</p></div></div>`).join('')}</div>
@@ -356,7 +362,7 @@ function intro() {
     <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차 출발!</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${p.node}</span></div>`).join('<i>VS</i>')}</div>
-    <p>모두 <b>${START_MONEY.toLocaleString()}점</b>으로 시작. 역을 사서 통행료로 상대를 <b>파산</b>시키거나, <b>24:00 막차</b> 때 자산 1등이 이긴다.</p>
+    <p>모두 <b>${START_MONEY.toLocaleString()}점</b>으로 시작. 역을 사서 통행료로 상대를 <b>파산</b>시키거나, <b>명소역 ${HOT_WIN}곳 · 한 호선 ${LINE_WIN}역</b>을 독점하거나, <b>24:00 막차</b> 때 자산 1등이 이긴다.</p>
     <div class="row"><button class="btn white" id="how">하는 법</button><button class="btn" id="go">출발!</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -383,6 +389,10 @@ async function humanTurn(p) {
     const path = await pickPath();
     await play(move(m, path));
   }
+  if (m.phase === 'choose') {
+    const v = await choicePrompt();
+    await play(choose(m, v));
+  }
   if (m.phase === 'decide') {
     const yes = await offerPrompt();
     await play(decide(m, yes));
@@ -397,6 +407,7 @@ async function aiTurn(p) {
   if (wantsSkill(m)) await play(useSkill(m));
   await play(roll(m));
   if (m.phase === 'move') await play(move(m, choosePath(m)));
+  if (m.phase === 'choose') { await sleep(300); await play(choose(m, chooseOption(m))); }
   if (m.phase === 'decide') { await sleep(250); await play(decide(m, decideOffer(m))); }
 }
 
@@ -430,31 +441,67 @@ async function pickPath() {
   const m = M(), p = current(m);
   let node = p.node, back = p.prev, left = m.pending.steps;
   const path = [];
+  // 굴리자마자 도착할 역(갈림길이 있으면 도착 후보들)을 먼저 보여 준다
+  const first = [...reachEnds(node, back, left, 0)];
+  drawDest(first, p);
+  Camera.frame([node, ...first].map(nodeXY), { maxZoom: 0.8, minZoom: 0.28, pad: 200 });
+  drawZoom();
+  await sleep(first.length === 1 ? 750 : 450);
   while (left > 0) {
     if (path.length && stopsAt(m, node)) break;
     const next = nextStations(m, node, back);
     if (!next.length) break;
+    if (next.length > 1) drawDest([...reachEnds(node, back, left, path.length)], p);
     const choice = next.length === 1 ? next[0] : await askFork(node, back, next, left, path);
     path.push(choice);
     back = node; node = choice; left--;
     drawRoute(path);
+    drawDest([...reachEnds(node, back, left, path.length)], p);
   }
   hideFork();
   clearRoute();
+  clearDest();
   return path;
 }
+
+/** 지금 자리에서 남은 칸으로 닿을 수 있는 끝 역들 — pickPath 와 같은 규칙(되돌아가지 않기 · 불난 역 피하기 · 신호 장애에서 멈춤) */
+function reachEnds(node, back, left, moved, out = new Set()) {
+  const m = M();
+  if (left <= 0 || (moved && stopsAt(m, node))) { out.add(node); return out; }
+  const next = nextStations(m, node, back);
+  if (!next.length) { out.add(node); return out; }
+  for (const n of next) reachEnds(n, node, left - 1, moved + 1, out);
+  return out;
+}
+
+/** 도착 예정 표시: 하나면 "도착 · 역 이름", 여럿이면 후보마다 작은 "도착?" */
+function drawDest(ends, p) {
+  clearDest();
+  const one = ends.length === 1;
+  for (const n of ends) {
+    const [x, y] = nodeXY(n);
+    const d = document.createElement('div');
+    d.className = 'dest' + (one ? ' one' : '');
+    d.style.left = x + 'px'; d.style.top = y + 'px';
+    d.style.setProperty('--pc', colorOf(p));
+    d.innerHTML = `<i class="dr"></i><span class="db">${one ? `도착 <b>${n}</b>` : '도착?'}</span>`;
+    $('#layer').appendChild(d);
+  }
+}
+function clearDest() { $('#layer')?.querySelectorAll('.dest').forEach((d) => d.remove()); }
 
 /** 갈림길: 갈 수 있는 다음 역마다 화살표 단추(호선 색·역 이름·그 역의 값) */
 function askFork(node, back, next, left, path) {
   const m = M(), p = current(m);
-  const pts = [node, ...next].map(nodeXY);
-  Camera.frame(pts, { maxZoom: 0.9, pad: 150 });
+  const ends = next.map((n) => [...reachEnds(n, node, left - 1, path.length + 1)]);
+  const pts = [node, ...next, ...ends.flat()].map(nodeXY);
+  Camera.frame(pts, { maxZoom: 0.9, minZoom: 0.28, pad: 220 });
   drawZoom();
   setHint(`갈림길 — 갈 방향을 고르세요 · 남은 ${left}역`);
   Sound.click();
   return new Promise((resolve) => {
     hideFork();
-    for (const n of next) {
+    for (const [i, n] of next.entries()) {
       const line = LINES[lineOfEdge(node, n)];
       const [x0, y0] = nodeXY(node), [x, y] = nodeXY(n);
       const ang = Math.atan2(y - y0, x - x0) * 180 / Math.PI;
@@ -462,12 +509,13 @@ function askFork(node, back, next, left, path) {
       const info = owner && owner !== p.id ? `<em class="bad">${owner === p.id ? '' : '남의 역'}</em>`
         : owner === p.id ? '<em class="mine">내 역</em>' : isChance(n) ? '<em class="chance">찬스</em>' : '';
       const toward = dist(n, p.goal) < dist(node, p.goal) ? '<em class="goal">목적지 쪽</em>' : '';
+      const end = ends[i].length === 1 ? `<em class="arrive">도착 ${ends[i][0]}</em>` : `<em class="arrive">도착 ${ends[i].length}곳 중</em>`;
       const el = document.createElement('button');
       el.className = 'fork';
       el.style.left = x + 'px';
       el.style.top = y + 'px';
       el.style.setProperty('--lc', line?.color || '#22201D');
-      el.innerHTML = `<i class="arrow" style="transform:rotate(${ang}deg)">➜</i><span><b>${line?.name || ''}</b> ${n}</span>${info}${toward}`;
+      el.innerHTML = `<i class="arrow" style="transform:rotate(${ang}deg)">➜</i><span><b>${line?.name || ''}</b> ${n}</span>${info}${toward}${end}`;
       el.onclick = (ev) => { ev.stopPropagation(); Sound.click(); hideFork(); setHint(''); resolve(n); };
       $('#layer').appendChild(el);
     }
@@ -488,6 +536,32 @@ function drawRoute(path) {
 }
 function clearRoute() { $('#layer')?.querySelectorAll('.route-dot').forEach((d) => d.remove()); }
 
+// ── 명소역에서 고르기(내 차례) ───────────────────────────────
+
+/** KTX: 갈 역 고르기 · 명동: 찬스 카드 두 장 중 하나 */
+function choicePrompt() {
+  const m = M(), p = current(m), c = m.choice;
+  return new Promise((resolve) => {
+    let s;
+    if (c.kind === 'card') {
+      const cards = c.options.map((id) => {
+        const k = chanceById(id);
+        return `<button class="pick-card ${k.good ? 'good' : 'bad'}" data-v="${id}"><span class="pk-deck">찬스 카드</span><b>${k.name}</b><em>${k.short}</em></button>`;
+      }).join('');
+      s = sheet(`<span class="kind">${hotArt('명동', 22)} 명동 · 쇼핑 거리</span><h2 style="margin-top:6px">어느 카드를 가질까?</h2><div class="pick-cards">${cards}</div>`);
+    } else {
+      const rows = c.options.map((n) => {
+        const o = m.owned[n] ? playerById(m, m.owned[n]) : null;
+        const note = n === p.goal ? `<em class="goal">내 목적지 +${GOAL_BONUS}</em>` : '';
+        const own = !o ? (isChance(n) ? '찬스 역' : `빈 역 · 값 ${priceFor(m, n)}`) : o === p ? '내 역' : `<i class="bad">${nameOf(o)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
+        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || '<span class="wr-flag">목적지</span>'}<div><b>${n}</b><span>${own} · ${dist(p.node, n)}역 거리</span></div>${note}</button>`;
+      }).join('');
+      s = sheet(`<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">어디로 날아갈까?</h2><div class="warp-list">${rows}</div>`);
+    }
+    s.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { Sound.click(); closeSheet(); resolve(b.dataset.v); }; });
+  });
+}
+
 // ── 거래 제안(내 차례) ─────────────────────────────────────
 
 function offerPrompt() {
@@ -504,7 +578,7 @@ function offerPrompt() {
     const card = document.createElement('div');
     card.className = 'offer-card kind-' + o.kind;
     card.innerHTML = `
-      <div class="oc-sign">${lines}<b>${o.node}</b></div>
+      <div class="oc-sign">${lines}<b>${o.node}</b>${HOTSPOTS[o.node] ? `<em class="oc-hot">${hotArt(o.node, 18)} 명소역 · ${HOTSPOTS[o.node].tag}</em>` : ''}</div>
       <div class="oc-body"><span>${title}</span>
         <em>값 <b>${o.price.toLocaleString()}점</b> · 남는 돈 ${(p.money - o.price).toLocaleString()} · 통행료 약 <b>${toll}</b>${chain > 1 ? ` · <strong>${chain}역 연결 ×${chain}</strong>` : ''}</em></div>
       <div class="oc-btns"><button class="btn small white" data-a="no">지나치기</button><button class="btn small yellow" data-a="yes">${o.price.toLocaleString()}점에 ${btn}</button></div>`;
@@ -611,12 +685,19 @@ function drawMarks() {
   for (const i of m.incidents) addIncident(i);
 }
 
+/** 플레이어 판의 독점 진행: ★ = 가진 명소역 수, 독점 하나 앞이면 빨갛게(판이 좁아 짧게) */
+function monoNote(m, p) {
+  const s = monopolyOf(m, p);
+  const near = s.hot >= HOT_WIN - 1 || s.line >= LINE_WIN - 1;
+  return s.hot ? ` <i class="${near ? 'near' : ''}" title="명소역 ${s.hot}곳">★${s.hot}</i>` : near ? ' <i class="near">독점!</i>' : '';
+}
+
 function drawHud() {
   const m = M();
   $('#players').innerHTML = m.players.map((p) => `
     <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${p.human ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
       <span class="pa">${character(p.hero, 34)}</span>
-      <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} ${p.out ? '파산' : p.money.toLocaleString()}</span><em>역 ${stationsOf(m, p).length}${p.coupon ? ' · 면제권' : ''}</em></div>
+      <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} ${p.out ? '파산' : p.money.toLocaleString()}</span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
     </div>`).join('');
   drawClock();
 }
@@ -684,10 +765,11 @@ function onMapTap(ev) {
   if (!best) return;
   const me = ME(), o = m.owned[best] ? playerById(m, m.owned[best]) : null;
   const lines = STATION_LINES[best].map((l) => LINES[l].name).join('·');
+  const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag} — ${HOTSPOTS[best].desc}(값 1.5배)` : '';
   const text = isChance(best) ? `${best} · 찬스 역(서면 카드)`
     : o ? `${best}(${lines}) · ${o.human ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
       : `${best}(${lines}) · 빈 역 · 값 ${stationPrice(best)}`;
-  toast(text);
+  toast(text + hot);
 }
 
 // ── 역 사건 그림 ───────────────────────────────────────────
@@ -763,7 +845,7 @@ async function drawCard({ tone, deck, title, short, art, place = null, to = null
   stage.classList.add('open');
   const r = card.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / card.offsetWidth;
   const cx = (r.left - a.left) / k + card.offsetWidth / 2, cy = (r.top - a.top) / k + card.offsetHeight / 2;
-  if (tone === 'good') { Sound.big(); FX.confetti(cx, cy - 60, 30, 1.3); FX.sparkle(cx, cy - 120, 12, '#F2B33D'); }
+  if (tone === 'good' || tone === 'hot') { Sound.big(); FX.confetti(cx, cy - 60, 30, 1.3); FX.sparkle(cx, cy - 120, 12, '#F2B33D'); }
   else if (tone === 'bad') { Sound.boss(); shake(card, 10, 420); flash(app); }
   else { Sound.penalty(); shake(card, 6, 300); }
   await Promise.race([sleep(quick ? 900 : 1700), tapped]);
@@ -864,6 +946,7 @@ async function travel(pid, from, path) {
   const el = pieceEl(pid);
   const fast = quick(pid);
   let prev = nodeXY(from);
+  drawDest([path[path.length - 1]], playerById(M(), pid));
   act(el, 'walk');
   for (let k = 0; k < path.length; k++) {
     const to = nodeXY(path[k]);
@@ -875,6 +958,7 @@ async function travel(pid, from, path) {
     prev = to;
   }
   act(el, 'idle');
+  clearDest();
   FX.dust(...nodeApp(path[path.length - 1]), 4);
 }
 
@@ -903,11 +987,11 @@ const HANDLERS = {
         await Roller.animate(spot, BOARDS.metro, e.roll, 'me');
         setTimeout(() => spot.classList.remove('show'), 600);
       }
-      stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', e.dash ? `+${e.dash}역 · 모두 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '');
+      stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', e.fly ? `하늘길 ×2 · 모두 ${e.steps}역` : e.dash ? `+${e.dash}역 · 모두 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '');
       await sleep(250);
     } else {
       Sound.clatter();
-      stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', e.dash ? `+${e.dash}역` : '');
+      stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', e.fly ? `하늘길 · ${e.steps}역` : e.dash ? `+${e.dash}역` : '');
       await sleep(300);
     }
   },
@@ -930,7 +1014,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player), to = e.to ? playerById(M(), e.to) : null;
     const node = e.node || (e.nodes ? e.nodes[e.nodes.length - 1] : p.node);
     const at = nodeApp(node);
-    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : `−${e.amount}`;
+    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll') { Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); }
     else Sound.coin();
     FX.pow(at[0], at[1] - (e.why === 'pass' ? 50 : 70), label, to ? colorOf(to) : '#6E6A5E', '#FFFDF7', e.why === 'pass' ? 4 : -6);
@@ -1016,6 +1100,50 @@ const HANDLERS = {
   },
   async extend(e) { toast(`막차가 ${hhmm(e.end)}로 늦춰졌다`); drawClock(); await sleep(400); },
   async skill(e) { await skillCutin(e); },
+  async hotspot(e) {
+    const p = playerById(M(), e.player);
+    await drawCard({ tone: 'hot', deck: '명소역', title: e.tag, short: e.desc, art: hotArt(e.node, 110), place: e.node, quick: !p.human });
+  },
+  async choice() {},
+  async warp(e) {
+    const p = playerById(M(), e.player);
+    const el = pieceEl(p.id);
+    const from = nodeApp(e.from);
+    Sound.whoosh();
+    FX.pow(from[0], from[1] - 70, 'KTX 출발!', '#2EA6DA', '#FFFDF7', -5);
+    await tween(el, [{ transform: 'translateY(0) scale(1)', opacity: 1 }, { transform: 'translateY(-90px) scale(.4)', opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' });
+    drawDest([e.to], p);
+    Camera.follow(nodeXY(e.to), 520);
+    await sleep(560);
+    place(el, e.to);
+    await tween(el, [{ transform: 'translateY(-110px) scale(.4)', opacity: 0 }, { transform: 'translateY(8px) scale(1.1)', opacity: 1, offset: 0.75 }, { transform: 'translateY(0) scale(1)', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(.3,.7,.3,1.2)', fill: 'forwards' });
+    el.getAnimations().forEach((a) => a.cancel());
+    clearDest();
+    const to = nodeApp(e.to);
+    FX.dust(to[0], to[1], 8);
+    FX.ring(to[0], to[1], '#2EA6DA');
+    Sound.stamp();
+    drawPieces();
+    await sleep(250);
+  },
+  async newGoal(e) {
+    const p = playerById(M(), e.player);
+    drawMarks();
+    if (p.human) toast(`새 목적지: ${e.goal}역 (${dist(p.node, e.goal)}역 떨어짐)`);
+    await sleep(p.human ? 500 : 150);
+  },
+  async monoWarn(e) {
+    const p = playerById(M(), e.player);
+    const what = e.kind === 'hot' ? `명소역 ${e.have}/${e.need}곳` : `${LINES[e.line]?.name || ''} ${e.have}역 연결`;
+    await drawCard({ tone: p.human ? 'good' : 'warn', deck: '독점 경고', title: `${p.human ? '나' : nameOf(p)} — 독점까지 한 곳!`,
+      short: p.human ? `${what} · 한 곳만 더 가지면 이긴다` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : '노선 끝 역'}을 먼저 사거나 인수해서 막자`, art: character(p.hero, 96, 'cheer') });
+  },
+  async monopoly(e) {
+    const p = playerById(M(), e.player);
+    flash(app);
+    await drawCard({ tone: p.human ? 'good' : 'bad', deck: '독점 승리', title: `${p.human ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
+      short: e.kind === 'hot' ? `명소역 ${HOT_WIN}곳을 모두 차지했다` : `${LINES[e.line]?.name || ''}에서 ${LINE_WIN}역을 이어 가졌다`, art: character(p.hero, 96, 'dance') });
+  },
   async over() {}
 };
 
@@ -1038,13 +1166,17 @@ async function estateFx(e, word, sound) {
 
 // ── 결과 ───────────────────────────────────────────────────
 
+/** 받침 있으면 이, 없으면 가 */
+const iga = (w) => { const c = w.charCodeAt(w.length - 1) - 0xAC00; return c >= 0 && c < 11172 && c % 28 ? '이' : '가'; };
+const winnerName = (m) => { const w = playerById(m, m.winner); return w?.human ? '내가' : nameOf(w) + iga(nameOf(w)); };
+
 async function results() {
   const m = M();
   const me = ME();
   const win = me.place === 1;
   await sleep(300);
   if (win) { Sound.win(); FX.confetti(app.clientWidth / 2, 300, 70, 1.8); } else Sound.lose();
-  const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason === 'bankrupt' });
+  const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason !== 'lastTrain' });
   const rec = Records.record({ points: pts, place: me.place, size: m.players.length, hero: me.hero, daily: G.daily, seed: m.seed });
   const rows = m.ranking.map((r) => {
     const p = playerById(m, r.id);
@@ -1053,7 +1185,7 @@ async function results() {
   }).join('');
   const s = sheet(`
     <h2>${win ? '승리!' : `${me.place}등`}</h2>
-    <p>${m.reason === 'bankrupt' ? '상대가 모두 파산했다' : `${hhmm(m.end)} 막차 — 자산 순위로 끝났다`}</p>
+    <p>${m.reason === 'bankrupt' ? '상대가 모두 파산했다' : m.reason === 'monopoly' ? `${winnerName(m)} ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}으로 끝났다` : `${hhmm(m.end)} 막차 — 자산 순위로 끝났다`}</p>
     <div class="res-list">${rows}</div>
     <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '내 최고 기록!' : `내 기록 ${rec.rank}위`) : '10위 밖'}</em></div>
       <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호가 올랐다!</i>' : ''}</div></div>

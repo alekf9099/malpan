@@ -1168,3 +1168,45 @@ body.wide .pick { width: 560px; margin: 0 auto; }
 .res-row .pl-no { font-family: var(--display); font-weight: 400; font-size: 24px; width: 24px; text-align: center; }
 .res-row div { display: flex; flex-direction: column; } .res-row div b { font-weight: 900; } .res-row div span { font-size: 12px; font-weight: 700; color: var(--ink-2); }
 .news-art { display: inline-block; padding: 10px 16px; border: 4px solid var(--ink); border-radius: 10px; background: #FFFDF7; font-family: var(--display); font-size: 34px; letter-spacing: 2px; transform: rotate(-4deg); box-shadow: 0 5px 0 var(--ink); }
+
+/* ══ v3.1 내 땅 · 명소역 · 도착 예정 ══ */
+.piece .tag, .goal-flag .gf, .fork, .route-dot, .incident .inc-tag, .dest .db { --inv-min: 1; }
+.fork em { white-space: nowrap; }
+.fork em.arrive { background: var(--ink); color: #FFFDF7; }
+.offer-card .oc-sign .oc-hot { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 900; padding: 2px 8px; border-radius: 8px; background: var(--yellow); color: var(--ink); }
+.dest { position: absolute; width: 0; height: 0; z-index: 7000; pointer-events: none; }
+.dest .dr { position: absolute; left: -40px; top: -40px; width: 80px; height: 80px; border-radius: 50%; border: 7px solid var(--pc); box-shadow: 0 0 0 3px var(--ink), inset 0 0 0 3px var(--ink); animation: destPulse 1.1s ease-out infinite; }
+.dest:not(.one) .dr { left: -32px; top: -32px; width: 64px; height: 64px; border-width: 6px; border-style: dashed; animation: destSpin 4s linear infinite; }
+@keyframes destSpin { to { transform: rotate(360deg); } }
+.dest .db { position: absolute; left: 0; bottom: 26px; transform: translateX(-50%) scale(var(--inv, 1)); transform-origin: 50% 100%; white-space: nowrap;
+  padding: 5px 12px 4px; border: 3px solid var(--ink); border-radius: 999px; background: var(--pc); color: #FFFDF7; box-shadow: 0 4px 0 var(--ink);
+  font-family: var(--body); font-size: 14px; font-weight: 900; -webkit-text-stroke: .3px var(--ink); animation: destBob .8s ease-in-out infinite alternate; }
+.dest .db b { font-family: var(--display); font-weight: 400; font-size: 17px; margin-left: 2px; }
+.dest .db::after { content: ''; position: absolute; left: 50%; bottom: -13px; margin-left: -9px; border: 9px solid transparent; border-top: 10px solid var(--ink); border-bottom: 0; }
+/* 후보가 여럿이면 고리만(갈림길 화살표에 "도착 ○○"가 적혀 있다) */
+.dest:not(.one) .db { display: none; }
+@keyframes destPulse { 0% { transform: scale(.7); opacity: 1; } 100% { transform: scale(1.35); opacity: .15; } }
+@keyframes destBob { from { margin-bottom: 0; } to { margin-bottom: 10px; } }
+
+/* 명소역 카드 · 고르기 · 독점 */
+.card-stage.tone-hot .back { background: repeating-linear-gradient(45deg, #E0A21F 0 14px, #C98B12 14px 28px); }
+.card-stage.tone-hot .back-frame { border-color: #FFFDF7; }
+.card-stage.tone-hot .cf-head { background: #2EA6DA; }
+.card-stage .cf-art .hot-art { width: 110px; height: 110px; }
+.offer-card .oc-sign .oc-hot { display: inline-flex; align-items: center; gap: 3px; }
+.sheet .kind .hot-art { vertical-align: -5px; }
+.pl .pi em i { font-style: normal; color: #B07A0E; }
+.pl .pi em i.near { color: #FFFDF7; background: #E0533D; padding: 0 4px; border-radius: 5px; animation: pulse .9s ease-in-out infinite; }
+.pick-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.pick-card { appearance: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px 14px; min-height: 170px; border: 3px solid var(--ink); border-radius: 16px; background: #FFFDF7; box-shadow: 0 5px 0 var(--ink); font-family: var(--body); color: var(--ink); text-align: center; }
+.pick-card .pk-deck { align-self: stretch; margin: -12px -8px 4px; padding: 6px 0 4px; border-radius: 12px 12px 0 0; background: #E0A21F; color: #FFFDF7; font-family: var(--display); font-size: 14px; border-bottom: 3px solid var(--ink); }
+.pick-card.bad .pk-deck { background: #6B3FA0; }
+.pick-card b { font-family: var(--display); font-weight: 400; font-size: 22px; line-height: 1.15; }
+.pick-card em { font-style: normal; font-size: 13px; font-weight: 800; line-height: 1.35; color: var(--ink-2); }
+.pick-card:active { transform: translateY(4px); box-shadow: 0 1px 0 var(--ink); }
+.warp-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 52vh; overflow-y: auto; padding: 2px 2px 6px; }
+.warp-row { appearance: none; cursor: pointer; display: grid; grid-template-columns: 38px 1fr auto; align-items: center; gap: 8px; text-align: left; padding: 6px 10px; border: 2.5px solid var(--ink); border-left: 8px solid var(--pc); border-radius: 12px; background: var(--white); box-shadow: 0 3px 0 var(--ink); font-family: var(--body); color: var(--ink); }
+.warp-row b { display: block; font-weight: 900; font-size: 15px; } .warp-row span { font-size: 12px; font-weight: 800; color: var(--ink-2); }
+.warp-row i.bad { font-style: normal; color: #E0533D; }
+.warp-row em.goal { font-style: normal; font-size: 11px; font-weight: 900; padding: 2px 7px; border-radius: 8px; background: #2EA6DA; color: #FFFDF7; white-space: nowrap; }
+.warp-row .wr-flag { display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 8px; background: #2EA6DA; color: #FFFDF7; font-size: 9px; font-weight: 900; }

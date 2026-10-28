@@ -5,7 +5,7 @@
 
 export const POINTS = { place: [0, 30, 15, 5, 0], perRival: 5, knockout: 10 };
 
-/** 이 판에서 받은 승점. place = 1~4, rivals = 상대 수, knockout = 파산으로 끝냈나 */
+/** 이 판에서 받은 승점. place = 1~4, rivals = 상대 수, knockout = 막차 전에 끝냈나(모두 파산 · 독점) */
 export function matchPoints({ place, rivals, knockout }) {
   let pts = POINTS.place[place] || 0;
   if (place === 1) pts += POINTS.perRival * rivals + (knockout ? POINTS.knockout : 0);

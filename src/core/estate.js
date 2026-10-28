@@ -7,7 +7,30 @@ import { LINE_STATIONS, STATION_LINES } from './boards/seoul.js';
 
 /** 지나는 호선 수로 값을 매긴다: 일반역 · 환승역 · 세 호선 이상 환승역 */
 export const PRICE = { 1: 100, 2: 180, 3: 260 };
-export const stationPrice = (n) => PRICE[Math.min(3, STATION_LINES[n]?.length || 1)];
+/**
+ * 명소역: 서울의 얼굴 같은 역 11곳. 값(그래서 증축·통행료·인수 값도) 1.5배, 지도에 그림 간판.
+ * 누구든 서면(주인이어도) 그 역만의 일이 일어난다(match.js 의 hotspotPower). 그림은 ui/hot-art.js.
+ */
+export const HOTSPOTS = {
+  '서울역': { tag: 'KTX 순간이동', desc: '명소역이나 내 목적지로 바로 날아간다' },
+  '김포공항': { tag: '하늘길', desc: '다음 굴림이 2배' },
+  '고속터미널': { tag: '고속버스 귀성', desc: '+100, 목적지를 새로 받는다' },
+  '홍대입구': { tag: '거리 공연', desc: '한 번 더 굴린다' },
+  '명동': { tag: '쇼핑 거리', desc: '찬스 카드 두 장 중 하나를 고른다' },
+  '잠실': { tag: '초고층 타워', desc: '증축 한 번에 바로 랜드마크' },
+  '여의도': { tag: '금융 1번지', desc: '가진 돈의 10% 이자(최대 150)' },
+  '강남': { tag: '빌딩 숲', desc: '통행료 2배' },
+  '동대문역사문화공원': { tag: '패션 거리', desc: '다른 사람마다 30점씩 받는다' },
+  '이태원': { tag: '세계 음식 축제', desc: '내 역 하나에 인파가 몰린다(통행료 2배)' },
+  '성수': { tag: '카페 쿠폰', desc: '통행료 면제권을 받는다' }
+};
+export const HOT_LIST = Object.keys(HOTSPOTS);
+export const HOT_MULT = 1.5;
+export const isHot = (n) => !!HOTSPOTS[n];
+export const stationPrice = (n) => {
+  const base = PRICE[Math.min(3, STATION_LINES[n]?.length || 1)];
+  return isHot(n) ? Math.round(base * HOT_MULT / 10) * 10 : base;
+};
 export const TOLL_RATE = 0.3;
 /** 단계별 통행료 배수(1 · 2 · 3=랜드마크) */
 export const LEVEL_MULT = [0, 1, 3, 7];
@@ -62,4 +85,6 @@ export function links(owned, owner) {
 export const chainOf = (owned, n) => (owned[n] ? Math.min(CHAIN_MAX, links(owned, owned[n]).at[n]?.len || 1) : 0);
 
 /** 통행료 기본값(시간대·사건 배율 전) */
-export const baseToll = (owned, levels, n) => Math.round(stationPrice(n) * TOLL_RATE * LEVEL_MULT[levels[n] || 1] * Math.max(1, chainOf(owned, n)));
+/** 강남(빌딩 숲)은 통행료 2배 */
+export const HOT_TOLL = { '강남': 2 };
+export const baseToll = (owned, levels, n) => Math.round(stationPrice(n) * TOLL_RATE * LEVEL_MULT[levels[n] || 1] * Math.max(1, chainOf(owned, n)) * (HOT_TOLL[n] || 1));

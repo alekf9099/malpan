@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  createMatch, roll, move, decide, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
-  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE
+  createMatch, roll, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
+  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, HOT_WIN, warpOptions
 } from '../src/core/match.js';
-import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL } from '../src/core/estate.js';
+import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
 import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul.js';
-import { choosePath, decideOffer, wantsSkill, chooseInvest } from '../src/core/ai.js';
+import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
 
 const rngAlways = (v) => ({ next: () => v, shuffle: (a) => a });
 const game = (n = 2, extra = {}) => createMatch({ seed: 7, heroes: ['tiger', 'rabbit', 'parrot', 'panda'].slice(0, n), humans: 1, ...extra });
@@ -22,7 +22,7 @@ function at(m, node, prev, steps = 1) {
 test('새 판: 모두 1200점, 서로 다른 출발역, 저마다 10역 넘게 떨어진 목적지', () => {
   const m = game(4);
   assert.equal(new Set(m.players.map((p) => p.node)).size, 4);
-  for (const p of m.players) { assert.equal(p.money, START_MONEY); assert.ok(dist(p.node, p.goal) >= 10); }
+  for (const p of m.players) { assert.equal(p.money, START_MONEY); assert.ok(dist(p.node, p.goal) >= (isHot(p.goal) ? HOT_GOAL_DIST : 10)); }
   assert.equal(m.clock, CLOCK.start);
   for (const n of CHANCE_STATIONS) { assert.ok(ALL_STATIONS.includes(n), n); assert.equal(STATION_LINES[n].length, 1, n); }
 });
@@ -144,11 +144,12 @@ test('한 바퀴마다 시계가 45분 흐르고, 막차가 되면 자산 순위
   for (let g = 0; g < 4000 && m.phase !== 'over'; g++) {
     if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
     else if (m.phase === 'move') move(m, choosePath(m));
+    else if (m.phase === 'choose') choose(m, chooseOption(m));
     else decide(m, decideOffer(m));
   }
   assert.equal(m.phase, 'over');
   assert.equal(m.ranking.length, 3);
-  for (let i = 1; i < m.ranking.length; i++) if (!m.ranking[i].out && !m.ranking[i - 1].out) assert.ok(m.ranking[i - 1].assets >= m.ranking[i].assets);
+  for (let i = m.reason === 'monopoly' ? 2 : 1; i < m.ranking.length; i++) if (!m.ranking[i].out && !m.ranking[i - 1].out) assert.ok(m.ranking[i - 1].assets >= m.ranking[i].assets);
 });
 
 test('AI 만으로 200판: 늘 끝나고, 돈이 음수가 되지 않는다', () => {
@@ -158,10 +159,60 @@ test('AI 만으로 200판: 늘 끝나고, 돈이 음수가 되지 않는다', ()
     while (m.phase !== 'over' && g++ < 6000) {
       if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
       else if (m.phase === 'move') move(m, choosePath(m));
+      else if (m.phase === 'choose') choose(m, chooseOption(m));
       else decide(m, decideOffer(m));
       for (const p of m.players) assert.ok(p.money >= 0, `seed ${s}`);
     }
     assert.equal(m.phase, 'over', `seed ${s}`);
     assert.ok(m.ranking[0].assets >= 0);
   }
+});
+
+test('명소역: 값 1.5배, 강남 통행료 2배, 잠실은 증축 한 번에 랜드마크', () => {
+  assert.equal(HOT_LIST.length, 11);
+  for (const n of HOT_LIST) { assert.ok(ALL_STATIONS.includes(n), n); assert.ok(!CHANCE_STATIONS.includes(n), n); }
+  assert.equal(stationPrice('강남'), 150);
+  assert.equal(baseToll({ '강남': 'p0' }, { '강남': 1 }, '강남'), Math.round(150 * 0.3 * 2));
+  const m = game();
+  const p = current(m);
+  m.owned['잠실'] = p.id; m.levels['잠실'] = 1;
+  at(m, '잠실새내', null, 1);
+  move(m, ['잠실']);
+  assert.equal(m.offer.kind, 'upgrade');
+  assert.equal(m.offer.level, MAX_LEVEL);
+});
+
+test('서울역 KTX: 명소역·목적지 중 골라 바로 날아가고, 그 역에서 살 수 있다', () => {
+  const m = game();
+  const p = at(m, '시청', '종각', 1);
+  move(m, ['서울역']);
+  assert.equal(m.phase, 'choose');
+  assert.deepEqual(m.choice.options, warpOptions(m, p));
+  assert.ok(m.choice.options.includes(p.goal));
+  const ev = choose(m, '여의도');
+  assert.ok(ev.some((e) => e.type === 'warp' && e.to === '여의도'));
+  assert.equal(p.node, '여의도');
+  assert.equal(m.phase, 'decide');
+  assert.equal(m.offer.kind, 'buy');
+});
+
+test('독점: 명소역 하나 앞이면 경고, 다 가지면 그 자리에서 이긴다', () => {
+  const m = game(3);
+  const p = current(m);
+  const mine = HOT_LIST.filter((n) => n !== '잠실' && n !== '홍대입구').slice(0, HOT_WIN - 2);
+  for (const n of mine) { m.owned[n] = p.id; m.levels[n] = 1; }
+  at(m, '잠실새내', null, 1);
+  move(m, ['잠실']);
+  const warn = decide(m, true);
+  assert.ok(warn.some((e) => e.type === 'monoWarn' && e.kind === 'hot'));
+  m.turn = 0; m.phase = 'roll';
+  at(m, '합정', '당산', 1);
+  p.money = 2000;
+  move(m, ['홍대입구']);
+  if (m.phase === 'choose') choose(m, m.choice.options[0]);
+  const ev = decide(m, true);
+  assert.ok(ev.some((e) => e.type === 'monopoly'));
+  assert.equal(m.phase, 'over');
+  assert.equal(m.reason, 'monopoly');
+  assert.equal(m.ranking[0].id, p.id);
 });

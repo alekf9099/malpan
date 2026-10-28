@@ -1,7 +1,9 @@
-// 기기 안 랭킹: 끝난 판의 승점을 이 브라우저(localStorage)에 남긴다. 다른 기기·다른 사람과는 나누지 않는다.
+// 기기 안 랭킹·승차권: 끝난 판의 승점을 이 브라우저(localStorage)에 남긴다. 다른 기기·다른 사람과는 나누지 않는다.
+// 승점만큼 승차권이 쌓이고, 승차권으로 잠긴 캐릭터를 연다(칭호는 누적 승점 그대로).
 // 저장이 막혀 있어도(사생활 보호 창 등) 게임은 그대로 돌아가고, 기록만 남지 않는다.
 
 import { rankOf } from '../core/ranking.js';
+import { STARTERS } from '../core/heroes.js';
 
 const KEY = 'yeokjeon.records.v1';
 const KEEP = 10;
@@ -9,9 +11,14 @@ const KEEP = 10;
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem(KEY));
-    if (d && Array.isArray(d.games)) return d;
+    if (d && Array.isArray(d.games)) {
+      // 승차권이 생기기 전 기록이면 그동안 모은 승점을 승차권으로 쳐 준다
+      if (typeof d.tickets !== 'number') d.tickets = d.total || 0;
+      if (!Array.isArray(d.unlocked)) d.unlocked = [];
+      return d;
+    }
   } catch { /* 저장소를 못 쓰면 빈 기록 */ }
-  return { total: 0, plays: 0, wins: 0, games: [] };
+  return { total: 0, plays: 0, wins: 0, games: [], tickets: 0, unlocked: [] };
 }
 function store(d) {
   try { localStorage.setItem(KEY, JSON.stringify(d)); } catch { /* 저장 못 해도 진행 */ }
@@ -26,6 +33,7 @@ export function record(entry) {
   const e = { ...entry, at: Date.now() };
   const before = rankOf(d.total);
   d.total += e.points;
+  d.tickets += e.points;
   d.plays = (d.plays || 0) + 1;
   if (e.place === 1) d.wins = (d.wins || 0) + 1;
   d.games.push(e);
@@ -34,7 +42,22 @@ export function record(entry) {
   store(d);
   const rank = d.games.indexOf(e) + 1 || null;
   const now = rankOf(d.total);
-  return { rank, best: rank === 1 && e.points > 0, total: d.total, title: now, promoted: now.name !== before.name };
+  return { rank, best: rank === 1 && e.points > 0, total: d.total, tickets: d.tickets, title: now, promoted: now.name !== before.name };
+}
+
+/** 가진 승차권 */
+export const tickets = () => load().tickets;
+/** 쓸 수 있는 캐릭터: 처음부터 있는 넷 + 승차권으로 연 캐릭터 */
+export const unlocked = () => [...STARTERS, ...load().unlocked];
+/** 승차권으로 캐릭터를 연다. 모자라면 false */
+export function unlock(id, price) {
+  const d = load();
+  if (d.unlocked.includes(id) || STARTERS.includes(id)) return true;
+  if (d.tickets < price) return false;
+  d.tickets -= price;
+  d.unlocked.push(id);
+  store(d);
+  return true;
 }
 
 export function summary() {

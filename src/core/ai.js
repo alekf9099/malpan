@@ -66,6 +66,8 @@ function pathValue(m, p, path, rng) {
     const toll = p.coupon ? 0 : tollFor(m, end, p);
     v -= toll * 0.7;
     if (toll >= p.money) v -= 2000; // 파산은 피한다
+    // 중개인: 인수할 수 있는 남의 역이면 오히려 반갑다
+    else if (heroById(p.hero).takeoverDiscount && m.levels[end] < 3 && p.money - toll - takeoverFor(m, end, p) >= 100) v += 60 + stationPrice(end) * 0.5;
   } else if (!owner && !isChance(end)) {
     const price = priceFor(m, end);
     if (p.money - price >= ai.reserve) {
@@ -110,7 +112,9 @@ export function decideOffer(m) {
     return left >= Math.max(0, reserve);
   }
   if (o.kind === 'upgrade') return left >= ai.reserve + 120 - 200 * ai.build;
-  return left >= ai.reserve + 250 - 100 * ai.chain; // 인수는 비싸다
+  // 인수는 비싸다 — 중개인·급매 협상 중이면 과감하게
+  const keen = (heroById(p.hero).takeoverDiscount ? 150 : 0) + (p.deal ? 200 : 0);
+  return left >= ai.reserve + 250 - 100 * ai.chain - keen;
 }
 
 /** 명소역에서 고르기: KTX 로 갈 역 · 명동 찬스 카드 */
@@ -127,7 +131,7 @@ export function chooseOption(m) {
       if (owner && owner !== p.id) {
         const toll = p.coupon ? 0 : tollFor(m, o, p);
         v -= toll * 0.8 + (toll >= p.money ? 2000 : 0);
-        if (threatAt(m, p, o) || (m.levels[o] < 3 && p.money >= takeoverFor(m, o) && monoGain(m, p, o) >= 2000)) v += 400;
+        if (threatAt(m, p, o) || (m.levels[o] < 3 && p.money >= takeoverFor(m, o, p) && monoGain(m, p, o) >= 2000)) v += 400;
       } else if (!owner && p.money >= priceFor(m, o)) v += 80 + monoGain(m, p, o) * 0.5 + (threatAt(m, p, o) ? 400 : 0);
     }
     if (v > bestV) { bestV = v; best = o; }
@@ -151,6 +155,13 @@ export function wantsSkill(m) {
   if (id === 'dash') return dist(p.node, p.goal) <= 9;
   if (id === 'again') return p.money >= 500 && m.clock > m.end - 6 * 60;
   if (id === 'call') return stationsOf(m, p).length >= 3;
+  if (id === 'live') return HOT_LIST.some((n) => n !== p.node && dist(p.node, n) <= 5);
+  if (id === 'boost') return dist(p.node, p.goal) >= 6 && dist(p.node, p.goal) <= 12;
+  if (id === 'aid') return p.money < 120 && stationsOf(m, p).length >= 3;
+  if (id === 'deal') {
+    const near = Object.entries(m.owned).filter(([n, o]) => o !== p.id && m.levels[n] < 3 && dist(p.node, n) <= 5).length;
+    return near >= 3 && p.money >= 400;
+  }
   if (id === 'shield') {
     const rivals = Object.entries(m.owned).filter(([n, o]) => o !== p.id && dist(p.node, n) <= 7).length;
     return rivals >= 4;

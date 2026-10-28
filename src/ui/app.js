@@ -12,7 +12,8 @@ import {
 } from '../core/match.js';
 import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
-import { HEROES as HERO_DATA, heroById, SKILL_USES } from '../core/heroes.js';
+import { HEROES as HERO_DATA, heroById, SKILL_USES, STARTERS } from '../core/heroes.js';
+import { createRng } from '../core/rng.js';
 import { LINES, STATION_LINES, dist, lineOfEdge } from '../core/boards/seoul.js';
 import { BOARDS } from '../core/boards/index.js';
 import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll, HOTSPOTS } from '../core/estate.js';
@@ -64,7 +65,7 @@ function splash() {
         <div class="logo3"><b>${word(GAME_TITLE.main, 0.9)}</b><i>${GAME_TITLE.hanja}</i></div>
         <div class="sp-sub">${GAME_TITLE.sub}</div>
       </div>
-      <div class="sp-cast">${HERO_DATA.map((h, i) => `<span style="animation-delay:${1.3 + i * 0.12}s">${character(h.id, 64, 'cheer')}</span>`).join('')}</div>
+      <div class="sp-cast">${HERO_DATA.filter((h) => STARTERS.includes(h.id)).map((h, i) => `<span style="animation-delay:${1.3 + i * 0.12}s">${character(h.id, 64, 'cheer')}</span>`).join('')}</div>
       <div class="sp-tap">화면을 눌러 시작</div>
     </div>`;
   let gone = false;
@@ -81,7 +82,11 @@ function splash() {
 
 // ── 메인 홈 ─────────────────────────────────────────────────
 
-const myIndex = () => ids.indexOf(Prefs.getLeader(ids));
+const isOpen = (id) => Records.unlocked().includes(id);
+const myIndex = () => ids.indexOf(Prefs.getLeader(Records.unlocked()));
+const ticketPill = (n = Records.tickets()) => `<span class="tickets" title="승차권 — 캐릭터를 여는 데 쓴다"><i>승차권</i><b>${n.toLocaleString()}</b>장</span>`;
+/** 잠긴 캐릭터는 그림자로 */
+const charOrShadow = (id, size, start) => `<span class="${isOpen(id) ? '' : 'shadow'}">${character(id, size, start)}</span>`;
 
 function title(fromSplash = false) {
   G.m = null;
@@ -95,7 +100,8 @@ function title(fromSplash = false) {
     <div class="home ${fromSplash ? 'enter' : ''}">
       <div class="home-top">
         <div class="logo3 small"><b>${GAME_TITLE.main}</b><i>${GAME_TITLE.hanja}</i></div>
-        <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button>
+        <div class="home-top-r"><button class="ticket-btn" id="tix">${ticketPill()}</button>
+        <button class="btn small white icon-btn" id="snd" aria-label="소리">${Sound.isOn() ? '♪' : '✕'}</button></div>
       </div>
       <div class="home-stage">
         <div class="home-lines" aria-hidden="true">${[1, 2, 3, 4, 5].map((id) => `<i style="--lc:${LINES[id].color}"></i>`).join('')}</div>
@@ -107,7 +113,7 @@ function title(fromSplash = false) {
       <div class="rival-row">
         <span>상대</span>
         <button class="btn small white" id="rvMinus" aria-label="상대 줄이기">−</button>
-        <div class="rv-faces">${HERO_DATA.filter((x) => x.id !== h.id).slice(0, rivals).map((x) => character(x.id, 34)).join('')}</div>
+        <div class="rv-faces">${Array.from({ length: rivals }, () => '<i class="rv-q">?</i>').join('')}<em>매 판 무작위</em></div>
         <b>${rivals}명</b>
         <button class="btn small white" id="rvPlus" aria-label="상대 늘리기">+</button>
       </div>
@@ -126,6 +132,7 @@ function title(fromSplash = false) {
   FX.useLayer($('#fx'));
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); $('#snd').textContent = Sound.isOn() ? '♪' : '✕'; };
   $('#pickBtn').onclick = () => { Sound.unlock(); Sound.click(); pickHero(li); };
+  $('#tix').onclick = () => { Sound.unlock(); Sound.click(); const lock = HERO_DATA.findIndex((x) => !isOpen(x.id)); pickHero(lock < 0 ? li : lock); };
   $('#homeHero').onclick = () => { Sound.unlock(); Sound.click(); act($('#homeHero'), 'cheer', 1200); };
   $('#rvMinus').onclick = () => { Sound.click(); Prefs.setRivals(Math.max(1, rivals - 1)); title(); };
   $('#rvPlus').onclick = () => { Sound.click(); Prefs.setRivals(Math.min(3, rivals + 1)); title(); };
@@ -148,14 +155,17 @@ function pickHero(i = myIndex()) {
   app.className = 'app pick-app';
   const h = HERO_DATA[i];
   const mine = i === myIndex();
-  const thumbs = HERO_DATA.map((x, j) => `<button class="pk-thumb ${j === i ? 'on' : ''}" data-i="${j}">${character(x.id, 50)}${j === myIndex() ? '<i class="crown">내 캐릭터</i>' : ''}<span>${x.name}</span></button>`).join('');
+  const open = isOpen(h.id), have = Records.tickets();
+  const thumbs = HERO_DATA.map((x, j) => `<button class="pk-thumb ${j === i ? 'on' : ''} ${isOpen(x.id) ? '' : 'locked'}" data-i="${j}">${charOrShadow(x.id, 40)}${j === myIndex() ? '<i class="crown">내 캐릭터</i>' : ''}${isOpen(x.id) ? '' : `<i class="lock">${x.price}</i>`}<span class="pk-tn">${x.name}</span></button>`).join('');
+  const choose = open ? `<button class="btn ${mine ? 'white' : 'yellow'}" id="pkChoose" ${mine ? 'disabled' : ''}>${mine ? '지금 내 캐릭터' : '이 캐릭터로'}</button>`
+    : `<button class="btn ${have >= h.price ? 'yellow' : 'white'}" id="pkUnlock" ${have >= h.price ? '' : 'disabled'}><b>${h.price}장으로 열기</b><small>${have >= h.price ? `승차권 ${have}장 있음` : `${h.price - have}장 더 모으면 열린다`}</small></button>`;
   app.innerHTML = `
     <div class="pick">
-      <div class="dex-head"><button class="btn small white" id="pkBack">← 처음으로</button><b>캐릭터 선택</b></div>
+      <div class="dex-head"><button class="btn small white" id="pkBack">← 처음으로</button><b>캐릭터 선택</b>${ticketPill(have)}</div>
       <div class="pk-stage" style="--hc:${h.color}">
         <div class="pk-spot"></div>
         <button class="pk-arrow left" id="pkPrev" aria-label="이전">◀</button>
-        <div class="pk-hero" id="pkHero">${character(h.id, 230, 'idle')}</div>
+        <div class="pk-hero ${open ? '' : 'locked'}" id="pkHero">${character(h.id, 230, 'idle')}${open ? '' : '<i class="pk-lock">잠김</i>'}</div>
         <button class="pk-arrow right" id="pkNext" aria-label="다음">▶</button>
         <div class="pk-name"><b>${h.job} ${h.name}</b><span>${i + 1} / ${HERO_DATA.length}</span></div>
       </div>
@@ -167,7 +177,7 @@ function pickHero(i = myIndex()) {
       <div class="pk-thumbs">${thumbs}</div>
       <div class="pk-btns">
         <button class="btn white" id="pkDex">자세히 보기</button>
-        <button class="btn ${mine ? 'white' : 'yellow'}" id="pkChoose" ${mine ? 'disabled' : ''}>${mine ? '지금 내 캐릭터' : '이 캐릭터로'}</button>
+        ${choose}
       </div>
     </div>
     <div class="fx-layer" id="fx"></div>`;
@@ -183,16 +193,36 @@ function pickHero(i = myIndex()) {
   app.querySelectorAll('.pk-thumb').forEach((b) => { b.onclick = () => { const j = Number(b.dataset.i); if (j !== i) flip(j, j > i ? 1 : -1); }; });
   $('#pkBack').onclick = () => { Sound.click(); title(); };
   $('#pkDex').onclick = () => { Sound.click(); dex(i); };
-  $('#pkHero').onclick = () => { Sound.click(); act($('#pkHero'), 'dance', 1200); };
-  if (!mine) $('#pkChoose').onclick = async () => {
-    Prefs.setLeader(h.id);
-    Sound.unlock(); Sound.big();
+  $('#pkHero').onclick = () => { Sound.click(); if (open) act($('#pkHero'), 'dance', 1200); };
+  const burst = (word) => {
     const hero = $('#pkHero');
-    act(hero, 'cheer', 1400);
     const r = hero.getBoundingClientRect(), a = app.getBoundingClientRect(), k = r.width / hero.offsetWidth;
     const x = (r.left - a.left) / k + hero.offsetWidth / 2, y = (r.top - a.top) / k + 40;
     FX.confetti(x, y, 36, 1.3);
-    FX.pow(x, y - 10, '결정!', h.color, '#22201D', -6);
+    FX.pow(x, y - 10, word, h.color, '#22201D', -6);
+  };
+  if (!open) {
+    const b = $('#pkUnlock');
+    if (have >= h.price) b.onclick = async () => {
+      if (!Records.unlock(h.id, h.price)) { Sound.deny(); return; }
+      Sound.unlock(); Sound.big();
+      b.disabled = true;
+      const hero = $('#pkHero');
+      hero.classList.remove('locked');
+      hero.querySelector('.pk-lock')?.remove();
+      flash(app);
+      burst('새 캐릭터!');
+      act(hero, 'cheer', 1400);
+      await sleep(1200);
+      pickHero(i);
+    };
+    return;
+  }
+  if (!mine) $('#pkChoose').onclick = async () => {
+    Prefs.setLeader(h.id);
+    Sound.unlock(); Sound.big();
+    act($('#pkHero'), 'cheer', 1400);
+    burst('결정!');
     $('#pkChoose').disabled = true;
     await sleep(1000);
     title();
@@ -203,18 +233,26 @@ const AI_NOTE = {
   driver: '남겨 둘 돈을 적게 잡고 보이는 역은 거의 다 산다. 목적지를 향해 곧장 달린다.',
   staff: '돈을 넉넉히 남겨 두고 신중하게 산다. 이어지는 역이면 좀 더 과감해진다.',
   worker: '환승역을 좋아해서 큰 역부터 모은다.',
-  student: '같은 호선을 이어서 사고, 돈이 생기면 증축에 쏟는다.'
+  student: '같은 호선을 이어서 사고, 돈이 생기면 증축에 쏟는다.',
+  youtuber: '명소역을 찾아다니고, 명소역이 보이면 생방송을 켠다.',
+  rider: '목적지까지 멀면 콜 몰림으로 단숨에 달려간다. 남의 노선도 겁내지 않는다.',
+  nurse: '한 번은 버틸 수 있으니 돈을 적게 남기고 과감하게 산다.',
+  broker: '남의 역에 서는 걸 반긴다 — 돈이 되면 바로 인수한다.'
 };
 
 // ── 도감 ───────────────────────────────────────────────────
 
 const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
-const DEX_LINE = { driver: '새벽 첫차를 모는 20년 차 기관사', staff: '노선도를 통째로 외운 역무원', worker: '환승 3번은 기본인 출근길 직장인', student: '정기권 한 장으로 서울을 누비는 새내기' };
+const DEX_LINE = {
+  driver: '새벽 첫차를 모는 20년 차 기관사', staff: '노선도를 통째로 외운 역무원', worker: '환승 3번은 기본인 출근길 직장인', student: '정기권 한 장으로 서울을 누비는 새내기',
+  youtuber: '구독자 10만, 서울 명소 정복이 목표', rider: '골목길은 내비보다 빠삭한 배달 라이더', nurse: '밤샘 근무에도 지치지 않는 간호사', broker: '역세권이라면 냄새부터 맡는 부동산 중개인'
+};
 
 function dex(which = 0) {
   app.className = 'app dex-app';
   const h = HERO_DATA[which];
-  const tabs = HERO_DATA.map((x, i) => `<button class="dex-tab ${which === i ? 'on' : ''}" data-tab="${i}">${character(x.id, 40)}<span>${x.name}</span></button>`).join('');
+  const tabs = HERO_DATA.map((x, i) => `<button class="dex-tab ${which === i ? 'on' : ''}" data-tab="${i}">${charOrShadow(x.id, 34)}<span>${x.name}</span></button>`).join('');
+  const lockNote = isOpen(h.id) ? '' : `<div class="dex-card lockcard"><span class="kind">잠김</span><p>승차권 <b>${h.price}장</b>으로 연다(가진 승차권 ${Records.tickets()}장). 잠겨 있어도 AI 상대로는 나온다.</p></div>`;
   app.innerHTML = `
     <div class="dex">
       <div class="dex-head"><button class="btn small white" id="dexBack">← 처음으로</button><b>캐릭터 도감</b></div>
@@ -223,7 +261,7 @@ function dex(which = 0) {
         <div class="dex-stage"><div class="dex-floor"></div><div class="dex-char">${character(h.id, 210)}</div>
           <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div></div>
         <div class="dex-info">
-          <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>
+          <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>${lockNote}
           <div class="dex-card"><span class="kind">능력 · 늘 켜져 있다</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
           <div class="dex-card skill"><span class="kind">스킬 · 한 판에 ${SKILL_USES}번</span><h3>${h.active.name}</h3><p>${h.active.desc}</p>
             <div class="dex-rule">내 차례에 · 굴리기 전에</div><button class="btn small yellow" id="dexSkill">스킬 연출 보기</button></div>
@@ -273,7 +311,7 @@ function ranking() {
         <div class="bar rank-bar"><i style="width:${pct}%"></i></div>
         <p>${next ? `${next.name}까지 ${(next.min - m.total).toLocaleString()}점` : '가장 높은 칭호에 올랐다'}</p>
       </div>
-      <div class="rank-rule">1등 +30(상대 한 명마다 +5, 파산으로 이기면 +10) · 2등 +15 · 3등 +5</div>
+      <div class="rank-rule">판마다 +10 · 가진 역마다 +1 · 1등 +30(상대 한 명마다 +5, 파산·독점으로 이기면 +10) · 2등 +15 · 3등 +5 — 받은 승점만큼 승차권도 쌓인다(가진 승차권 ${Records.tickets()}장)</div>
       <div class="rank-list">${rows}</div>
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
@@ -305,13 +343,14 @@ function guide(then = null) {
 
 function startGame(daily) {
   Sound.unlock(); Sound.click();
-  const me = Prefs.getLeader(ids);
-  const rivals = ids.filter((x) => x !== me).slice(0, Prefs.getRivals());
+  const me = Prefs.getLeader(Records.unlocked());
   const q = new URLSearchParams(location.search);
   const fixed = parseInt(q.get('seed'), 10);
   const today = new Date();
   const seed = daily ? today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
+  // 상대는 여덟 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
+  const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
   G.daily = daily;
   G.m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
   enterGame();
@@ -1032,7 +1071,7 @@ const HANDLERS = {
   },
   async sell(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} — ${e.node}역을 팔았다 (+${e.amount})`);
+    toast(`${p.human ? '나' : nameOf(p)} — ${e.node}역을 ${e.aid ? '응급 처치로 돈으로 바꿨다' : '팔았다'} (+${e.amount})`);
     drawBoard();
     await sleep(350);
   },
@@ -1100,6 +1139,11 @@ const HANDLERS = {
   },
   async extend(e) { toast(`막차가 ${hhmm(e.end)}로 늦춰졌다`); drawClock(); await sleep(400); },
   async skill(e) { await skillCutin(e); },
+  async rescue(e) {
+    const p = playerById(M(), e.player);
+    await drawCard({ tone: 'good', deck: '응급 대기', title: `${p.human ? '나' : nameOf(p)} — 파산 직전 구조!`, short: `빚 ${e.debt}을 털고 ${e.amount}으로 다시 달린다(한 판에 한 번)`, art: character(p.hero, 96, 'cheer'), quick: !p.human });
+    drawHud();
+  },
   async hotspot(e) {
     const p = playerById(M(), e.player);
     await drawCard({ tone: 'hot', deck: '명소역', title: e.tag, short: e.desc, art: hotArt(e.node, 110), place: e.node, quick: !p.human });
@@ -1176,8 +1220,9 @@ async function results() {
   const win = me.place === 1;
   await sleep(300);
   if (win) { Sound.win(); FX.confetti(app.clientWidth / 2, 300, 70, 1.8); } else Sound.lose();
-  const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason !== 'lastTrain' });
+  const pts = matchPoints({ place: me.place, rivals: m.players.length - 1, knockout: m.reason !== 'lastTrain', stations: me.out ? 0 : stationsOf(m, me).length });
   const rec = Records.record({ points: pts, place: me.place, size: m.players.length, hero: me.hero, daily: G.daily, seed: m.seed });
+  const canOpen = HERO_DATA.find((x) => !isOpen(x.id) && rec.tickets >= x.price);
   const rows = m.ranking.map((r) => {
     const p = playerById(m, r.id);
     return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
@@ -1188,7 +1233,8 @@ async function results() {
     <p>${m.reason === 'bankrupt' ? '상대가 모두 파산했다' : m.reason === 'monopoly' ? `${winnerName(m)} ${m.mono?.kind === 'hot' ? `명소역 ${HOT_WIN}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}으로 끝났다` : `${hhmm(m.end)} 막차 — 자산 순위로 끝났다`}</p>
     <div class="res-list">${rows}</div>
     <div class="points-final"><div class="pf-main"><span>이번 판 승점</span><b>+${pts}</b><em class="${rec.best ? 'best' : ''}">${rec.rank ? (rec.best ? '내 최고 기록!' : `내 기록 ${rec.rank}위`) : '10위 밖'}</em></div>
-      <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호가 올랐다!</i>' : ''}</div></div>
+      <div class="pf-sub">누적 ${rec.total.toLocaleString()}점 · <b>${rec.title.name}</b>${rec.promoted ? ' <i>칭호가 올랐다!</i>' : ''}</div>
+      <div class="pf-tix">${ticketPill(rec.tickets)} <span>+${pts}장</span>${canOpen ? ` <i>${canOpen.job} ${canOpen.name}을(를) 열 수 있다!</i>` : ''}</div></div>
     <div class="row"><button class="btn white" id="home">처음으로</button><button class="btn" id="again">다시 대결</button></div>`);
   s.querySelector('#home').onclick = () => { closeSheet(); title(); };
   s.querySelector('#again').onclick = () => { closeSheet(); startGame(G.daily); };

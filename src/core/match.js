@@ -61,7 +61,8 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false }) {
     players: heroes.map((hero, i) => ({
       id: 'p' + i, hero, human: i < humans, money: START_MONEY,
       node: starts[i], prev: null, goal: null, out: false, place: null,
-      skills: SKILL_USES, dash: 0, fly: false, again: false, rest: 0, coupon: false, goals: 0
+      skills: SKILL_USES, dash: 0, fly: false, again: false, rest: 0, coupon: false, goals: 0,
+      live: false, deal: false, rescued: false
     })),
     owned: {},          // 역 → 주인 id
     levels: {},         // 역 → 단계(1~3)
@@ -112,7 +113,12 @@ const delays = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].stop).
 export const buyable = (n) => !isChance(n);
 export const priceFor = (m, n) => Math.round(stationPrice(n) * (m.clock < m.sale ? 0.5 : 1));
 export const upgradeFor = (m, n, p) => Math.round(upgradeCost(n) * (1 - (heroById(p.hero).buildDiscount || 0)) * (m.clock < m.sale ? 0.5 : 1));
-export const takeoverFor = (m, n) => takeoverPrice(n, m.levels[n] || 1);
+/** 인수 값: 들인 값 × 1.5 — 중개인은 30% 싸게, 급매 협상 중이면 들인 값 그대로 */
+export const takeoverFor = (m, n, p = current(m)) => {
+  const lv = m.levels[n] || 1;
+  const base = p.deal ? invested(n, lv) : takeoverPrice(n, lv);
+  return Math.round(base * (1 - (heroById(p.hero).takeoverDiscount || 0)));
+};
 
 /** payer 가 이 역에 서면 낼 통행료(면제권은 따로) */
 export function tollFor(m, n, payer) {
@@ -226,6 +232,9 @@ function hotspotPower(m, p) {
   const n = p.node, h = HOTSPOTS[n];
   const events = [{ type: 'hotspot', player: p.id, node: n, tag: h.tag, desc: h.desc }];
   const cash = (amount) => { p.money += amount; events.push({ type: 'cash', player: p.id, node: n, amount, why: 'hot' }); };
+  const hero = heroById(p.hero);
+  if (hero.hotBonus) cash(hero.hotBonus);          // 여행 유튜버: 명소 브이로그
+  if (p.live) { p.live = false; cash(120); }       // 생방송 후원
   if (n === '서울역') {
     const options = warpOptions(m, p);
     if (options.length) m.choice = { kind: 'warp', node: n, options };
@@ -291,7 +300,7 @@ const monoWin = (s) => s.hot >= HOT_WIN || s.line >= LINE_WIN;
 export function passFares(m, p, path) {
   const out = new Map();
   for (const n of path.slice(0, -1)) {
-    const amount = Math.round(tollFor(m, n, p) * PASS_RATE);
+    const amount = Math.round(tollFor(m, n, p) * PASS_RATE * (1 - (heroById(p.hero).passDiscount || 0)));
     if (!amount) continue;
     const o = m.owned[n];
     const had = out.get(o) || { amount: 0, nodes: [] };
@@ -357,7 +366,7 @@ function offerFor(m, p) {
     return p.money >= price ? { kind: 'upgrade', node: n, price, level: nextLevel(n, lv) } : null;
   }
   if (m.levels[n] >= MAX_LEVEL) return null; // 랜드마크는 인수할 수 없다
-  const price = takeoverFor(m, n);
+  const price = takeoverFor(m, n, p);
   return p.money >= price ? { kind: 'takeover', node: n, price, from: owner } : null;
 }
 
@@ -384,6 +393,8 @@ export function decide(m, yes) {
     }
     const chain = links(m.owned, p.id).at[o.node]?.len || 1;
     events.push({ type: o.kind, player: p.id, node: o.node, price: o.price, level: m.levels[o.node], from: o.from, chain, linked: chain > before && chain > 1 });
+    // 부동산 중개인: 남의 거래마다 수수료
+    if (o.kind !== 'upgrade') for (const q of alive(m)) { const fee = q !== p && heroById(q.hero).commission; if (fee) { q.money += fee; events.push({ type: 'cash', player: q.id, amount: fee, why: 'commission' }); } }
     if (o.kind !== 'upgrade') {
       const mono = monopolyOf(m, p);
       if (monoWin(mono)) {
@@ -422,7 +433,15 @@ function pay(m, p, amount, to, info = {}) {
   const recv = to ? playerById(m, to) : null;
   if (recv) recv.money += paid;
   events.push({ type: 'pay', player: p.id, to: to || null, amount: paid, ...info });
-  if (paid < amount) events.push(...bankrupt(m, p));
+  if (paid < amount) {
+    const rescue = heroById(p.hero).rescue;
+    if (rescue && !p.rescued) {
+      // 간호사: 한 번은 남은 빚을 털고 버틴다
+      p.rescued = true;
+      p.money = rescue;
+      events.push({ type: 'rescue', player: p.id, amount: rescue, debt: amount - paid });
+    } else events.push(...bankrupt(m, p));
+  }
   return events;
 }
 
@@ -524,6 +543,7 @@ function endTurn(m) {
     return events;
   }
   p.again = false;
+  p.deal = false; // 급매 협상은 그 차례에만
   const before = m.turn;
   do { m.turn = (m.turn + 1) % m.players.length; } while (m.players[m.turn].out);
   if (m.turn <= before) {
@@ -532,6 +552,8 @@ function endTurn(m) {
     m.round++;
     m.clock += CLOCK.round;
     events.push({ type: 'clock', clock: m.clock, round: m.round });
+    // 간호사: 교대 근무 수당
+    for (const q of alive(m)) { const pay = heroById(q.hero).shiftPay; if (pay) { q.money += pay; events.push({ type: 'cash', player: q.id, amount: pay, why: 'shift' }); } }
     if (timeOf(m) !== was) events.push({ type: 'timeShift', time: timeOf(m), clock: m.clock });
     if (m.clock >= m.end) return events.concat(finish(m, 'lastTrain'));
     events.push(...tickIncidents(m));
@@ -561,6 +583,10 @@ export function skillBlocked(m, p = current(m)) {
   if (p.skills <= 0) return '이번 판에 다 썼다';
   if (h.active.id === 'call' && !stationsOf(m, p).length) return '인파를 부를 내 역이 없다';
   if (h.active.id === 'shield' && p.coupon) return '이미 면제권이 있다';
+  if (h.active.id === 'live' && p.live) return '이미 생방송 중이다';
+  if (h.active.id === 'boost' && p.fly) return '이미 다음 굴림이 2배다';
+  if (h.active.id === 'aid' && !stationsOf(m, p).length) return '돈으로 바꿀 내 역이 없다';
+  if (h.active.id === 'deal' && p.deal) return '이미 급매 협상 중이다';
   return null;
 }
 
@@ -577,6 +603,15 @@ export function useSkill(m) {
   else if (h.active.id === 'call') {
     const mine = m.rng.shuffle(stationsOf(m, p).filter((n) => !incidentAt(m, n))).slice(0, 2);
     for (const n of mine) events.push(...spawnIncident(m, 'crowd', n));
+  } else if (h.active.id === 'live') p.live = true;
+  else if (h.active.id === 'boost') p.fly = true;
+  else if (h.active.id === 'deal') p.deal = true;
+  else if (h.active.id === 'aid') {
+    const n = stationsOf(m, p).sort((a, b) => invested(a, m.levels[a]) - invested(b, m.levels[b]))[0];
+    const v = invested(n, m.levels[n]);
+    p.money += v;
+    delete m.owned[n]; delete m.levels[n];
+    events.push({ type: 'sell', player: p.id, node: n, amount: v, aid: true });
   }
   return events;
 }

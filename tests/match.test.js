@@ -2,8 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createMatch, roll, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
-  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, HOT_WIN, warpOptions
+  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, HOT_WIN, warpOptions, takeoverFor
 } from '../src/core/match.js';
+import { matchPoints } from '../src/core/ranking.js';
 import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
 import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul.js';
 import { choosePath, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../src/core/ai.js';
@@ -215,4 +216,43 @@ test('독점: 명소역 하나 앞이면 경고, 다 가지면 그 자리에서 
   assert.equal(m.phase, 'over');
   assert.equal(m.reason, 'monopoly');
   assert.equal(m.ranking[0].id, p.id);
+});
+
+test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, 중개인 수수료·급매 협상', () => {
+  // 라이더: 같은 길에서 통과 요금이 반
+  const a = createMatch({ seed: 7, heroes: ['rider', 'driver'], humans: 1 });
+  const b = createMatch({ seed: 7, heroes: ['driver', 'worker'], humans: 1 });
+  for (const m of [a, b]) { m.owned['숙대입구'] = 'p1'; m.levels['숙대입구'] = 2; }
+  const fa = [...passFares(a, a.players[0], ['숙대입구', '삼각지']).values()][0].amount;
+  const fb = [...passFares(b, b.players[0], ['숙대입구', '삼각지']).values()][0].amount;
+  assert.ok(fb > 0 && Math.abs(fa - fb / 2) <= 1, `${fa} vs ${fb}`);
+
+  // 간호사: 통행료를 못 내면 한 번은 300으로 버틴다
+  const n = createMatch({ seed: 7, heroes: ['nurse', 'driver'], humans: 1 });
+  const nu = n.players[0];
+  n.owned['숙대입구'] = 'p1'; n.levels['숙대입구'] = 3;
+  nu.money = 5;
+  at(n, '서울역', '시청', 1);
+  const ev = move(n, ['숙대입구']);
+  assert.ok(ev.some((e) => e.type === 'rescue'));
+  assert.equal(nu.out, false);
+  assert.equal(nu.money, 300);
+
+  // 중개인: 남이 역을 사면 +10, 급매 협상이면 들인 값 그대로(× 0.7) 인수
+  const k = createMatch({ seed: 7, heroes: ['driver', 'broker'], humans: 1 });
+  const before = k.players[1].money;
+  at(k, '서울역', '시청', 1);
+  move(k, ['숙대입구']);
+  decide(k, true);
+  assert.equal(k.players[1].money, before + 10);
+  k.turn = 1; k.phase = 'roll';
+  const br = current(k);
+  br.deal = true;
+  assert.equal(takeoverFor(k, '숙대입구', br), Math.round(stationPrice('숙대입구') * 0.7));
+});
+
+test('승점: 판마다 기본 +10, 가진 역 +1(15까지), 1등 보너스', () => {
+  assert.equal(matchPoints({ place: 4, rivals: 3, knockout: false, stations: 0 }), 10);
+  assert.equal(matchPoints({ place: 3, rivals: 3, knockout: false, stations: 40 }), 10 + 15 + 5);
+  assert.equal(matchPoints({ place: 1, rivals: 3, knockout: true, stations: 8 }), 10 + 8 + 30 + 15 + 10);
 });

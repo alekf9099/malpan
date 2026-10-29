@@ -89,5 +89,15 @@ export const Sound = {
   buy() { knock(2400, { vol: 0.22, dur: 0.05, q: 14 }); [0, 2, 4, 7, 9].forEach((n, i) => tone(PENTA[n], 0.12, { type: 'square', vol: 0.05, delay: 0.06 + i * 0.06 })); tone(PENTA[9] * 2, 0.4, { type: 'triangle', vol: 0.07, delay: 0.38 }); },
   /** 통행료가 들어온다: 짤랑짤랑 */
   toll(big = false) { const n = big ? 6 : 3; for (let i = 0; i < n; i++) { tone(1318 + i * 120, 0.06, { type: 'square', vol: 0.045, delay: i * 0.07 }); tone(1760 + i * 120, 0.1, { type: 'square', vol: 0.04, delay: i * 0.07 + 0.04 }); } },
+  // 스킬 모션
+  horn() { tone(PENTA[3], 0.32, { type: 'square', vol: 0.05 }); tone(PENTA[5], 0.32, { type: 'square', vol: 0.04 }); tone(PENTA[3], 0.4, { type: 'square', vol: 0.05, delay: 0.36 }); tone(PENTA[5], 0.4, { type: 'square', vol: 0.04, delay: 0.36 }); },
+  rail(i = 0) { knock(320 + (i % 2) * 60, { vol: 0.28, dur: 0.05, q: 4 }); knock(320 + (i % 2) * 60, { vol: 0.2, dur: 0.05, q: 4, delay: 0.09 }); },
+  brake() { knock(3200, { vol: 0.12, dur: 0.35, q: 8 }); tone(1500, 0.3, { type: 'sine', vol: 0.03, to: 900 }); },
+  clank() { knock(1400, { vol: 0.4, dur: 0.08, q: 9 }); knock(700, { vol: 0.3, dur: 0.12, q: 5, delay: 0.05 }); },
+  gavel() { knock(260, { vol: 0.6, dur: 0.12, q: 2 }); knock(260, { vol: 0.45, dur: 0.1, q: 2, delay: 0.18 }); },
+  zap() { tone(1800, 0.18, { type: 'sawtooth', vol: 0.05, to: 120 }); knock(5000, { vol: 0.2, dur: 0.2, q: 1 }); },
+  clink() { tone(2093, 0.25, { type: 'sine', vol: 0.08 }); tone(2637, 0.3, { type: 'sine', vol: 0.06, delay: 0.03 }); },
+  drip(i = 0) { tone(PENTA[7 - (i % 3)], 0.1, { type: 'sine', vol: 0.08, to: PENTA[9] }); },
+  rise() { tone(PENTA[0], 0.6, { type: 'triangle', vol: 0.08, to: PENTA[9] * 2 }); [0, 2, 4, 7].forEach((n, i) => tone(PENTA[n + 2], 0.12, { vol: 0.06, delay: 0.35 + i * 0.06 })); },
   boss() { tone(110, 0.6, { type: 'sawtooth', vol: 0.08, to: 82 }); knock(120, { vol: 0.5, dur: 0.4, q: 1 }); }
 };

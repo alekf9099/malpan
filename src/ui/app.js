@@ -15,8 +15,9 @@ import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOpt
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, STARTERS } from '../core/heroes.js';
 import { skillArt } from './skill-art.js';
+import * as SFX from './skill-fx.js';
 import { createRng } from '../core/rng.js';
-import { LINES, STATION_LINES, dist, lineOfEdge } from '../core/boards/seoul.js';
+import { LINES, STATION_LINES, ALL_EDGES, dist, lineOfEdge } from '../core/boards/seoul.js';
 import { BOARDS } from '../core/boards/index.js';
 import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll, HOTSPOTS } from '../core/estate.js';
 import { INCIDENTS } from '../core/incidents.js';
@@ -465,6 +466,7 @@ function dex(which = 0) {
     await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: h.active.desc });
     act(big, 'cheer', 1200);
     btn.disabled = false;
+    skillDemo(h);
   };
 }
 
@@ -654,6 +656,7 @@ async function startGame(daily) {
   G.m = m;
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
   G.hudMoney = {};
+  G.combo = null;
   enterGame();
 }
 
@@ -1464,6 +1467,238 @@ async function skillCutin(e) {
   c.remove();
 }
 
+// ── 스킬 실전 미리 보기(도감) ──────────────────────────────
+// 작은 노선 하나 위에서 그 스킬이 실제 판에서 어떻게 도는지 단계별로 보여 준다. 모션은 게임과 같은 skill-fx.
+
+const DEMO_ST = [['시청', 34, 132], ['을지로', 90, 106], ['동대문', 148, 124], ['왕십리', 204, 98], ['성수', 258, 118], ['잠실', 302, 88]];
+const DEMO_LINE = LINES[2]?.color || '#3CB44A';
+const DEMO_S = 40;
+
+/** 스킬마다: 처음 판 모습 + 단계(설명 · 연출) */
+const DEMO = {
+  direct: { me: 0, steps: [
+    ['같은 호선 역 하나 고르기', (d) => d.pick(5)],
+    ['열차 타고 바로 이동', (d) => d.ride(0, 5)],
+    ['도착역에서 평소처럼 구매·통행료', async (d) => { d.paint(5, d.me.color); await SFX.word(d.layer, d.top(5), '구매!', { color: d.me.color, s: DEMO_S }); }]
+  ] },
+  gate: { me: 4, own: { 3: 'me' }, rivals: [0], steps: [
+    ['통제할 내 역 고르기', (d) => d.pick(3)],
+    ['차단기 설치 · 3바퀴 유지', async (d) => { await SFX.gate(d.layer, d.at(3), { s: DEMO_S, z: 300, hold: 300 }); d.mark(3, 'gate'); }],
+    ['지나가던 상대는 그 역에서 강제 정차', async (d) => { await d.walk(d.r[0], [1, 2, 3]); await SFX.word(d.layer, d.top(3), '정차!', { color: '#E0533D', s: DEMO_S }); }],
+    ['통행료는 내 차지', (d) => SFX.coins(d.layer, d.at(3), d.at(4), { s: DEMO_S })]
+  ] },
+  gather: { me: 1, own: { 4: 'me' }, level: { 4: 2 }, rivals: [0, 2], steps: [
+    ['회식 장소(내 역) 고르기', (d) => d.pick(4)],
+    ['건배! 상대 전원 소집', async (d) => { await SFX.cheers(d.layer, d.at(4), { s: DEMO_S, z: 300 }); await Promise.all(d.r.map((r, i) => d.fly(r, 4, i * 160))); }],
+    ['모두 회식비(통행료 25%, 한 명 80까지)', (d) => Promise.all(d.r.map((r, i) => sleep(i * 200).then(() => SFX.coins(d.layer, d.at(4), d.at(1), { s: DEMO_S, n: 3 }))))]
+  ] },
+  cram: { me: 0, own: { 1: 'me', 3: 'me', 4: 'me' }, level: { 1: 1, 3: 2, 4: 1 }, steps: [
+    ['비싼 내 역 2곳 자동 선택', async (d) => { SFX.ripple(d.layer, d.at(3), { color: '#F7C94A', s: DEMO_S }); await SFX.ripple(d.layer, d.at(4), { color: '#F7C94A', s: DEMO_S }); }],
+    ['번개 증축 · 비용 0', async (d) => { for (const i of [3, 4]) { await SFX.bolt(d.layer, d.at(i), { s: DEMO_S, z: 300 }); d.level(i, 1); } }],
+    ['통행료가 바로 오른다', (d) => SFX.word(d.layer, d.top(3), '무료 증축!', { color: '#8E5BC8', s: DEMO_S })]
+  ] },
+  hype: { me: 0, own: { 2: 'me' }, rivals: [3, 5], goals: [4, 1], steps: [
+    ['떡상시킬 내 역 고르기', (d) => d.pick(2)],
+    ['빛기둥! 통행료 2배', async (d) => { await SFX.hype(d.layer, d.at(2), { s: DEMO_S, z: 300, hold: 200 }); d.mark(2, 'hype'); }],
+    ['상대들 목적지가 모두 이 역으로', (d) => d.moveGoals(2)]
+  ] },
+  combo: { me: 0, own: { 2: 'r0', 3: 'r0' }, rivals: [5], steps: [
+    ['상자 둘 · 동시 배달 준비', async (d) => { d.boxes = await SFX.boxes(d.layer, d.at(0), { s: DEMO_S, z: 300 }); }],
+    ['주사위 하나, 또는 둘의 합', (d) => d.dice()],
+    ['통과 요금 없이 질주', async (d) => { await d.walk(d.me, [1, 2, 3, 4, 5], d.boxes); await SFX.word(d.layer, d.top(3), '통과 요금 0', { color: '#4C9A3A', s: DEMO_S }); }]
+  ] },
+  transfuse: { me: 1, rivals: [4], money: { me: 40, r0: 900 }, steps: [
+    ['자산 1등 자동 지목', (d) => SFX.ripple(d.layer, d.at(4), { color: '#E0533D', s: DEMO_S })],
+    ['1등에게서 60 수혈', async (d) => { await SFX.transfuse(d.layer, d.at(4), d.at(1), { s: DEMO_S, z: 300 }); d.cash('r0', 840); d.cash('me', 100); }],
+    ['내가 꼴찌면 120', (d) => SFX.word(d.layer, d.top(1), '꼴찌면 ×2', { color: '#E0533D', s: DEMO_S })]
+  ] },
+  buyout: { me: 1, own: { 3: 'r0' }, level: { 3: 2 }, rivals: [5], steps: [
+    ['사들일 남의 역 고르기', (d) => d.pick(3)],
+    ['망치 쾅! 30% 싸게 낙찰', async (d) => { await SFX.gavel(d.layer, d.at(3), { s: DEMO_S, z: 300 }); d.paint(3, d.me.color); }],
+    ['그 자리에서 내 역 · 독점에도 계산', (d) => SFX.word(d.layer, d.top(3), '강제 매수!', { color: d.me.color, s: DEMO_S })]
+  ] }
+};
+
+async function skillDemo(h) {
+  const plan = DEMO[h.active.id];
+  if (!plan) return;
+  const others = HERO_DATA.filter((x) => x.id !== h.id);
+  const steps = [['주사위 던질 때마다 1칸 · ' + h.active.charge + '칸이면 충전 완료'], ...plan.steps];
+  const s = sheet(`
+    <span class="kind">실전 미리 보기</span>
+    <h2 class="dm-title">${skillArt(h.active.id, 30)} ${h.active.name}</h2>
+    <div class="dm-stage" id="dmStage"></div>
+    <ol class="dm-steps">${steps.map((x, i) => `<li data-i="${i}"><i>${i + 1}</i><span>${x[0]}</span></li>`).join('')}</ol>
+    <div class="row"><button class="btn white" id="dmClose">닫기</button><button class="btn yellow" id="dmAgain" disabled>다시 보기</button></div>`);
+  s.classList.add('demo-sheet');
+  s.style.setProperty('--hc', h.color);
+  let run = 0;
+  s.querySelector('#dmClose').onclick = () => { run++; Sound.click(); closeSheet(); };
+  s.querySelector('#dmAgain').onclick = () => { Sound.click(); play(); };
+  async function play() {
+    const id = ++run;
+    const live = () => id === run && document.body.contains(s);
+    const btn = s.querySelector('#dmAgain');
+    btn.disabled = true;
+    const layer = s.querySelector('#dmStage');
+    const d = demoStage(layer, h, others, plan);
+    const lis = s.querySelectorAll('.dm-steps li');
+    lis.forEach((li) => li.classList.remove('on', 'done'));
+    for (let i = 0; i < steps.length; i++) {
+      if (!live()) return;
+      lis.forEach((li, j) => { li.classList.toggle('on', j === i); li.classList.toggle('done', j < i); });
+      await sleep(250);
+      if (i === 0) await d.charge(h.active.charge);
+      else await steps[i][1](d);
+      await sleep(550);
+    }
+    if (!live()) return;
+    lis.forEach((li) => { li.classList.remove('on'); li.classList.add('done'); });
+    btn.disabled = false;
+  }
+  await sleep(200);
+  play();
+}
+
+/** 시연판 그리기 + 시연용 동작들 */
+function demoStage(layer, h, others, plan) {
+  const own = plan.own || {}, lv = { ...(plan.level || {}) };
+  const me = { color: h.color, hero: h.id };
+  const r = (plan.rivals || []).map((n, i) => ({ color: others[i].color, hero: others[i].id, node: n, goal: plan.goals?.[i] }));
+  me.node = plan.me;
+  const colorOf = (o) => (o === 'me' ? me.color : r[Number(o.slice(1))]?.color || others[0].color);
+  const pts = DEMO_ST.map(([, x, y]) => [x, y]);
+  layer.innerHTML = `<svg class="dm-map" viewBox="0 0 336 180" aria-hidden="true">
+      <polyline points="${pts.map((p) => p.join(',')).join(' ')}" fill="none" stroke="#22201D" stroke-width="11" stroke-linejoin="round" stroke-linecap="round"/>
+      <polyline points="${pts.map((p) => p.join(',')).join(' ')}" fill="none" stroke="${DEMO_LINE}" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>
+      ${pts.map(([x, y], i) => `<circle class="dm-st" data-i="${i}" cx="${x}" cy="${y}" r="9" fill="${own[i] ? colorOf(own[i]) : '#FFFDF7'}" stroke="#22201D" stroke-width="3"/>
+        <text x="${x}" y="${y + 24}" text-anchor="middle">${DEMO_ST[i][0]}</text>`).join('')}
+    </svg>`;
+  const piece = (who) => {
+    const el = document.createElement('div');
+    el.className = 'dm-piece';
+    el.style.setProperty('--pc', who.color);
+    el.innerHTML = `<span class="ring"></span>${character(who.hero, DEMO_S)}`;
+    layer.appendChild(el);
+    who.el = el;
+    setAt(who, who.node);
+    return el;
+  };
+  const setAt = (who, i) => { who.node = i; const [x, y] = pts[i]; who.el.style.left = x - DEMO_S / 2 + 'px'; who.el.style.top = y - DEMO_S * 0.92 + 'px'; who.el.style.zIndex = 100 + y; };
+  piece(me);
+  r.forEach(piece);
+  const tags = {};
+  const drawLv = (i) => {
+    let t = layer.querySelector(`.dm-lv[data-i="${i}"]`);
+    if (!lv[i]) { t?.remove(); return; }
+    if (!t) { t = document.createElement('i'); t.className = 'dm-lv'; t.dataset.i = i; t.style.left = pts[i][0] + 12 + 'px'; t.style.top = pts[i][1] - 22 + 'px'; layer.appendChild(t); }
+    t.textContent = '▲' + lv[i];
+    return t;
+  };
+  Object.keys(lv).forEach(drawLv);
+  const flags = r.map((q) => {
+    if (q.goal == null) return null;
+    const f = document.createElement('i');
+    f.className = 'dm-goal';
+    f.style.setProperty('--pc', q.color);
+    f.style.left = pts[q.goal][0] + 'px'; f.style.top = pts[q.goal][1] + 'px';
+    layer.appendChild(f);
+    return f;
+  });
+  if (plan.money) for (const [k, v] of Object.entries(plan.money)) {
+    const who = k === 'me' ? me : r[Number(k.slice(1))];
+    const t = document.createElement('i');
+    t.className = 'dm-money';
+    t.textContent = v;
+    who.el.appendChild(t);
+    tags[k] = t;
+  }
+  const hop1 = async (who, i, extra) => {
+    const from = pts[who.node], to = pts[i];
+    face(who.el, to[0] - from[0]);
+    setAt(who, i);
+    if (extra) SFX.carry(extra, to, DEMO_S);
+    await hop(who.el, from, to, { height: 16, duration: 200 });
+    Sound.step(i);
+  };
+  return {
+    layer, me, r,
+    at: (i) => pts[i],
+    top: (i) => [pts[i][0], pts[i][1] - DEMO_S * 1.5],
+    paint(i, c) { const st = layer.querySelector(`.dm-st[data-i="${i}"]`); st?.setAttribute('fill', c); if (st) tween(st, [{ transform: 'scale(1)' }, { transform: 'scale(1.6)' }, { transform: 'scale(1)' }], { duration: 300 }); SFX.ripple(layer, pts[i], { color: c, s: DEMO_S }); },
+    level(i, k) { lv[i] = (lv[i] || 0) + k; const t = drawLv(i); if (t) tween(t, [{ transform: 'scale(1)' }, { transform: 'scale(1.7)' }, { transform: 'scale(1)' }], { duration: 320 }); Sound.big(); },
+    mark(i, id) { const m = document.createElement('i'); m.className = 'dm-mark'; m.innerHTML = skillArt(id, 20); m.style.left = pts[i][0] - 26 + 'px'; m.style.top = pts[i][1] - 30 + 'px'; layer.appendChild(m); tween(m, [{ transform: 'scale(0)' }, { transform: 'scale(1.3)' }, { transform: 'scale(1)' }], { duration: 300 }); },
+    cash(k, v) { const t = tags[k]; if (!t) return; t.textContent = v; tween(t, [{ transform: 'translateX(-50%) scale(1)' }, { transform: 'translateX(-50%) scale(1.4)' }, { transform: 'translateX(-50%) scale(1)' }], { duration: 320 }); },
+    async charge(n) {
+      const g = document.createElement('div');
+      g.className = 'dm-charge';
+      g.innerHTML = `<span class="sk-art-sm">${skillArt(h.active.id, 18)}</span>${Array.from({ length: n }, () => '<i></i>').join('')}`;
+      layer.appendChild(g);
+      const pips = g.querySelectorAll('i');
+      for (let k = 0; k < n; k++) {
+        await sleep(260);
+        pips[k].classList.add('on');
+        Sound.chip(k);
+        act(me.el, 'walk', 240);
+      }
+      g.classList.add('full');
+      Sound.big();
+      act(me.el, 'cheer', 900);
+      await SFX.word(layer, [me.el.offsetLeft + DEMO_S / 2, me.el.offsetTop - 14], '충전 완료!', { color: h.color, s: DEMO_S });
+    },
+    async pick(i) {
+      const ring = document.createElement('i');
+      ring.className = 'dm-pick';
+      ring.style.left = pts[i][0] + 'px'; ring.style.top = pts[i][1] + 'px';
+      layer.appendChild(ring);
+      Sound.click();
+      await SFX.ripple(layer, pts[i], { color: h.color, s: DEMO_S });
+      await sleep(200);
+    },
+    async ride(a, b) {
+      layer.querySelectorAll('.dm-pick').forEach((x) => x.remove());
+      const path = [];
+      for (let i = a; i !== b; i += a < b ? 1 : -1) path.push(pts[i]);
+      path.push(pts[b]);
+      const tr = SFX.train(layer, path[0], { s: DEMO_S, line: DEMO_LINE, rider: character(h.id, 28), z: 250 });
+      await tr.arrive(path[1]);
+      await SFX.board(me.el, true);
+      await tr.run(path.slice(1), { speed: 0.32 });
+      setAt(me, b);
+      await SFX.board(me.el, false);
+      tr.leave();
+      await sleep(250);
+    },
+    async walk(who, list, extra) { act(who.el, 'walk'); for (const i of list) await hop1(who, i, extra); act(who.el, 'idle'); if (extra) { extra.forEach((x) => x.remove()); } },
+    async fly(who, i, delay) {
+      const from = pts[who.node];
+      setAt(who, i);
+      const k = r.indexOf(who);
+      who.el.style.left = parseFloat(who.el.style.left) + (k ? 14 : -14) + 'px';
+      await SFX.summon(who.el, [from[0] + (k ? -14 : 14), from[1]], pts[i], { s: DEMO_S, delay });
+      act(who.el, 'sad', 900);
+    },
+    async moveGoals(i) {
+      Sound.whoosh();
+      await Promise.all(flags.map((f, k) => f && tween(f, [{ left: f.style.left, top: f.style.top }, { left: pts[i][0] + (k ? 10 : -10) + 'px', top: pts[i][1] - 4 + 'px' }], { duration: 520, delay: k * 120, easing: 'cubic-bezier(.3,.7,.3,1.2)', fill: 'forwards' })));
+      await SFX.word(layer, [pts[i][0], pts[i][1] - DEMO_S * 1.5], '모두의 목적지!', { color: '#E2588F', s: DEMO_S });
+    },
+    async dice() {
+      const box = document.createElement('div');
+      box.className = 'dm-dice';
+      box.innerHTML = '<b>3</b><b>2</b><b class="sum">3+2</b>';
+      layer.appendChild(box);
+      const bs = box.querySelectorAll('b');
+      for (const b of bs) { await sleep(180); b.classList.add('in'); Sound.toss(); }
+      await sleep(400);
+      bs[2].classList.add('pick');
+      Sound.stamp();
+      await sleep(500);
+      box.remove();
+    }
+  };
+}
+
 // ── 이벤트 연출 ────────────────────────────────────────────
 
 /** 일일 미션용: 이번 판에 내가 한 일을 센다 */
@@ -1544,11 +1779,15 @@ async function travel(pid, from, path) {
   let prev = nodeXY(from);
   drawDest([path[path.length - 1]], playerById(M(), pid));
   act(el, 'walk');
+  // 동시 배달: 상자를 이고 초록 잔상을 남기며 달린다
+  const load = G.combo?.pid === pid ? G.combo.boxes : null;
+  if (load) el.classList.add('combo');
   for (let k = 0; k < path.length; k++) {
     const to = nodeXY(path[k]);
     Camera.follow(to, fast ? 160 : 220);
     face(el, to[0] - prev[0]);
     place(el, path[k]);
+    if (load) SFX.carry(load, to, pieceSize());
     await hop(el, prev, to, { height: 24, duration: fast ? 120 : 170 });
     Sound.step(k);
     prev = to;
@@ -1556,11 +1795,43 @@ async function travel(pid, from, path) {
   act(el, 'idle');
   clearDest();
   FX.dust(...nodeApp(path[path.length - 1]), 4);
+  if (load) {
+    el.classList.remove('combo');
+    G.combo = null;
+    SFX.word($('#layer'), [prev[0], prev[1] - pieceSize() * 1.9], '배달 완료!', { color: '#4C9A3A', s: pieceSize(), z: depth(prev[1]) + 90 });
+    load.forEach((b) => tween(b, [{ opacity: 1 }, { opacity: 0, transform: 'translate(-50%,-50%) translateY(-20px)' }], { duration: 300, fill: 'forwards' }).then(() => b.remove()));
+  }
 }
+
+/** 두 역을 잇는 같은 호선의 길(직통 열차가 지나갈 역들) */
+function linePath(from, to) {
+  let best = null;
+  for (const l of STATION_LINES[from] || []) {
+    if (!STATION_LINES[to]?.includes(l)) continue;
+    const prev = { [from]: null }, q = [from];
+    while (q.length && !(to in prev)) {
+      const n = q.shift();
+      for (const e of ALL_EDGES) {
+        if (e.line !== l) continue;
+        const o = e.a === n ? e.b : e.b === n ? e.a : null;
+        if (o && !(o in prev)) { prev[o] = n; q.push(o); }
+      }
+    }
+    if (!(to in prev)) continue;
+    const path = [];
+    for (let n = to; n; n = prev[n]) path.unshift(n);
+    if (!best || path.length < best.path.length) best = { path, line: l };
+  }
+  return best || { path: [from, to], line: STATION_LINES[from]?.[0] };
+}
+/** 판(#layer) 위 스킬 모션 공통 옵션 */
+const sfxAt = (n, more = {}) => ({ s: pieceSize(), z: depth(nodeXY(n)[1]) + 60, ...more });
 
 const HANDLERS = {
   async turnStart(e) {
     const p = playerById(M(), e.player);
+    // 못 쓰고 남은 동시 배달 상자는 다음 차례에 치운다
+    if (G.combo && G.combo.pid !== p.id) { G.combo.boxes.forEach((b) => b.remove()); G.combo = null; }
     drawPieces(); drawHud();
     showPlayer(p);
     setHint(`${nameOf(p)} 차례`);
@@ -1612,6 +1883,12 @@ const HANDLERS = {
   async pay(e) {
     const p = playerById(M(), e.player), to = e.to ? playerById(M(), e.to) : null;
     const node = e.node || (e.nodes ? e.nodes[e.nodes.length - 1] : p.node);
+    if (e.why === 'transfuse' && to) {
+      const a = nodeXY(p.node), b = nodeXY(to.node);
+      Camera.frame([a, b], { maxZoom: 1, ms: 360 });
+      await sleep(380);
+      await SFX.transfuse($('#layer'), a, b, { s: pieceSize(), z: Math.max(depth(a[1]), depth(b[1])) + 60, n: e.amount > 60 ? 7 : 5 });
+    }
     const at = nodeApp(node);
     const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
@@ -1648,10 +1925,15 @@ const HANDLERS = {
   },
   async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); },
   async upgrade(e) {
+    if (e.free) { Camera.follow(nodeXY(e.node), 260); await sleep(240); await SFX.bolt($('#layer'), nodeXY(e.node), sfxAt(e.node)); }
     if (e.level >= MAX_LEVEL && isMe(e.player)) await bigHit('랜드마크!', '#F2B33D');
     await estateFx(e, e.level >= MAX_LEVEL ? '랜드마크!' : e.free ? '무료 증축!' : '증축!', Sound.big);
   },
-  async takeover(e) { flash(app); await estateFx(e, '인수!', Sound.capture); },
+  async takeover(e) {
+    if (e.buyout) { Camera.follow(nodeXY(e.node), 260); await sleep(240); await SFX.gavel($('#layer'), nodeXY(e.node), sfxAt(e.node)); }
+    flash(app);
+    await estateFx(e, e.buyout ? '강제 매수!' : '인수!', Sound.capture);
+  },
   async pass() {},
   async offer() {},
   async chance(e) {
@@ -1673,11 +1955,11 @@ const HANDLERS = {
       // 스킬로 생긴 표지: 컷인 뒤에 그 역에 꽂힌다
       Camera.follow(nodeXY(e.node), 300);
       await sleep(300);
+      await (e.kind === 'gate' ? SFX.gate : SFX.hype)($('#layer'), nodeXY(e.node), sfxAt(e.node, { hold: 350 }));
       const el = addIncident(e);
       const [x, y] = nodeApp(e.node);
-      Sound.stamp(); FX.ring(x, y, e.kind === 'gate' ? '#E0533D' : '#E2588F');
+      FX.ring(x, y, e.kind === 'gate' ? '#E0533D' : '#E2588F');
       if (e.kind === 'hype') FX.sparkle(x, y - 30, 14, '#E2588F');
-      FX.pow(x, y - 64, e.kind === 'gate' ? '출입 통제!' : '떡상!', e.kind === 'gate' ? '#E0533D' : '#E2588F', '#FFFDF7', -6);
       await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.4)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
       await sleep(350);
       return;
@@ -1711,7 +1993,20 @@ const HANDLERS = {
     await sleep(500);
   },
   async extend(e) { toast(`막차 연장 · ${hhmm(e.end)}`); drawClock(); await sleep(400); },
-  async skill(e) { await skillCutin(e); drawHud(); },
+  async skill(e) {
+    await skillCutin(e);
+    drawHud();
+    const p = playerById(M(), e.player);
+    if (e.skill === 'gather') {
+      Camera.follow(nodeXY(e.node), 300);
+      await sleep(280);
+      await SFX.cheers($('#layer'), nodeXY(e.node), sfxAt(e.node));
+    } else if (e.skill === 'combo') {
+      Camera.follow(nodeXY(p.node), 260);
+      await sleep(200);
+      G.combo = { pid: p.id, boxes: await SFX.boxes($('#layer'), nodeXY(p.node), sfxAt(p.node, { z: depth(nodeXY(p.node)[1]) + 40 })) };
+    }
+  },
   async charged(e) {
     const p = playerById(M(), e.player);
     drawHud();
@@ -1739,6 +2034,42 @@ const HANDLERS = {
   async warp(e) {
     const p = playerById(M(), e.player);
     const el = pieceEl(p.id);
+    if (e.by === 'direct') {
+      // 직통 열차: 열차가 들어와 태우고, 같은 호선을 따라 달려 내려 준다
+      const { path, line } = linePath(e.from, e.to);
+      const pts = path.map(nodeXY), end = pts[pts.length - 1], lc = LINES[line]?.color || colorOf(p);
+      const total = pts.slice(1).reduce((t, b, i) => t + Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]), 0);
+      const speed = Math.max(quick(p.id) ? 1.3 : 0.85, total / 3200);
+      Camera.follow(pts[0], 260);
+      const tr = SFX.train($('#layer'), pts[0], { s: pieceSize(), line: lc, rider: character(p.hero, 40), z: (y) => depth(y) + 20 });
+      await tr.arrive(pts[1]);
+      await SFX.board(el, true);
+      drawDest([e.to], p);
+      await tr.run(pts.slice(1), { speed, onStep: (k, b, ms) => Camera.follow(b, ms) });
+      place(el, e.to);
+      await SFX.board(el, false);
+      clearDest();
+      const to = nodeApp(e.to);
+      FX.dust(to[0], to[1], 8);
+      FX.ring(to[0], to[1], lc);
+      SFX.word($('#layer'), [end[0], end[1] - pieceSize() * 1.8], `${e.to} 도착!`, { color: lc, s: pieceSize(), z: depth(end[1]) + 90 });
+      tr.leave();
+      drawPieces();
+      await sleep(350);
+      return;
+    }
+    if (e.by === 'gather') {
+      // 회식 소집: 크게 날아와 그 역에 내려앉는다
+      place(el, e.to);
+      await SFX.summon(el, nodeXY(e.from), nodeXY(e.to), { s: pieceSize() });
+      const to = nodeApp(e.to);
+      FX.dust(to[0], to[1], 8);
+      Sound.stamp();
+      act(el, 'sad', 800);
+      drawPieces();
+      await sleep(120);
+      return;
+    }
     const from = nodeApp(e.from);
     Sound.whoosh();
     const WARP_TEXT = { direct: ['직통 열차!', '#2F6FD0'], gather: ['회식 소집!', '#E0533D'] };

@@ -110,6 +110,25 @@ const ICON = {
   play: '<svg viewBox="0 0 24 24"><path d="M8 5 L19 12 L8 19 Z"/></svg>'
 };
 const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비'], ['rank', '랭킹'], ['dex', '도감']];
+/** 아래 탭(GNB) — 로비·캐릭터·미션·랭킹·도감 어디서나 같은 자리에 남는다 */
+const gnbHTML = (on) => {
+  const ready = Daily.claimable();
+  return `<nav class="lb-tabs gnb">${TABS.map(([k, n]) => `<button data-tab-go="${k}" class="${k === on ? 'on' : ''}" ${k === on ? 'aria-current="page"' : ''}>${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>`;
+};
+function bindGnb() {
+  app.querySelectorAll('[data-tab-go]').forEach((b) => {
+    b.onclick = () => {
+      if (b.classList.contains('on')) return;
+      Sound.unlock(); Sound.click();
+      const k = b.dataset.tabGo;
+      if (k === 'lobby') title();
+      else if (k === 'chars') pickHero();
+      else if (k === 'mission') missionsPage();
+      else if (k === 'rank') ranking();
+      else dex(myIndex());
+    };
+  });
+}
 
 /** 로비 배너: 지금 할 만한 일을 돌아가며 보여 준다 */
 function lobbyBanners() {
@@ -188,10 +207,11 @@ function title(fromSplash = false) {
         <div class="lb-seg" role="radiogroup" aria-label="상대 수"><span>상대</span>${[1, 2, 3].map((n) => `<button role="radio" data-n="${n}" class="${n === rivals ? 'on' : ''}" aria-checked="${n === rivals}">${n}</button>`).join('')}<span>명</span></div>
         <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>06:00 첫차 → 24:00 막차</small></span></button>
       </div>
-      <nav class="lb-tabs">${TABS.map(([k, n]) => `<button data-go="${k}" class="${k === 'lobby' ? 'on' : ''}">${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>
+      ${gnbHTML('lobby')}
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
+  bindGnb();
   const go = (k) => {
     Sound.unlock(); Sound.click();
     if (k === 'chars') pickHero(li);
@@ -287,10 +307,12 @@ function missionsPage() {
       <div class="ms-head"><b>오늘의 미션</b><span>초기화까지 ${hh}시간 ${mm}분</span></div>
       <div class="ms-list">${rows}</div>
       <p class="ms-note">대결 종료 시 진행도 반영 · 매일 0시 초기화</p>
+      ${gnbHTML('mission')}
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   $('#msBack').onclick = () => { Sound.click(); title(); };
+  bindGnb();
   $('#msAttend').onclick = () => { Sound.click(); openAttendance(); };
   app.querySelectorAll('.ms-btn').forEach((b) => {
     b.onclick = () => {
@@ -335,6 +357,7 @@ function pickHero(i = myIndex()) {
         <button class="btn white" id="pkDex">정보</button>
         ${choose}
       </div>
+      ${gnbHTML('chars')}
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
@@ -348,6 +371,7 @@ function pickHero(i = myIndex()) {
   $('#pkNext').onclick = () => flip((i + 1) % n, 1);
   app.querySelectorAll('.pk-thumb').forEach((b) => { b.onclick = () => { const j = Number(b.dataset.i); if (j !== i) flip(j, j > i ? 1 : -1); }; });
   $('#pkBack').onclick = () => { Sound.click(); title(); };
+  bindGnb();
   $('#pkDex').onclick = () => { Sound.click(); dex(i); };
   $('#pkHero').onclick = () => { Sound.click(); if (open) act($('#pkHero'), 'dance', 1200); };
   const burst = (word) => {
@@ -423,10 +447,12 @@ function dex(which = 0) {
           <div class="dex-card tip"><span class="kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
         </div>
       </div>
+      ${gnbHTML('dex')}
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   $('#dexBack').onclick = () => { Sound.click(); title(); };
+  bindGnb();
   app.querySelectorAll('.dex-tab').forEach((t) => { t.onclick = () => { Sound.click(); dex(Number(t.dataset.tab)); }; });
   const big = app.querySelector('.dex-char');
   app.querySelectorAll('.dex-acts button').forEach((b) => {
@@ -466,8 +492,10 @@ function ranking() {
       </div>
       <div class="rank-rule">RP(4인) 1등 +${RP_TABLE[4][0]} · 2등 +${RP_TABLE[4][1]} · 3등 ${RP_TABLE[4][2]} · 4등 ${RP_TABLE[4][3]} · 조기 승리 +5 · 티어 바닥 아래로는 내려가지 않음<br>승점: 판당 +10 · 보유 역 +1 · 1등 +30 · 2등 +15 · 3등 +5 · 승점만큼 승차권 지급(보유 ${Records.tickets()}장)</div>
       <div class="rank-list">${rows}</div>
+      ${gnbHTML('rank')}
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
+  bindGnb();
 }
 
 // ── 하는 법 ────────────────────────────────────────────────

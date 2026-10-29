@@ -585,7 +585,7 @@ body.wide .dex-char { bottom: 130px; transform: scale(1.35); transform-origin: 5
 .dex-card p { margin: 4px 0 0; font-size: 13px; font-weight: 700; line-height: 1.5; color: var(--ink-2); word-break: keep-all; }
 .dex-card.skill { background: #FFF3D1; }
 .dex-card.skill .btn { margin-top: 8px; }
-.dex-card.tip { background: var(--paper); border-style: dashed; box-shadow: none; }
+.dex-card.tip { position: static; z-index: auto; animation: none; padding: 10px 12px; border-width: 2.5px; background: var(--paper); border-style: dashed; box-shadow: none; }
 .dex-rule { margin-top: 6px; display: inline-block; padding: 2px 8px; border-radius: 999px; background: var(--ink); color: var(--yellow); font-size: 11px; font-weight: 900; }
 .dex-row { display: flex; gap: 10px; align-items: center; }
 .dex-card.boss { background: var(--ink); color: var(--white); }
@@ -1424,6 +1424,20 @@ body.wide .lobby { width: 560px; margin: 0 auto; }
 .lb-tabs button.on svg { width: 28px; height: 28px; }
 .lb-tabs button:active { transform: translateY(2px); }
 .lb-tabs .dot { top: -2px; right: 14px; }
+.gnb svg { width: 24px; height: 24px; fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.lb-tabs.gnb button.on svg { width: 28px; height: 28px; }
+/* 다른 화면에서도 같은 자리: 내용은 그 위에서 스크롤 */
+.dex > .gnb, .pick > .gnb { flex: none; }
+.dex > .gnb { margin-top: auto; }
+.dex > :nth-last-child(2) { margin-bottom: 12px; }
+.dex:has(> .gnb) { padding-bottom: 10px; }
+.dex:has(> .gnb) > .ms-list, .dex:has(> .gnb) > .rank-list { flex: 0 1 auto; }
+.pick:has(> .gnb) { padding-bottom: 10px; min-height: 0; }
+.pick > .pk-btns { margin-top: auto; }
+body.wide .dex > .gnb { width: 536px; align-self: center; }
+body.wide .dex:has(> .gnb) .dex-body { overflow-y: auto; align-items: stretch; }
+body.wide .dex:has(> .gnb) .dex-stage { height: auto; max-height: 560px; min-height: 420px; }
+body.wide .dex:has(> .gnb) .dex-info { align-self: flex-start; }
 
 .lobby.enter .lb-hero { animation: heroDrop .6s cubic-bezier(.3,.7,.3,1.3) both; }
 .lobby.enter .lb-card { animation: fadeUp .4s .3s both; }

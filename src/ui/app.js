@@ -26,7 +26,7 @@ import { INCIDENTS } from '../core/incidents.js';
 import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
 import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
-import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard } from './board-view.js';
+import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, isoSvg, ISO_BOX, liftOf } from './board-view.js';
 import { hotArt } from './hot-art.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
@@ -1341,9 +1341,9 @@ function moneyDelta(el, d) {
 
 /** 순환선 칸이 눌렸다 튀어 오른다(말이 밟을 때 · 땅이 바뀔 때). 노선도에는 칸이 없어 그냥 넘어간다 */
 function pressTile(n, k = 1) {
-  const g = $('#mat')?.querySelector(`.lt[data-n="${n}"]`);
-  if (!g) return;
-  g.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${7 * k}px)`, offset: 0.3 }, { transform: `translateY(${-3 * k}px)`, offset: 0.65 }, { transform: 'translateY(0)' }], { duration: 260 + 60 * k, easing: 'ease-out' });
+  const els = $('#mat')?.querySelectorAll(`.lt[data-n="${n}"], .lb[data-n="${n}"]`);
+  if (!els?.length) return;
+  for (const g of els) g.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${7 * k}px)`, offset: 0.3 }, { transform: `translateY(${-3 * k}px)`, offset: 0.65 }, { transform: 'translateY(0)' }], { duration: 260 + 60 * k, easing: 'ease-out' });
 }
 
 function drawControls() {
@@ -2286,8 +2286,13 @@ async function estateFx(e, word, sound) {
   sound.call(Sound);
   // 땅에 닿는 순간 칸을 새 색으로 칠하고 눌러 준다
   const xy = nodeXY(e.node), opt = { s: pieceSize(), z: depth(xy[1]) + 70, color: colorOf(p), quick: !p.human, onHit: () => { drawBoard(); pressTile(e.node, 1.3); } };
-  if (e.type === 'upgrade' && e.level >= 2) await EFX.rise($('#layer'), xy, { ...opt, level: e.level });
+  // 순환선: 칸의 입체 건물이 그 자리에서 솟는다(판에 남을 건물과 같은 그림)
+  const g = groundOf(e.node, e.type === 'upgrade' ? e.level : 1);
+  const iso = (lv) => g && { art: isoSvg(lv, colorOf(p)), size: [ISO_BOX.w * g[2], ISO_BOX.h * g[2]], anchor: [(-ISO_BOX.x / ISO_BOX.w) * 100, (-ISO_BOX.y / ISO_BOX.h) * 100], level: lv };
+  const spot = (lv) => (g ? [g[0], g[1] - liftOf(lv)] : xy);
+  if (e.type === 'upgrade' && (e.level >= 2 || g)) await EFX.rise($('#layer'), spot(e.level), { ...opt, level: e.level, ...(iso(e.level) || {}) });
   else if (e.type === 'takeover') await EFX.plant($('#layer'), xy, { ...opt, from: e.from ? colorOf(playerById(M(), e.from)) : null });
+  else if (e.type === 'buy' && g) await Promise.all([EFX.rise($('#layer'), spot(1), { ...opt, ...iso(1) }), EFX.plant($('#layer'), xy, { ...opt, onHit: () => {} })]);
   else if (e.type === 'buy') await EFX.plant($('#layer'), xy, opt);
   else drawBoard();
   FX.ring(at[0], at[1], colorOf(p));

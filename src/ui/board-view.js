@@ -222,34 +222,88 @@ function loopTile(n, i, owner, level) {
         : txt(cx, y + h / 2 + 14, '?', { size: 62, font: DISPLAY, weight: 400 }) + txt(cx, y + h - 14, '찬스', { size: 18, fill: '#8A6A1F' }));
   }
   const hot = isHot(n), side = SIDES[sideOf(n)].color;
-  let out = slab(own ? tint(own) : hot ? '#FFF4D6' : '#FFFDF7');
+  // 산 칸은 판에서 솟는다(단계마다 더 높이) — 솟은 만큼 옆면이 주인 색 그늘로 보인다
+  const lift = own ? 3 + 2 * lv : 0;
+  let out = own
+    ? `<rect x="${x}" y="${y + 8}" width="${w}" height="${h}" rx="20" fill="${INK}"/><rect x="${x}" y="${y - lift + 6}" width="${w}" height="${h + lift}" rx="20" fill="${shade(own)}" stroke="${INK}" stroke-width="4"/>`
+      + `<g transform="translate(0 ${-lift})"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${tint(own)}" stroke="${INK}" stroke-width="4"/>`
+    : slab(hot ? '#FFF4D6' : '#FFFDF7');
   out += `<clipPath id="lt${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20"/></clipPath>`;
   const b = r.inner === 'top' ? [x, y, w, BAND] : r.inner === 'bottom' ? [x, y + h - BAND, w, BAND] : r.inner === 'right' ? [x + w - BAND, y, BAND, h] : [x, y, BAND, h];
   out += `<rect x="${b[0]}" y="${b[1]}" width="${b[2]}" height="${b[3]}" fill="${own || side}" clip-path="url(#lt${i})"/>`
     + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="none" stroke="${INK}" stroke-width="4"/>`;
-  // 글자 자리: 띠를 뺀 몸통 가운데
+  // 몸통(띠를 뺀 곳): 아래에 역명판, 그 위에 건물. 넓은 칸(옆줄)은 건물을 왼쪽에, 값은 오른쪽에
   const body = r.inner === 'top' ? [x, y + BAND, w, h - BAND] : r.inner === 'bottom' ? [x, y, w, h - BAND] : r.inner === 'right' ? [x, y, w - BAND, h] : [x + BAND, y, w - BAND, h];
-  // 주인 배지가 바깥 모서리에 붙으니, 주인 있는 칸은 글자를 띠 쪽으로 조금 민다
-  const push = own ? (r.inner === 'left' || r.inner === 'right' ? 16 : 10) : 0;
-  const bx = body[0] + body[2] / 2 + (r.inner === 'right' ? push : r.inner === 'left' ? -push : 0);
-  const by = body[1] + body[3] / 2 + (r.inner === 'top' ? -push : r.inner === 'bottom' ? push : 0);
-  const lines = LOOP_NAME[n] || [n];
-  const fs = lines.some((t) => t.length > 3) ? 20 : 23, gap = fs + 3;
-  const icon = hot ? 40 : 0, price = own ? 0 : 19;
-  let top = by - (icon + lines.length * gap + price) / 2;
-  if (hot) out += `<svg x="${bx - 20}" y="${top - 2}" width="40" height="40" viewBox="0 0 40 40">${HOT_ART[n]}</svg>`;
-  top += icon;
-  lines.forEach((t, k) => { out += txt(bx, top + fs * 0.86 + k * gap, t, { size: fs }); });
-  if (!own) out += txt(bx, top + lines.length * gap + 15, stationPrice(n), { size: 16, fill: '#8A8173', weight: 800 });
-  else {
-    // 주인 표시: 바깥쪽 모서리에 주인 색 동그라미 + 단계 그림, 랜드마크는 별
-    const ox = r.inner === 'left' ? x + w - 22 : r.inner === 'right' ? x + 22 : x + w - 22;
-    const oy = r.inner === 'bottom' ? y + 22 : y + h - 22;
-    out += `<circle cx="${ox}" cy="${oy}" r="15" fill="${own}" stroke="${INK}" stroke-width="3.5"/><g transform="translate(${ox} ${oy}) scale(.75)">${GLYPH[lv || 1]}</g>`;
-    if (lv >= 3) out += `<g transform="translate(${ox - 30} ${oy - 18}) scale(.8)">${STAR(0, 0)}</g>`;
-  }
-  return out;
+  const wide = body[2] > body[3];
+  const plate = { x: body[0] + 5, y: body[1] + body[3] - 30, w: body[2] - 10, h: 24 };
+  const name = (LOOP_NAME[n] || [n]).join('');
+  out += `<rect x="${plate.x}" y="${plate.y}" width="${plate.w}" height="${plate.h}" rx="12" fill="${LINE2}" stroke="${INK}" stroke-width="3"/>`
+    + txt(plate.x + plate.w / 2, plate.y + 17.5, name, { size: name.length > 4 ? 13.5 : 15, fill: '#FFFDF7' });
+  const g = groundOf(n, own ? lv || 1 : 0) || [body[0] + body[2] / 2, plate.y - 22, ISO_K];
+  if (!own) out += txt(wide ? body[0] + body[2] - 26 : g[0], wide ? plate.y - 10 : plate.y - 5, stationPrice(n), { size: 13, fill: '#8A8173', weight: 800 });
+  if (hot && own) out += `<svg x="${body[0] + body[2] - 30}" y="${body[1] + 4}" width="24" height="24" viewBox="0 0 40 40">${HOT_ART[n]}</svg>`;
+  if (own) out += '</g>';
+  // 건물은 칸을 다 깐 뒤 따로(뒤에서 앞으로) 세운다 — 높은 탑이 옆 칸 위로 솟아도 가려지지 않게
+  const by = g[1] - lift;
+  const bld = hot && !own ? `<svg x="${g[0] - 24}" y="${by - 46}" width="48" height="48" viewBox="0 0 40 40">${HOT_ART[n]}</svg>`
+    : `<g transform="translate(${g[0]} ${by}) scale(${g[2]})">${isoBuilding(own ? lv || 1 : 0, own)}</g>`;
+  return { tile: out, bld: `<g class="lb" data-n="${n}">${bld}</g>`, y: by };
 }
+
+/** 주인 색을 검은색 쪽으로 짙게(솟은 칸 옆면 · 건물 옆면) */
+function shade(hex, k = 0.32) {
+  const v = parseInt(hex.slice(1), 16), c = [v >> 16, (v >> 8) & 255, v & 255].map((x) => Math.round(x * (1 - k)));
+  return `rgb(${c.join(',')})`;
+}
+
+const LINE2 = '#3CB44A';
+const ISO_K = 0.72;
+/**
+ * 비스듬히 내려다본 입체 건물(원점 = 바닥 가운데). 윗면 · 앞면 · 옆면 밝기를 달리해 입체감을 낸다.
+ * 0 = 빈 칸(지하철 입구) · 1 = 역사 + 깃발 · 2 = 빌딩 · 3 = 랜드마크 탑. c 는 주인 색(지붕)
+ */
+export function isoBuilding(level, c = LINE2) {
+  const K = `stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"`, W = 'fill="#BFE3F5" stroke="#22201D" stroke-width="1.6"';
+  const ground = (a, b) => `<path d="M-${a} 0 L0 -${b} L${a} 0 L0 ${b} Z" fill="#E8E1D2" ${K}/>`;
+  if (level === 0) {
+    return ground(22, 11) + `<path d="M-22 0 V8 L0 19 V11 Z" fill="#CFC6B3" ${K}/><path d="M22 0 V8 L0 19 V11 Z" fill="#B9AF9A" ${K}/>`
+      + `<path d="M-12 -8 Q0 -24 12 -8 Z" fill="${LINE2}" ${K}/><rect x="-4" y="-16" width="8" height="9" fill="#FFFDF7" ${K}/>`;
+  }
+  if (level === 1) {
+    return ground(24, 12) + `<path d="M-20 -22 L0 -32 L20 -22 V-2 L0 8 L-20 -2 Z" fill="#FFFDF7" ${K}/><path d="M0 -12 V8 L20 -2 V-22 Z" fill="#D9D0BE" ${K}/>`
+      + `<path d="M-24 -22 L0 -42 L24 -22 L0 -10 Z" fill="${c}" ${K}/><path d="M0 -10 L24 -22 L0 -42 Z" fill="${shade(c)}" ${K}/>`
+      + `<path d="M-14 -12 V-4 L-8 -1 V-9 Z" ${W}/><path d="M6 -6 V2 L12 -1 V-9 Z" ${W}/>`
+      + `<path d="M24 -48 V-24" stroke="${INK}" stroke-width="2.5" stroke-linecap="round"/><path d="M24 -48 L38 -44 L24 -39 Z" fill="${c}" ${K}/>`;
+  }
+  if (level === 2) {
+    return ground(26, 13) + `<path d="M-22 -46 L0 -57 L22 -46 V-2 L0 9 L-22 -2 Z" fill="#FFFDF7" ${K}/><path d="M0 -35 V9 L22 -2 V-46 Z" fill="#D9D0BE" ${K}/>`
+      + `<path d="M-22 -46 L0 -57 L22 -46 L0 -35 Z" fill="${c}" ${K}/>`
+      + ['-17 -34', '-17 -20', '-8 -30', '-8 -16'].map((p) => { const [a, b] = p.split(' ').map(Number); return `<path d="M${a} ${b} V${b + 7} L${a + 6} ${b + 10} V${b + 3} Z" ${W}/>`; }).join('')
+      + ['5 -31', '14 -35', '5 -17', '14 -21'].map((p) => { const [a, b] = p.split(' ').map(Number); return `<path d="M${a} ${b} V${b + 7} L${a + 5} ${b + 4} V${b - 3} Z" ${W}/>`; }).join('');
+  }
+  return ground(30, 15) + `<path d="M-26 -20 L0 -33 L26 -20 V-2 L0 11 L-26 -2 Z" fill="${c}" ${K}/><path d="M0 -7 V11 L26 -2 V-20 Z" fill="${shade(c)}" ${K}/>`
+    + `<path d="M-13 -78 L0 -84 L13 -78 V-12 L0 -6 L-13 -12 Z" fill="#FFFDF7" ${K}/><path d="M0 -72 V-6 L13 -12 V-78 Z" fill="#D9D0BE" ${K}/>`
+    + `<path d="M-13 -78 L0 -106 L13 -78 L0 -72 Z" fill="#F2B33D" ${K}/>`
+    + ['-62', '-46', '-30'].map((y) => `<path d="M-10 ${y} V${+y + 6} L-3 ${+y + 9} V${+y + 3} Z" ${W}/>`).join('')
+    + `<path d="M0 -122 l3 6 6.5 1 -4.7 4.5 1.1 6.4 -5.9 -3.1 -5.9 3.1 1.1 -6.4 -4.7 -4.5 6.5 -1 z" fill="#F2B33D" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>`;
+}
+/** isoBuilding 하나만 담은 svg(증축 연출이 판에 남을 건물과 똑같은 그림으로 솟게) — 원점이 아래에서 FOOT 비율 위 */
+export const ISO_BOX = { x: -42, y: -126, w: 84, h: 148 };
+export const isoSvg = (level, c) => `<svg viewBox="${ISO_BOX.x} ${ISO_BOX.y} ${ISO_BOX.w} ${ISO_BOX.h}" aria-hidden="true">${isoBuilding(level, c)}</svg>`;
+
+/** 순환선 칸 건물의 바닥 가운데(판 좌표, 솟음 빼고). 노선도 판이면 null */
+export function groundOf(n, lv = 0) {
+  if (MODE !== 'loop') return null;
+  const i = LOOP_TILES.indexOf(n);
+  if (i < 0 || CORNERS[n]) return null;
+  const r = loopRect(i), x = r.x + 5, y = r.y + 5, w = r.w - 10, h = r.h - 10;
+  const body = r.inner === 'top' ? [x, y + BAND, w, h - BAND] : r.inner === 'bottom' ? [x, y, w, h - BAND] : r.inner === 'right' ? [x, y, w - BAND, h] : [x + BAND, y, w - BAND, h];
+  const wide = body[2] > body[3], plateY = body[1] + body[3] - 30;
+  // 넓은 칸(옆줄)은 낮아서 건물을 조금 작게 — 랜드마크 탑은 위 칸 이름을 가리지 않을 만큼
+  return wide ? [body[0] + 36, plateY - 8, lv >= 3 ? 0.42 : 0.56] : [body[0] + body[2] / 2, plateY - 20, ISO_K];
+}
+/** 그 칸이 지금 솟은 높이(산 칸) */
+export const liftOf = (lv) => (lv ? 3 + 2 * lv : 0);
 
 // ── 판의 살아 있는 것들: 한강 유람선 · 지름길 열차 · 구름 · 흔들리는 나무 ──
 // 판은 살 때마다 다시 그려진다. 움직임이 처음으로 튀지 않게, 처음 그린 뒤 흐른 시간만큼 앞당겨 시작한다.
@@ -324,7 +378,9 @@ function loopSvg(state = {}) {
     `<g class="amb-tree" style="transform-origin:${x}px ${y + 18}px;animation-delay:${since(3.4, k * 0.7)}"><rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/></g>`).join('');
   const midY = (I0 + I1) / 2;
   const river = `M${I0} ${midY + 40} C ${I0 + 150} ${midY - 30}, ${I0 + 260} ${midY + 120}, ${I0 + 420} ${midY + 50} S ${I1 - 60} ${midY - 10}, ${I1} ${midY + 30}`;
-  const tiles = LOOP_TILES.map((n, i) => `<g class="lt" data-n="${n}">${loopTile(n, i, owner, level)}</g>`).join('');
+  const made = LOOP_TILES.map((n, i) => ({ n, t: loopTile(n, i, owner, level) }));
+  const tiles = made.map(({ n, t }) => `<g class="lt" data-n="${n}">${t.tile ?? t}</g>`).join('');
+  const blds = made.filter(({ t }) => t.bld).sort((a, b) => a.t.y - b.t.y).map(({ t }) => t.bld).join('');
   const amb = ambient(river, railPaths, I0, I1);
   return `<svg class="mat loop-mat" viewBox="0 0 ${LGEO.w} ${LGEO.h}" width="${LGEO.w}" height="${LGEO.h}" aria-hidden="true">
     <rect x="${LM - 22}" y="${LM - 6}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#B59E78" stroke="${INK}" stroke-width="6"/>
@@ -342,7 +398,7 @@ function loopSvg(state = {}) {
       <rect x="-118" y="-46" width="236" height="92" rx="24" fill="${INK}"/><rect x="-118" y="-52" width="236" height="92" rx="24" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>
       ${txt(0, 6, '역전', { size: 52, font: DISPLAY, weight: 400 })}${txt(0, 32, '2호선 순환선', { size: 17, fill: '#2FA84F' })}
     </g>
-    <g>${tiles}</g><g>${chain}</g>
+    <g>${tiles}</g><g>${chain}</g><g>${blds}</g>
   </svg>`;
 }
 

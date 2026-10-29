@@ -81,11 +81,15 @@ export async function plant(layer, at, { s = 56, z = 900, color = '#F2B33D', fro
   await sleep(quick ? 120 : 260);
 }
 
-/** 건물이 땅에서 솟는다. 랜드마크면 금빛 기둥과 별 */
-export async function rise(layer, at, { s = 56, z = 900, color = '#F2B33D', level = 2, quick = false, onHit = () => {} } = {}) {
-  const [x, y] = at, lv = Math.min(3, Math.max(2, level));
-  const w = s * (lv === 3 ? 1.3 : 1.15), h = w * (80 / 60);
-  const base = [x - s * 0.45, y + 4];
+/**
+ * 건물이 땅에서 솟는다. 랜드마크면 금빛 기둥과 별.
+ * art 를 주면(순환선 칸의 입체 건물) 그 그림을 at 자리에 size 크기로, anchor(%) 를 바닥으로 삼아 세운다 — 판에 남을 건물과 같은 그림
+ */
+export async function rise(layer, at, { s = 56, z = 900, color = '#F2B33D', level = 2, quick = false, onHit = () => {}, art = null, size = null, anchor = [50, 100] } = {}) {
+  const [x, y] = at, lv = art ? level : Math.min(3, Math.max(2, level));
+  const w = size ? size[0] : s * (lv === 3 ? 1.3 : 1.15), h = size ? size[1] : w * (80 / 60);
+  const base = art ? [x, y] : [x - s * 0.45, y + 4];
+  const T = `translate(-${anchor[0]}%,-${anchor[1]}%)`;
   let beam = null;
   if (lv === 3) {
     beam = put(layer, 'efx-beam', base, '', z - 1);
@@ -94,16 +98,17 @@ export async function rise(layer, at, { s = 56, z = 900, color = '#F2B33D', leve
     tween(beam, [{ transform: 'translate(-50%,-100%) scaleY(0)', opacity: 0.3 }, { transform: 'translate(-50%,-100%) scaleY(1)', opacity: 1 }], { duration: 360, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'forwards' });
     Sound.rise();
   }
-  const b = put(layer, 'efx-bld', base, BUILDING[lv](color), z);
+  const b = put(layer, 'efx-bld', base, art || BUILDING[lv](color), z);
   b.style.width = w + 'px';
   b.style.height = h + 'px';
+  b.style.transformOrigin = `${anchor[0]}% ${anchor[1]}%`;
   puffs(layer, base, s, z, 4);
   Sound.clank();
   await tween(b, [
-    { transform: 'translate(-50%,-100%) scale(.7,0)' },
-    { transform: 'translate(-50%,-100%) scale(.88,1.22)', offset: 0.55 },
-    { transform: 'translate(-50%,-100%) scale(1.12,.86)', offset: 0.78 },
-    { transform: 'translate(-50%,-100%) scale(1)' }
+    { transform: `${T} scale(.7,0)` },
+    { transform: `${T} scale(.88,1.22)`, offset: 0.55 },
+    { transform: `${T} scale(1.12,.86)`, offset: 0.78 },
+    { transform: `${T} scale(1)` }
   ], { duration: quick ? 380 : 560, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'forwards' });
   onHit();
   if (lv === 3) {
@@ -114,6 +119,7 @@ export async function rise(layer, at, { s = 56, z = 900, color = '#F2B33D', leve
     }
     fadeOut(beam, 320, quick ? 200 : 500);
   }
-  fadeOut(b, 280, quick ? 380 : 900);
+  // 판에 같은 건물이 그려졌으니 겹친 그림은 곧 걷는다
+  fadeOut(b, art ? 160 : 280, art ? 60 : quick ? 380 : 900);
   await sleep(quick ? 120 : 260);
 }

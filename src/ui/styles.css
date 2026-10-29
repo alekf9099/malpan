@@ -1747,3 +1747,8 @@ body.wide .skill-btn .sk-txt b { font-size: 12.5px; }
 .dm-steps li.on i { background: var(--hc, #2F6FD0); color: #FFFDF7; }
 .dm-steps li.done { color: var(--ink-2); }
 .dm-steps li.done i { background: var(--ink); color: var(--yellow); }
+
+/* ══ v3.12 순환선 판 ══ */
+.lb-opts { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
+.lb-board button { width: auto; padding: 0 12px; font-family: var(--body); font-size: 12.5px; font-weight: 900; }
+.lb-board button.on { background: #2FA84F; color: #FFFDF7; }

@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {
   createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
   nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor,
-  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE
+  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf
 } from '../src/core/match.js';
+import { LOOP_START, SALARY } from '../src/core/boards/loop.js';
 import { matchPoints } from '../src/core/ranking.js';
 import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
 import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul.js';
@@ -402,4 +403,104 @@ test('주사위 둘: 굴리면 고르기, 고른 눈만큼 간다(같은 눈이�
   assert.equal(e[0].type, 'die');
   assert.equal(m.pending.steps, want);
   assert.equal(m.phase, 'move');
+});
+
+// ── 순환선 판(부루마블식) ──────────────────────────────────
+
+const loopGame = (n = 2, heroes = ['student', 'worker', 'driver', 'staff']) => createMatch({ seed: 5, heroes: heroes.slice(0, n), humans: 1, region: 'loop' });
+
+test('순환선: 모두 시청에서 출발, 목적지 없음, 18바퀴 · 5칸 연속이면 노선 독점', () => {
+  const m = loopGame(4);
+  for (const p of m.players) { assert.equal(p.node, LOOP_START); assert.equal(p.goal, null); }
+  assert.equal(roundsOf(m), 18);
+  assert.equal(m.lineWin, 5);
+  assert.equal(areaOf(m).stations.length, 32);
+});
+
+test('순환선: 앞으로만 가고, 시청을 지나면 월급 · 서면 1.5배 · 통과 요금은 없다', () => {
+  const m = loopGame();
+  const q = m.players[1];
+  m.owned['이대'] = q.id; m.levels['이대'] = 1;
+  const p = at(m, '신촌', '홍대입구', 3);
+  assert.deepEqual(legalPaths(m), [['이대', '시청', '을지로입구']]);
+  assert.equal(passFares(m, p, ['이대', '시청', '을지로입구']).size, 0);
+  move(m, ['이대', '시청', '을지로입구']);
+  assert.equal(p.money, START_MONEY + SALARY);
+  const m2 = loopGame();
+  const p2 = at(m2, '이대', '신촌', 1);
+  move(m2, ['시청']);
+  assert.equal(p2.money, START_MONEY + SALARY * 1.5);
+  assert.equal(m2.offer, null); // 모서리 칸은 살 수 없다
+});
+
+test('순환선 지름길: 을지로3가에서 3호선으로 교대, 동대문에서 4호선으로 사당까지 가로지를 수 있다', () => {
+  const m = loopGame();
+  at(m, '을지로3가', '을지로입구', 2);
+  const ends = legalPaths(m).map((x) => x[x.length - 1]).sort();
+  assert.deepEqual(ends, ['사당', '서초', '신당'].sort()); // 2칸이면 동대문(4호선 지름길)에서 사당으로도
+});
+
+test('순환선 모서리: 신도림은 한 턴 쉬고, 성수 축제는 내 역 통행료 2배, 강남 급행은 앞 칸으로', () => {
+  const m = loopGame();
+  const p = at(m, '구로디지털단지', '신림', 1);
+  move(m, ['신도림']);
+  assert.equal(p.rest, 1);
+
+  const m2 = loopGame();
+  const me = current(m2), rival = m2.players[1];
+  m2.owned['신당'] = me.id; m2.levels['신당'] = 1;
+  at(m2, '뚝섬', '한양대', 1);
+  move(m2, ['성수']);
+  assert.equal(m2.phase, 'choose');
+  assert.deepEqual(m2.choice.options, ['신당']);
+  const before = tollFor(m2, '신당', rival);
+  choose(m2, '신당');
+  assert.ok(Math.abs(tollFor(m2, '신당', rival) - before * 2) <= 1);
+
+  const m3 = loopGame();
+  const p3 = at(m3, '역삼', '삼성', 1);
+  move(m3, ['강남']);
+  assert.equal(m3.phase, 'choose');
+  assert.ok(m3.choice.options.includes('합정') && !m3.choice.options.includes('신도림'));
+  choose(m3, '합정');
+  assert.equal(p3.node, '합정');
+});
+
+test('순환선 출입 통제: 상대 하나를 세우면 걷힌다', () => {
+  const m = loopGame(2, ['staff', 'worker']);
+  const me = current(m), rival = m.players[1];
+  m.owned['신당'] = me.id; m.levels['신당'] = 1;
+  me.charge = 9;
+  useSkill(m, '신당');
+  assert.ok(m.incidents.some((i) => i.node === '신당' && i.once));
+  m.turn = 1; m.phase = 'move'; rival.node = '동대문역사문화공원'; rival.prev = '을지로3가';
+  m.pending = { roll: { value: 3 }, steps: 3 };
+  for (const path of legalPaths(m)) if (path.includes('신당')) assert.equal(path[path.length - 1], '신당');
+  move(m, ['신당']);
+  assert.ok(!m.incidents.some((i) => i.node === '신당'));
+});
+
+test('순환선 연결: 고리를 따라 이어 가진 칸이 통행료 배수가 된다(모서리·찬스 칸에서 끊김)', () => {
+  const m = loopGame();
+  const me = current(m);
+  for (const n of ['신당', '왕십리']) { m.owned[n] = me.id; m.levels[n] = 1; }
+  assert.equal(links(m.owned, me.id).at['신당'].len, 2);
+  m.owned['뚝섬'] = me.id; m.levels['뚝섬'] = 1;
+  assert.equal(links(m.owned, me.id).at['뚝섬'].len, 1); // 사이에 찬스 칸(한양대)
+});
+
+test('AI 만으로 순환선 100판: 늘 끝나고, 돈이 음수가 되지 않는다', () => {
+  for (let k = 0; k < 100; k++) {
+    const m = createMatch({ seed: 900 + k, heroes: ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'broker'].slice(k % 3, (k % 3) + 4), humans: 0, region: 'loop' });
+    let guard = 0;
+    while (m.phase !== 'over' && guard++ < 6000) {
+      if (m.phase === 'roll') { const sk = wantsSkill(m); if (sk) useSkill(m, sk.target); for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (m.phase === 'roll') roll(m); }
+      else if (m.phase === 'pick') pickDie(m, chooseDie(m));
+      else if (m.phase === 'move') move(m, choosePath(m));
+      else if (m.phase === 'choose') choose(m, chooseOption(m));
+      else decide(m, decideOffer(m));
+      for (const p of m.players) assert.ok(p.money >= 0, `${k}: ${p.money}`);
+    }
+    assert.equal(m.phase, 'over', 'seed ' + (900 + k));
+  }
 });

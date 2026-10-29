@@ -22,3 +22,7 @@ export function setRivals(n) { load().rivals = n; save(); }
 
 export function seenGuide() { return !!load().guide; }
 export function markGuide() { load().guide = true; save(); }
+
+/** 판: 'loop'(2호선 순환선, 기본) · 'map'(노선도) */
+export function getBoard() { return load().board === 'map' ? 'map' : 'loop'; }
+export function setBoard(b) { load().board = b; save(); }

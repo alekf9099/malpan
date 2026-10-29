@@ -13,7 +13,9 @@ let wired = false;
 export const MAX_ZOOM = 1.0;
 // 노선도가 크기 때문에, 고를 때·따라갈 때 이보다 멀어지면 역 이름이 안 읽힌다(서울 전체는 whole()로만)
 export const MIN_ZOOM = 0.4;
-const FOLLOW_ZOOM = 0.55;
+let FOLLOW_ZOOM = 0.55;
+/** 따라갈 때 배율(순환선 판은 판이 작아 조금 멀리서) */
+export function setFollowZoom(z = 0.55) { FOLLOW_ZOOM = z; }
 
 export function attach(viewEl, camEl, canvas) {
   view = viewEl;

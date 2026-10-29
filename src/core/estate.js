@@ -48,6 +48,13 @@ export const sellValue = (n, level) => Math.round(invested(n, level) / 2);
 export const CHAIN_MAX = 4;
 
 /**
+ * 연결을 셀 줄들(호선 → 역 순서). 노선도 판은 실제 호선, 순환선 판은 고리 하나 — 판을 만들 때(createMatch) 정한다.
+ * 한 번에 한 판만 돌린다는 전제(화면·시뮬레이터 모두 그렇다).
+ */
+let CHAIN_LINES = LINE_STATIONS;
+export function useChainLines(lines = LINE_STATIONS) { CHAIN_LINES = lines; }
+
+/**
  * 연결: 같은 호선에서 이어진 같은 주인의 역 묶음.
  *   owned  = { 역: 주인 } 처럼 누가 가졌는지. owner 의 묶음만 본다
  *   at[역] = { len, line } 그 역이 든 가장 긴 묶음
@@ -57,7 +64,7 @@ export const CHAIN_MAX = 4;
 export function links(owned, owner) {
   const mine = (n) => owned[n] === owner;
   const at = {}, edges = [], runs = [];
-  for (const [id, list] of Object.entries(LINE_STATIONS)) {
+  for (const [id, list] of Object.entries(CHAIN_LINES)) {
     const line = Number(id);
     const loop = list[0] === list[list.length - 1];
     let seq = loop ? list.slice(0, -1) : list.slice();

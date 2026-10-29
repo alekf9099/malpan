@@ -13,7 +13,8 @@ export const INCIDENTS = {
   busk: { id: 'busk', name: '역 버스킹', minutes: 120, again: true, weight: 2, short: '도착 시 한 번 더' },
   // 스킬로만 생긴다 — own: 역 주인은 막히지 않는다
   gate: { id: 'gate', name: '출입 통제', minutes: 270, stop: true, own: true, weight: 0, short: '상대 열차 강제 정차' },
-  hype: { id: 'hype', name: '떡상', minutes: 270, tollX: 2, weight: 0, short: '통행료 2배 · 모두의 목적지' }
+  hype: { id: 'hype', name: '떡상', minutes: 270, tollX: 2, weight: 0, short: '통행료 2배 · 모두의 목적지' },
+  festival: { id: 'festival', name: '팝업 축제', minutes: 180, tollX: 2, weight: 0, short: '통행료 2배' }
 };
 
 /** 한 번에 노선도에 있을 수 있는 사건 수 · 한 바퀴마다 새 사건이 생길 확률 */

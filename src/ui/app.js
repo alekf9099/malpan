@@ -9,11 +9,12 @@ import {
   createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
   invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
-  monopolyOf, HOT_WIN, LINE_WIN
+  monopolyOf, HOT_WIN, LINE_WIN, isLoop, roundsOf
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
-import { HEROES as HERO_DATA, heroById, STARTERS } from '../core/heroes.js';
+import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeOf } from '../core/heroes.js';
+import { LOOP_START, SALARY, CORNERS, ahead, forward } from '../core/boards/loop.js';
 import { skillArt } from './skill-art.js';
 import * as SFX from './skill-fx.js';
 import { createRng } from '../core/rng.js';
@@ -24,7 +25,7 @@ import { INCIDENTS } from '../core/incidents.js';
 import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
 import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
-import { boardSvg, nodeXY, depth, pieceSize, canvasSize } from './board-view.js';
+import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard } from './board-view.js';
 import { hotArt } from './hot-art.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
@@ -89,6 +90,8 @@ function splash() {
 // ── 메인 홈 ─────────────────────────────────────────────────
 
 const isOpen = (id) => Records.unlocked().includes(id);
+/** 지금 보여 줄 판이 순환선인가: 게임 중이면 그 판, 로비·도감이면 고른 판 */
+const loopy = () => (G.m ? isLoop(G.m) : Prefs.getBoard() === 'loop');
 const myIndex = () => ids.indexOf(Prefs.getLeader(Records.unlocked()));
 const ticketPill = (n = Records.tickets()) => `<span class="tickets" title="승차권 — 캐릭터를 여는 데 쓴다"><i>승차권</i><b>${n.toLocaleString()}</b>장</span>`;
 /** 잠긴 캐릭터는 그림자로 */
@@ -200,13 +203,16 @@ function title(fromSplash = false) {
           <div class="lb-nm"><em>${h.job}</em><b>${h.name}</b><button class="lb-change" id="pickBtn" aria-label="캐릭터 변경">${ICON.swap}</button></div>
           <div class="lb-chips">
             <span class="lb-chip"><i>고유</i>${h.skill}</span>
-            <span class="lb-chip sk">${skillArt(h.active.id, 18)}${h.active.name}<i>${h.active.charge}칸</i></span>
+            <span class="lb-chip sk">${skillArt(h.active.id, 18)}${h.active.name}<i>${chargeOf(h, loopy())}칸</i></span>
           </div>
         </div>
       </div>
       <div class="lb-play">
-        <div class="lb-seg" role="radiogroup" aria-label="상대 수"><span>상대</span>${[1, 2, 3].map((n) => `<button role="radio" data-n="${n}" class="${n === rivals ? 'on' : ''}" aria-checked="${n === rivals}">${n}</button>`).join('')}<span>명</span></div>
-        <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>06:00 첫차 → 24:00 막차</small></span></button>
+        <div class="lb-opts">
+          <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${[['loop', '순환선'], ['map', '노선도']].map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === Prefs.getBoard() ? 'on' : ''}" aria-checked="${k === Prefs.getBoard()}">${n}</button>`).join('')}</div>
+          <div class="lb-seg" role="radiogroup" aria-label="상대 수"><span>상대</span>${[1, 2, 3].map((n) => `<button role="radio" data-n="${n}" class="${n === rivals ? 'on' : ''}" aria-checked="${n === rivals}">${n}</button>`).join('')}<span>명</span></div>
+        </div>
+        <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>${Prefs.getBoard() === 'loop' ? '2호선 순환선 · 시청 출발' : '노선도 · 06:00 첫차 → 24:00 막차'}</small></span></button>
       </div>
       ${gnbHTML('lobby')}
     </div>
@@ -229,13 +235,17 @@ function title(fromSplash = false) {
   $('#pickBtn').onclick = () => go('chars');
   $('#homeHero').onclick = () => { Sound.unlock(); Sound.click(); act($('#homeHero'), 'cheer', 1200); };
   $('#tix').onclick = () => { Sound.unlock(); Sound.click(); const lock = HERO_DATA.findIndex((x) => !isOpen(x.id)); pickHero(lock < 0 ? li : lock); };
-  app.querySelectorAll('.lb-seg button').forEach((b) => {
+  app.querySelectorAll('.lb-seg button[data-n]').forEach((b) => {
     b.onclick = () => {
       Sound.unlock(); Sound.click();
       Prefs.setRivals(+b.dataset.n);
-      app.querySelectorAll('.lb-seg button').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+      app.querySelectorAll('.lb-seg button[data-n]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
       tween(b, [{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 220 });
     };
+  });
+  // 판 고르기: 순환선(부루마블식) · 노선도 — 스킬 칸 수·설명이 판마다 달라 로비를 다시 그린다
+  app.querySelectorAll('.lb-seg button[data-b]').forEach((b) => {
+    b.onclick = () => { if (b.classList.contains('on')) return; Sound.unlock(); Sound.click(); Prefs.setBoard(b.dataset.b); title(); };
   });
   $('#start').onclick = () => startGame(false);
   // 배너는 3.5초마다 넘어간다(누르면 그 일로)
@@ -349,7 +359,7 @@ function pickHero(i = myIndex()) {
         <div class="pk-name"><b>${h.job} ${h.name}</b><span>${i + 1} / ${HERO_DATA.length}</span></div>
       </div>
       <div class="pk-cards">
-        <div class="pk-card"><span class="pk-kind">고유 · ${h.skill}</span><p>${h.desc}</p></div>
+        <div class="pk-card"><span class="pk-kind">고유 · ${h.skill}</span><p>${skillDesc(h, loopy())}</p></div>
         ${skillCard(h, 'pk')}
         <div class="pk-card lead"><span class="pk-kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
       </div>
@@ -443,7 +453,7 @@ function dex(which = 0) {
           <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div></div>
         <div class="dex-info">
           <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>${lockNote}
-          <div class="dex-card"><span class="kind">고유</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
+          <div class="dex-card"><span class="kind">고유</span><h3>${h.skill}</h3><p>${skillDesc(h, loopy())}</p></div>
           ${skillCard(h, 'dex')}
           <div class="dex-card tip"><span class="kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
         </div>
@@ -463,7 +473,7 @@ function dex(which = 0) {
     const btn = ev.currentTarget;
     if (btn.disabled) return;
     btn.disabled = true; Sound.unlock();
-    await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: h.active.desc });
+    await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: activeDesc(h, loopy()) });
     act(big, 'cheer', 1200);
     btn.disabled = false;
     skillDemo(h);
@@ -502,8 +512,24 @@ function ranking() {
 
 // ── 하는 법 ────────────────────────────────────────────────
 
+/** 순환선 판 도움말 */
+const LOOP_GUIDE = [
+  ['순환선', '2호선 32칸 고리를 시계 방향으로 · 모두 시청에서 출발 · 18바퀴'],
+  ['이동', '주사위 2개 중 하나를 골라 이동(1~5칸 · 급행 7칸+한 번 더) · 뒤로는 못 감'],
+  ['월급', `시청을 지날 때마다 +${SALARY} · 시청에 서면 1.5배`],
+  ['지름길', '3호선 을지로3가↔교대 · 4호선 동대문↔사당 — 지나거나 출발할 때 판을 가로지를 수 있음'],
+  ['모서리 칸', '성수 팝업 축제(내 역 통행료 2배) · 강남 급행 환승(앞 12칸 중 원하는 칸) · 신도림 환승 미로(한 턴 쉬기)'],
+  ['구매 · 증축', '빈 칸 도착 시 구매 · 내 칸 재도착 시 증축, 3단계는 랜드마크 · 지나가기만 하면 요금 없음'],
+  ['통행료', '남의 칸 도착 시 통행료 · 이어서 가진 칸 ×2~×4 · 단계 ×3 · ×7 · 통행료 뒤 1.5배에 인수 가능'],
+  ['노선 투자', '주사위 전, 이어진 내 칸(2칸 이상)은 어디서든 증축'],
+  ['스킬', '주사위를 던질 때마다 1칸 충전 · 다 차면 주사위 전에 사용'],
+  ['찬스 · 명소', '? 칸은 찬스 카드 · DDP·잠실·홍대는 명소 칸(도착 효과)'],
+  ['독점 승리', '명소 3칸 전부 또는 5칸 연속 보유 시 즉시 승리'],
+  ['승리 조건', '최후의 1인, 독점, 또는 막차 시 자산 1위']
+];
+
 function guide(then = null) {
-  const steps = [
+  const steps = loopy() ? LOOP_GUIDE : [
     ['지역', '판마다 서울의 한 지역(도심 · 강남 · 서남 · 동부, 72역)에서 대결 · 12바퀴'],
     ['이동', '주사위 2개 중 하나를 골라 이동(1~5역 · 급행 7역+한 번 더) · 눈마다 도착할 곳이 미리 보임'],
     ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
@@ -591,7 +617,7 @@ function matchmaking(me, rivals, daily, area) {
       const people = await humans;
       if (done) return;
       $('#mmCancel').disabled = true;
-      led(people.length ? '매칭 완료!' : 'AI 매칭 완료!', `${area.name} 지역 · ${area.sub}${people.length ? '' : ' · AI 대결'}`);
+      led(people.length ? '매칭 완료!' : 'AI 매칭 완료!', `${area.name}${area.loop ? '' : ' 지역'} · ${area.sub}${people.length ? '' : ' · AI 대결'}`);
       $('#mmPct').textContent = '100%';
       Sound.chime();
       for (const [i, id] of rivals.entries()) {
@@ -650,7 +676,7 @@ async function startGame(daily) {
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
   // 상대는 여덟 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
   const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
-  const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily });
+  const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: Prefs.getBoard() === 'loop' ? 'loop' : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
   G.m = m;
@@ -681,6 +707,8 @@ function enterGame() {
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
+  useBoard(isLoop(M()) ? 'loop' : 'map');
+  Camera.setFollowZoom(isLoop(M()) ? 0.48 : undefined);
   Camera.attach($('#board'), $('#cam'), canvasSize());
   $('#throw').onclick = () => onThrow();
   $('#skillBtn').onclick = onSkill;
@@ -702,10 +730,10 @@ function enterGame() {
 function intro() {
   const m = M();
   const s = sheet(`
-    <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name} 지역 · ${m.players.length}명</span>
+    <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${p.node}</span></div>`).join('<i>VS</i>')}</div>
-    <p>시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${m.hotWin}곳 · 한 노선 ${LINE_WIN}역</b> 독점 / <b>24:00 막차</b> 자산 1위</p>
+    <p>${isLoop(m) ? `모두 <b>시청</b>에서 출발 · 한 바퀴 돌 때마다 <b>월급 ${SALARY}</b> · 모서리 칸: 축제·급행·미로 · <b>3·4호선 지름길</b>로 판을 가로지른다<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${m.hotWin}곳 · ${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -845,7 +873,7 @@ function skillPips(charge, cost) {
 
 /** 캐릭터 고르기·도감의 스킬 카드 */
 function skillCard(h, kind) {
-  const a = h.active;
+  const a = { ...h.active, desc: activeDesc(h, loopy()), charge: chargeOf(h, loopy()) };
   return `<div class="${kind === 'pk' ? 'pk-card' : 'dex-card'} skill sk-card" style="--hc:${h.color}">
     <span class="sk-icon">${skillArt(a.id, 44)}</span>
     <div class="sk-body"><span class="${kind === 'pk' ? 'pk-kind' : 'kind'}">스킬 · 충전 ${a.charge}칸</span>
@@ -911,7 +939,7 @@ function skillSheet() {
       </div>
       <span class="sk-who">${h.job} ${h.name}의 스킬</span>
       <h2>${a.name}</h2>
-      <p class="sk-desc">${a.desc}</p>
+      <p class="sk-desc">${activeDesc(h, isLoop(m))}</p>
       <div class="sk-charge">${skillPips(me.charge, cost)}<b>${ready ? '충전 완료' : `충전 ${me.charge} / ${cost}`}</b><em>던질 때마다 1칸</em></div>
       ${extra}
       ${list ? `<div class="sk-pick"><span class="sk-pick-h">${a.target} 선택</span><div class="sk-list">${list.map((n) => targetRow(m, me, a.id, n)).join('')}</div></div>` : ''}
@@ -1090,7 +1118,10 @@ function choicePrompt() {
   const m = M(), p = current(m), c = m.choice;
   return new Promise((resolve) => {
     let s;
-    if (c.kind === 'card') {
+    if (c.kind === 'festival') {
+      const rows = c.options.map((n) => `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">축제</span>'}<div><b>${n}</b><span>통행료 ${baseToll(m.owned, m.levels, n)} → <i class="good">${baseToll(m.owned, m.levels, n) * 2}</i></span></div></button>`).join('');
+      s = sheet(`<span class="kind">성수 · 팝업 축제</span><h2 style="margin-top:6px">축제를 열 내 역</h2><p>${c.options.length}곳 중 하나 · 통행료 2배(3바퀴)</p><div class="warp-list">${rows}</div>`);
+    } else if (c.kind === 'card') {
       const cards = c.options.map((id) => {
         const k = chanceById(id);
         return `<button class="pick-card ${k.good ? 'good' : 'bad'}" data-v="${id}"><span class="pk-deck">찬스 카드</span><b>${k.name}</b><em>${k.short}</em></button>`;
@@ -1101,9 +1132,10 @@ function choicePrompt() {
         const o = m.owned[n] ? playerById(m, m.owned[n]) : null;
         const note = n === p.goal ? `<em class="goal">내 목적지 +${GOAL_BONUS}</em>` : '';
         const own = !o ? (isChance(n) ? '찬스 역' : `빈 역 · ${priceFor(m, n)}`) : o === p ? '내 역' : `<i class="bad">${nameOf(o)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
-        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || '<span class="wr-flag">목적지</span>'}<div><b>${n}</b><span>${own} · ${dist(p.node, n)}역</span></div>${note}</button>`;
+        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || `<span class="wr-flag">${isLoop(m) ? `${ahead(p.node, n)}칸` : '목적지'}</span>`}<div><b>${n}</b><span>${own}${isLoop(m) ? (n === LOOP_START ? ' · 월급!' : '') : ` · ${dist(p.node, n)}역`}</span></div>${note}</button>`;
       }).join('');
-      s = sheet(`<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">도착역 선택</h2><div class="warp-list">${rows}</div>`);
+      s = sheet(isLoop(m) ? `<span class="kind">강남 · 급행 환승</span><h2 style="margin-top:6px">내릴 칸 선택</h2><p>앞 ${c.options.length}칸 중 하나 · 시청을 넘으면 월급</p><div class="warp-list">${rows}</div>`
+        : `<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">도착역 선택</h2><div class="warp-list">${rows}</div>`);
     }
     s.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { Sound.click(); closeSheet(); resolve(b.dataset.v); }; });
   });
@@ -1218,7 +1250,7 @@ function drawMarks() {
   const m = M();
   $('#layer').querySelectorAll('.goal-flag, .incident').forEach((e) => e.remove());
   for (const p of m.players) {
-    if (p.out) continue;
+    if (p.out || !p.goal) continue;
     const el = document.createElement('div');
     el.className = 'goal-flag' + (p.human ? ' me' : '');
     el.dataset.player = p.id;
@@ -1235,7 +1267,7 @@ function drawMarks() {
 /** 플레이어 판의 독점 진행: ★ = 가진 명소역 수, 독점 하나 앞이면 빨갛게(판이 좁아 짧게) */
 function monoNote(m, p) {
   const s = monopolyOf(m, p);
-  const near = s.hot >= m.hotWin - 1 || s.line >= LINE_WIN - 1;
+  const near = s.hot >= m.hotWin - 1 || s.line >= m.lineWin - 1;
   return s.hot ? ` <i class="${near ? 'near' : ''}" title="명소역 ${s.hot}곳">★${s.hot}</i>` : near ? ' <i class="near">독점!</i>' : '';
 }
 
@@ -1274,7 +1306,7 @@ function drawClock() {
   $('#clock').innerHTML = `<span class="now">${hhmm(m.clock)}</span>
     <span class="track">${seg(CLOCK.last, m.end, 'last')}
       <i class="done" style="width:${pos(m.clock)}%"></i><b class="hand" style="left:${pos(m.clock)}%"></b></span>
-    ${t === 'last' ? `<span class="band time-last">${TIME_NAME.last}</span>` : ''}<span class="left">${Math.min(m.round, 12)} / 12바퀴</span>`;
+    ${t === 'last' ? `<span class="band time-last">${TIME_NAME.last}</span>` : ''}<span class="left">${Math.min(m.round, roundsOf(m))} / ${roundsOf(m)}바퀴</span>`;
 }
 
 function drawControls() {
@@ -1298,18 +1330,25 @@ function drawControls() {
   const can = mine ? investable(m, me).length : 0;
   ib.disabled = !can;
   ib.innerHTML = `노선 투자${can ? ` <b>${can}</b>` : ''}`;
-  $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
-    <div class="me-goal"><span>내 목적지</span><b>${me.goal}</b><em>${dist(me.node, me.goal)}역 · +${GOAL_BONUS + (h.goalBonus || 0)}</em></div>
-    <button class="btn small white" id="goalBtn">보기</button>`;
-  $('#goalBtn').onclick = () => { Sound.click(); Camera.frame([nodeXY(me.node), nodeXY(me.goal)], { maxZoom: 0.8, minZoom: 0.25, pad: 120 }); drawZoom(); };
+  if (isLoop(m)) {
+    const left = ahead(me.node, LOOP_START) || 32;
+    $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
+      <div class="me-goal"><span>다음 월급</span><b>시청까지 ${left}칸</b><em>+${SALARY + (h.loop?.goalBonus ?? 0)}</em></div>`;
+  } else {
+    $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
+      <div class="me-goal"><span>내 목적지</span><b>${me.goal}</b><em>${dist(me.node, me.goal)}역 · +${GOAL_BONUS + (h.goalBonus || 0)}</em></div>
+      <button class="btn small white" id="goalBtn">보기</button>`;
+    $('#goalBtn').onclick = () => { Sound.click(); Camera.frame([nodeXY(me.node), nodeXY(me.goal)], { maxZoom: 0.8, minZoom: 0.25, pad: 120 }); drawZoom(); };
+  }
   if (mine && !$('#hint').dataset.keep) setHint(me.rest ? '' : '내 차례');
 }
 
 function setHint(t) { const h = $('#hint'); if (h) h.textContent = t; }
-function drawZoom() { const z = $('#zoom'); if (z) z.textContent = G.regionView ? '내 위치' : '지역 지도'; }
+function drawZoom() { const z = $('#zoom'); if (z) z.textContent = G.regionView ? '내 위치' : M() && isLoop(M()) ? '판 전체' : '지역 지도'; }
 /** 이 판의 지역 전체를 한눈에 */
 function showRegion(ms) {
-  Camera.frame(areaOf(M()).stations.map(nodeXY), { maxZoom: 0.7, minZoom: 0.1, pad: 140, ms });
+  if (isLoop(M())) Camera.whole(ms);
+  else Camera.frame(areaOf(M()).stations.map(nodeXY), { maxZoom: 0.7, minZoom: 0.1, pad: 140, ms });
   G.regionView = true;
   drawZoom();
 }
@@ -1333,9 +1372,10 @@ function onMapTap(ev) {
   const rect = $('#cam').getBoundingClientRect();
   const k = rect.width / canvasSize().w;
   const x = (ev.clientX - rect.left) / k, y = (ev.clientY - rect.top) / k;
-  let best = null, bd = 40;
-  for (const n of Object.keys(STATION_LINES)) { const [sx, sy] = nodeXY(n); const d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = n; } }
+  let best = null, bd = isLoop(m) ? 70 : 40;
+  for (const n of isLoop(m) ? areaOf(m).stations : Object.keys(STATION_LINES)) { const [sx, sy] = nodeXY(n); const d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = n; } }
   if (!best) return;
+  if (isLoop(m) && CORNERS[best]) { toast(`${best} · ${CORNERS[best].name}: ${CORNERS[best].short}`); return; }
   const me = ME(), o = m.owned[best] ? playerById(m, m.owned[best]) : null;
   const lines = STATION_LINES[best].map((l) => LINES[l].name).join('·');
   const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag}: ${HOTSPOTS[best].desc}` : '';
@@ -1352,6 +1392,7 @@ const INC_ART = {
   delay: '<circle cx="20" cy="21" r="14" fill="#FFFDF7" stroke="#22201D" stroke-width="3"/><path d="M20 21V12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/><path class="inc-hand" d="M20 21l7 4" stroke="#E0533D" stroke-width="3" stroke-linecap="round"/><path d="M14 4h12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/>',
   crowd: '<circle cx="11" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M3 35c0-7 4-12 8-12s8 5 8 12z" fill="#2EA6DA" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="29" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M21 35c0-7 4-12 8-12s8 5 8 12z" fill="#E2337A" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="11" r="5.5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M11 33c0-8 4-13 9-13s9 5 9 13z" fill="#F2B33D" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/>',
   gate: '<rect x="5" y="14" width="6" height="22" rx="2" fill="#6E6A5E" stroke="#22201D" stroke-width="2.6"/><rect x="9" y="12" width="28" height="8" rx="3" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6"/><path d="M15 12l-4 8M23 12l-4 8M31 12l-4 8" stroke="#E0533D" stroke-width="3.4"/><rect x="9" y="12" width="28" height="8" rx="3" fill="none" stroke="#22201D" stroke-width="2.6"/><circle class="inc-lamp" cx="8" cy="10" r="3.5" fill="#E0533D" stroke="#22201D" stroke-width="2.4"/>',
+  festival: '<path d="M20 26 Q17 32 21 37" fill="none" stroke="#22201D" stroke-width="2.2"/><ellipse cx="13" cy="15" rx="8" ry="10" fill="#E2588F" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="13" rx="8" ry="10" fill="#F2B33D" stroke="#22201D" stroke-width="2.6"/><ellipse cx="20" cy="21" rx="8" ry="10" fill="#2F6BD8" stroke="#22201D" stroke-width="2.6"/>',
   hype: '<path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#22201D" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#E2588F" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 10h9v9z" fill="#E2588F" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/>',
   busk: '<path d="M15 30V8l16-4v20" fill="none" stroke="#22201D" stroke-width="3.2" stroke-linejoin="round"/><ellipse cx="11" cy="30" rx="6" ry="4.5" fill="#E2337A" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="25" rx="6" ry="4.5" fill="#8E63B0" stroke="#22201D" stroke-width="2.6"/>'
 };
@@ -1362,9 +1403,10 @@ const INC_FX = {
   crowd: '<i class="hop h1"></i><i class="hop h2"></i>',
   busk: '<i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i>',
   gate: '<i class="pulse"></i>',
-  hype: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>'
+  hype: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>',
+  festival: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>'
 };
-const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹', gate: (i) => `통제 ~${hhmm(i.until)}`, hype: (i) => `떡상 ×2 ~${hhmm(i.until)}` };
+const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹', gate: (i) => (i.once ? '통제 · 1명' : `통제 ~${hhmm(i.until)}`), hype: (i) => `떡상 ×${i.tollX || 2} ~${hhmm(i.until)}`, festival: (i) => `축제 ×2 ~${hhmm(i.until)}` };
 
 function addIncident(i) {
   const el = document.createElement('div');
@@ -1523,7 +1565,7 @@ async function skillDemo(h) {
   const plan = DEMO[h.active.id];
   if (!plan) return;
   const others = HERO_DATA.filter((x) => x.id !== h.id);
-  const steps = [['주사위 던질 때마다 1칸 · ' + h.active.charge + '칸이면 충전 완료'], ...plan.steps];
+  const steps = [['주사위 던질 때마다 1칸 · ' + chargeOf(h, loopy()) + '칸이면 충전 완료'], ...plan.steps];
   const s = sheet(`
     <span class="kind">실전 미리 보기</span>
     <h2 class="dm-title">${skillArt(h.active.id, 30)} ${h.active.name}</h2>
@@ -1548,7 +1590,7 @@ async function skillDemo(h) {
       if (!live()) return;
       lis.forEach((li, j) => { li.classList.toggle('on', j === i); li.classList.toggle('done', j < i); });
       await sleep(250);
-      if (i === 0) await d.charge(h.active.charge);
+      if (i === 0) await d.charge(chargeOf(h, loopy()));
       else await steps[i][1](d);
       await sleep(550);
     }
@@ -1805,6 +1847,10 @@ async function travel(pid, from, path) {
 
 /** 두 역을 잇는 같은 호선의 길(직통 열차가 지나갈 역들) */
 function linePath(from, to) {
+  if (M() && isLoop(M())) {
+    const k = ahead(from, to);
+    return { path: [from, ...forward(from, k || 1)], line: 2 };
+  }
   let best = null;
   for (const l of STATION_LINES[from] || []) {
     if (!STATION_LINES[to]?.includes(l)) continue;
@@ -1943,14 +1989,31 @@ const HANDLERS = {
   async cash(e) {
     const p = playerById(M(), e.player);
     const at = e.node ? nodeApp(e.node) : panelSpot(p.id);
-    Sound.coin();
-    if (e.node) FX.pow(at[0], at[1] - 60, `+${e.amount}`, '#2EA6DA', '#FFFDF7', 4);
+    if (e.why === 'salary') {
+      Sound.home();
+      FX.confetti(at[0], at[1] - 30, p.human ? 24 : 10);
+      FX.pow(at[0], at[1] - 70, `${e.landed ? '시청 도착! ' : ''}월급 +${e.amount}`, '#E0533D', '#FFFDF7', -5);
+      if (p.human) buzz(25);
+    } else Sound.coin();
+    if (e.node && e.why !== 'salary') FX.pow(at[0], at[1] - 60, `+${e.amount}`, '#2EA6DA', '#FFFDF7', 4);
+    if (e.why === 'shortcut') { const sp = panelSpot(p.id); FX.pow(sp[0], sp[1] + 30, `지름길 수당 +${e.amount}`, '#4C9A3A', '#FFFDF7', 4); }
     if (e.node) await moneyFly(at, panelSpot(p.id), e.amount);
     bump(p.id);
     drawHud();
     await sleep(120);
   },
   async incident(e) {
+    if (e.kind === 'festival') {
+      Camera.follow(nodeXY(e.node), 300);
+      await sleep(300);
+      const el = addIncident(e);
+      const [x, y] = nodeApp(e.node);
+      Sound.home(); FX.confetti(x, y - 30, 26); FX.ring(x, y, '#E2588F');
+      FX.pow(x, y - 64, '팝업 축제! ×2', '#E2588F', '#FFFDF7', -6);
+      await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.4)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+      await sleep(300);
+      return;
+    }
     if (e.kind === 'gate' || e.kind === 'hype') {
       // 스킬로 생긴 표지: 컷인 뒤에 그 역에 꽂힌다
       Camera.follow(nodeXY(e.node), 300);
@@ -1977,7 +2040,7 @@ const HANDLERS = {
   },
   async incidentEnd(e) {
     const el = $('#layer').querySelector(`.incident[data-node="${e.node}"]`);
-    if (e.used) { const [x, y] = nodeApp(e.node); FX.pow(x, y - 60, '한 번 더!', '#E2337A', '#FFFDF7', -5); Sound.coin(); }
+    if (e.used) { const [x, y] = nodeApp(e.node); const gate = e.kind === 'gate'; FX.pow(x, y - 60, gate ? '강제 정차!' : '한 번 더!', gate ? '#E0533D' : '#E2337A', '#FFFDF7', -5); if (gate) Sound.clank(); else Sound.coin(); }
     if (el) { await tween(el, [{ opacity: 1 }, { opacity: 0, transform: 'scale(1.3)' }], { duration: 300, fill: 'forwards' }); el.remove(); }
   },
   async again(e) {
@@ -2031,10 +2094,19 @@ const HANDLERS = {
     await drawCard({ tone: 'hot', deck: '명소역', title: e.tag, short: e.desc, art: hotArt(e.node, 110), place: e.node, quick: !p.human });
   },
   async choice() {},
+  async corner(e) {
+    const p = playerById(M(), e.player);
+    const at = nodeApp(e.node);
+    if (e.kind === 'start') return;
+    FX.ring(at[0], at[1], '#FFFDF7');
+    const art = { festival: incidentArt('festival', 96), express: skillArt('direct', 96), maze: incidentArt('delay', 96) }[e.kind];
+    await drawCard({ tone: e.kind === 'maze' ? 'warn' : 'good', deck: '모서리 칸', title: `${e.node} · ${e.name}`, short: e.short, art, quick: !p.human });
+    if (e.kind === 'maze') act(pieceEl(p.id), 'sad', 900);
+  },
   async warp(e) {
     const p = playerById(M(), e.player);
     const el = pieceEl(p.id);
-    if (e.by === 'direct') {
+    if (e.by === 'direct' || e.by === 'express') {
       // 직통 열차: 열차가 들어와 태우고, 같은 호선을 따라 달려 내려 준다
       const { path, line } = linePath(e.from, e.to);
       const pts = path.map(nodeXY), end = pts[pts.length - 1], lc = LINES[line]?.color || colorOf(p);
@@ -2106,7 +2178,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     flash(app);
     await drawCard({ tone: p.human ? 'good' : 'bad', deck: '독점 승리', title: `${p.human ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
-      short: e.kind === 'hot' ? `명소역 ${M().hotWin}곳 독점` : `${LINES[e.line]?.name || ''} ${LINE_WIN}역 연결`, art: character(p.hero, 96, 'dance') });
+      short: e.kind === 'hot' ? `명소역 ${M().hotWin}곳 독점` : `${LINES[e.line]?.name || ''} ${M().lineWin}역 연결`, art: character(p.hero, 96, 'dance') });
   },
   async over() {}
 };
@@ -2154,7 +2226,7 @@ async function results() {
     return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
       <div><b>${p.human ? '나' : nameOf(p)}</b><span>${r.out ? '파산' : `자산 ${r.assets.toLocaleString()} · 역 ${stationsOf(m, p).length}곳`}</span></div></div>`;
   }).join('');
-  const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${m.hotWin}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${LINE_WIN}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
+  const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${m.hotWin}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${m.lineWin}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
   const s = sheet(`
     <div class="rs-head ${win ? 'win' : ''}" style="--pc:${colorOf(me)}">
       <div class="rs-rays"></div>

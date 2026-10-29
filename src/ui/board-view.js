@@ -4,7 +4,8 @@
 
 import { STATION_XY, SEOUL_DIMS, ALL_STATIONS, ALL_EDGES, LINES, isTransfer } from '../core/boards/seoul.js';
 import { isChance } from '../core/match.js';
-import { isHot } from '../core/estate.js';
+import { isHot, stationPrice } from '../core/estate.js';
+import { LOOP_TILES, CORNERS, SHORTCUTS, SIDES, sideOf } from '../core/boards/loop.js';
 import { HOT_ART } from './hot-art.js';
 
 const INK = '#22201D';
@@ -16,9 +17,9 @@ const FONT = 24;
 const geo = { w: SEOUL_DIMS[0] * UNIT + MARGIN * 2, h: SEOUL_DIMS[1] * UNIT + MARGIN * 2 };
 
 export const pieceSize = () => PIECE;
-export const canvasSize = () => ({ w: geo.w, h: geo.h });
+export const canvasSize = () => (MODE === 'loop' ? { w: LGEO.w, h: LGEO.h } : { w: geo.w, h: geo.h });
 export const proj = (x, y) => [MARGIN + x * UNIT, MARGIN + y * UNIT];
-export const nodeXY = (n) => proj(...STATION_XY[n]);
+export const nodeXY = (n) => (MODE === 'loop' && LOOP_XY[n] ? LOOP_XY[n] : proj(...STATION_XY[n]));
 /** 아래쪽일수록 위에 그려지도록 */
 export const depth = (y) => Math.round(y) + 10;
 
@@ -29,13 +30,13 @@ export const LABEL = {};
   const charW = FONT * 1.02, lineH = FONT * 1.2;
   const textOf = (n) => (n === '동대문역사문화공원' ? ['동대문역사', '문화공원'] : [n]);
   const r = (n) => (isHot(n) ? 25 : isTransfer(n) ? 17 : 13);
-  const circles = ALL_STATIONS.map((n) => { const [x, y] = nodeXY(n); const k = r(n) + 3; return [x - k, y - k, x + k, y + k]; });
+  const circles = ALL_STATIONS.map((n) => { const [x, y] = proj(...STATION_XY[n]); const k = r(n) + 3; return [x - k, y - k, x + k, y + k]; });
   const placed = [];
   const hit = (a, b) => !(a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]);
   // 큰 역(환승역)부터 자리를 잡는다
   const order = ALL_STATIONS.slice().sort((a, b) => (isTransfer(b) - isTransfer(a)) || a.localeCompare(b));
   for (const n of order) {
-    const [x, y] = nodeXY(n);
+    const [x, y] = proj(...STATION_XY[n]);
     const lines = textOf(n);
     const w = Math.max(...lines.map((l) => [...l].length)) * charW + 8, h = lines.length * lineH;
     const gap = r(n) + 6;
@@ -95,6 +96,7 @@ const STAR = (x, y) => `<path d="M ${x} ${y} l 5 10 11 1.4 -8 7.4 2.1 11 -10.1 -
  * state.region Set — 이 판의 지역. 밖의 역·선은 흐리게(이름 없이) 그려 위치만 알려 준다
  */
 export function boardSvg(state = {}) {
+  if (MODE === 'loop') return loopSvg(state);
   const owner = state.owner || {}, level = state.level || {};
   const inside = (n) => !state.region || state.region.has(n);
   const edgeIn = (e) => inside(e.a) && inside(e.b);
@@ -147,4 +149,163 @@ export function boardSvg(state = {}) {
     <path d="${river}" fill="none" stroke="#CFE7F3" stroke-width="80" stroke-linecap="round"/>
     <g>${faded}</g><g>${halos}</g><g>${glow}</g><g>${under}</g><g>${over}</g><g>${stations}</g>
   </svg>`;
+}
+
+// ── 순환선 판(부루마블식) ─────────────────────────────────────
+// 32칸 고리: 오른쪽 아래 시청에서 왼쪽으로 출발해 시계 방향. 칸은 둥근 블록(두께 있는 먹선), 안쪽 가장자리에 구역 색 띠,
+// 가운데는 공원과 한강, 그 위를 3·4호선 지름길 레일이 가로지른다.
+
+const LT = 92, LC = 140, LS = LT * 7 + LC * 2, LM = 44;   // 칸 폭 · 모서리 · 판 한 변 · 바깥 여백
+const LGEO = { w: LS + LM * 2, h: LS + LM * 2 + 18 };
+let MODE = 'map';
+/** 판 모양: 'map'(노선도) · 'loop'(순환선) — 게임 화면을 열 때 정한다 */
+export function useBoard(mode) { MODE = mode === 'loop' ? 'loop' : 'map'; }
+export const boardMode = () => MODE;
+
+/** 순환선 칸 i 의 사각형. inner 는 판 가운데 쪽 가장자리 */
+function loopRect(i) {
+  const R = LM + LS - LC;
+  if (i === 0) return { x: R, y: R, w: LC, h: LC };
+  if (i < 8) return { x: R - i * LT, y: R, w: LT, h: LC, inner: 'top' };
+  if (i === 8) return { x: LM, y: R, w: LC, h: LC };
+  if (i < 16) return { x: LM, y: R - (i - 8) * LT, w: LC, h: LT, inner: 'right' };
+  if (i === 16) return { x: LM, y: LM, w: LC, h: LC };
+  if (i < 24) return { x: LM + LC + (i - 17) * LT, y: LM, w: LT, h: LC, inner: 'bottom' };
+  if (i === 24) return { x: R, y: LM, w: LC, h: LC };
+  return { x: R, y: LM + LC + (i - 25) * LT, w: LC, h: LT, inner: 'left' };
+}
+const LOOP_XY = {};
+LOOP_TILES.forEach((n, i) => { const r = loopRect(i); LOOP_XY[n] = [r.x + r.w / 2, r.y + r.h / 2 + 8]; });
+
+/** 칸 이름(좁은 칸은 두 줄) */
+const LOOP_NAME = {
+  '을지로입구': ['을지로', '입구'], '을지로3가': ['을지로', '3가'], '동대문역사문화공원': ['DDP'], '건대입구': ['건대', '입구'],
+  '종합운동장': ['종합', '운동장'], '서울대입구': ['서울대', '입구'], '구로디지털단지': ['구로', '디지털'], '영등포구청': ['영등포', '구청'],
+  '홍대입구': ['홍대']
+};
+const BAND = 26;
+/** 주인 색을 흰색 쪽으로 옅게 */
+function tint(hex, k = 0.62) {
+  const v = parseInt(hex.slice(1), 16), c = [v >> 16, (v >> 8) & 255, v & 255].map((x) => Math.round(x + (255 - x) * k));
+  return `rgb(${c.join(',')})`;
+}
+const txt = (x, y, s, { size = 25, fill = INK, weight = 900, font = 'Pretendard Variable, Pretendard, sans-serif', anchor = 'middle' } = {}) =>
+  `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}" fill="${fill}" font-family="${font}">${s}</text>`;
+const DISPLAY = 'Gasoek One, sans-serif';
+
+/** 모서리 칸 그림 */
+const CORNER_ART = {
+  start: (cx, cy) => `<path d="M${cx + 34} ${cy - 22} H${cx - 14} V${cy - 40} L${cx - 50} ${cy - 10} L${cx - 14} ${cy + 20} V${cy + 2} H${cx + 34} Z" fill="#E0533D" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>`
+    + `<circle cx="${cx + 34}" cy="${cy + 26}" r="15" fill="#F2B33D" stroke="${INK}" stroke-width="3.5"/>${txt(cx + 34, cy + 33, '₩', { size: 18 })}`,
+  festival: (cx, cy) => [[-26, -14, '#E2588F'], [2, -30, '#F2B33D'], [28, -12, '#2F6BD8']].map(([dx, dy, c]) =>
+    `<path d="M${cx + dx} ${cy + dy + 16} Q${cx + dx - 6} ${cy + dy + 30} ${cx + dx + 2} ${cy + 26}" fill="none" stroke="${INK}" stroke-width="2.5"/><ellipse cx="${cx + dx}" cy="${cy + dy}" rx="14" ry="17" fill="${c}" stroke="${INK}" stroke-width="3.5"/><ellipse cx="${cx + dx - 5}" cy="${cy + dy - 6}" rx="3.5" ry="5" fill="#FFFDF7" opacity=".8"/>`).join(''),
+  express: (cx, cy) => `<rect x="${cx - 34}" y="${cy - 34}" width="68" height="58" rx="18" fill="#2F6BD8" stroke="${INK}" stroke-width="4"/><rect x="${cx - 24}" y="${cy - 24}" width="48" height="20" rx="5" fill="#BFE3F5" stroke="${INK}" stroke-width="3"/>`
+    + `<circle cx="${cx - 18}" cy="${cy + 10}" r="5" fill="#F7C94A" stroke="${INK}" stroke-width="2.5"/><circle cx="${cx + 18}" cy="${cy + 10}" r="5" fill="#F7C94A" stroke="${INK}" stroke-width="2.5"/>`
+    + `<path d="M${cx + 6} ${cy - 54} L${cx - 8} ${cy - 30} H${cx + 2} L${cx - 6} ${cy - 12}" fill="none" stroke="#F2B33D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>`,
+  maze: (cx, cy) => `<rect x="${cx - 36}" y="${cy - 36}" width="72" height="62" rx="12" fill="#FFFDF7" stroke="${INK}" stroke-width="4"/>`
+    + `<path d="M${cx - 24} ${cy - 24} H${cx + 24} V${cy + 14} H${cx - 12} V${cy - 12} H${cx + 12} V${cy + 2}" fill="none" stroke="#8E5BC8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${cx}" cy="${cy - 2}" r="5" fill="#E0533D" stroke="${INK}" stroke-width="2"/>`
+};
+const CORNER_FILL = { start: '#FFE3DA', festival: '#FFE2EF', express: '#DDEBFB', maze: '#EDE3F7' };
+
+function loopTile(n, i, owner, level) {
+  const r = loopRect(i), x = r.x + 5, y = r.y + 5, w = r.w - 10, h = r.h - 10;
+  const own = owner[n], lv = level[n] || 0, c = CORNERS[n];
+  const slab = (fill) => `<rect x="${x}" y="${y + 8}" width="${w}" height="${h}" rx="20" fill="${INK}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${fill}" stroke="${INK}" stroke-width="4"/>`;
+  const cx = x + w / 2;
+  if (c) {
+    return slab(CORNER_FILL[c.kind]) + `<rect x="${x + 8}" y="${y + 8}" width="${w - 16}" height="${h - 16}" rx="14" fill="none" stroke="#FFFDF7" stroke-width="3" opacity=".9"/>`
+      + CORNER_ART[c.kind](cx, y + h / 2 - 2) + txt(cx, y + h - 14, c.name, { size: 22, font: DISPLAY, weight: 400 });
+  }
+  if (isChance(n)) {
+    return slab('#F7C94A') + `<rect x="${x + 7}" y="${y + 7}" width="${w - 14}" height="${h - 14}" rx="14" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="8 7"/>`
+      + (w > h ? txt(cx - 20, y + h / 2 + 20, '?', { size: 54, font: DISPLAY, weight: 400 }) + txt(cx + 22, y + h / 2 + 7, '찬스', { size: 18, fill: '#8A6A1F' })
+        : txt(cx, y + h / 2 + 14, '?', { size: 62, font: DISPLAY, weight: 400 }) + txt(cx, y + h - 14, '찬스', { size: 18, fill: '#8A6A1F' }));
+  }
+  const hot = isHot(n), side = SIDES[sideOf(n)].color;
+  let out = slab(own ? tint(own) : hot ? '#FFF4D6' : '#FFFDF7');
+  out += `<clipPath id="lt${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20"/></clipPath>`;
+  const b = r.inner === 'top' ? [x, y, w, BAND] : r.inner === 'bottom' ? [x, y + h - BAND, w, BAND] : r.inner === 'right' ? [x + w - BAND, y, BAND, h] : [x, y, BAND, h];
+  out += `<rect x="${b[0]}" y="${b[1]}" width="${b[2]}" height="${b[3]}" fill="${own || side}" clip-path="url(#lt${i})"/>`
+    + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="none" stroke="${INK}" stroke-width="4"/>`;
+  // 글자 자리: 띠를 뺀 몸통 가운데
+  const body = r.inner === 'top' ? [x, y + BAND, w, h - BAND] : r.inner === 'bottom' ? [x, y, w, h - BAND] : r.inner === 'right' ? [x, y, w - BAND, h] : [x + BAND, y, w - BAND, h];
+  // 주인 배지가 바깥 모서리에 붙으니, 주인 있는 칸은 글자를 띠 쪽으로 조금 민다
+  const push = own ? (r.inner === 'left' || r.inner === 'right' ? 16 : 10) : 0;
+  const bx = body[0] + body[2] / 2 + (r.inner === 'right' ? push : r.inner === 'left' ? -push : 0);
+  const by = body[1] + body[3] / 2 + (r.inner === 'top' ? -push : r.inner === 'bottom' ? push : 0);
+  const lines = LOOP_NAME[n] || [n];
+  const fs = lines.some((t) => t.length > 3) ? 20 : 23, gap = fs + 3;
+  const icon = hot ? 40 : 0, price = own ? 0 : 19;
+  let top = by - (icon + lines.length * gap + price) / 2;
+  if (hot) out += `<svg x="${bx - 20}" y="${top - 2}" width="40" height="40" viewBox="0 0 40 40">${HOT_ART[n]}</svg>`;
+  top += icon;
+  lines.forEach((t, k) => { out += txt(bx, top + fs * 0.86 + k * gap, t, { size: fs }); });
+  if (!own) out += txt(bx, top + lines.length * gap + 15, stationPrice(n), { size: 16, fill: '#8A8173', weight: 800 });
+  else {
+    // 주인 표시: 바깥쪽 모서리에 주인 색 동그라미 + 단계 그림, 랜드마크는 별
+    const ox = r.inner === 'left' ? x + w - 22 : r.inner === 'right' ? x + 22 : x + w - 22;
+    const oy = r.inner === 'bottom' ? y + 22 : y + h - 22;
+    out += `<circle cx="${ox}" cy="${oy}" r="15" fill="${own}" stroke="${INK}" stroke-width="3.5"/><g transform="translate(${ox} ${oy}) scale(.75)">${GLYPH[lv || 1]}</g>`;
+    if (lv >= 3) out += `<g transform="translate(${ox - 30} ${oy - 18}) scale(.8)">${STAR(0, 0)}</g>`;
+  }
+  return out;
+}
+
+/** 칸 i 의 판 가운데 쪽 가장자리 가운데(지름길 레일이 닿는 곳) */
+function innerPoint(i) {
+  const r = loopRect(i);
+  if (r.inner === 'top') return [r.x + r.w / 2, r.y + 4];
+  if (r.inner === 'bottom') return [r.x + r.w / 2, r.y + r.h - 4];
+  if (r.inner === 'right') return [r.x + r.w - 4, r.y + r.h / 2];
+  return [r.x + 4, r.y + r.h / 2];
+}
+
+function loopSvg(state = {}) {
+  const owner = state.owner || {}, level = state.level || {};
+  const I0 = LM + LC, I1 = LM + LS - LC; // 가운데 마당
+  // 지름길 레일: 살짝 휜 곡선(먹선 · 호선 색 · 가운데 흰 침목)
+  const rails = SHORTCUTS.map(([a, b, l]) => {
+    const p = innerPoint(LOOP_TILES.indexOf(a)), q = innerPoint(LOOP_TILES.indexOf(b));
+    const mx = (p[0] + q[0]) / 2 + (l === 3 ? -70 : 70), my = (p[1] + q[1]) / 2;
+    const d = `M${p[0]} ${p[1]} Q${mx} ${my} ${q[0]} ${q[1]}`;
+    const badge = ([x, y]) => `<circle cx="${x}" cy="${y}" r="17" fill="${LINES[l].color}" stroke="${INK}" stroke-width="3.5"/>${txt(x, y + 7, l, { size: 20, fill: '#FFFDF7' })}`;
+    return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="30" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${LINES[l].color}" stroke-width="20" stroke-linecap="round"/>`
+      + `<path d="${d}" fill="none" stroke="#FFFDF7" stroke-width="4" stroke-dasharray="10 12" stroke-linecap="round" opacity=".9"/>`
+      + badge(p) + badge(q);
+  }).join('');
+  // 이어서 가진 칸: 띠가 칸 사이 틈까지 이어진다
+  const chain = (state.links || []).map((e) => {
+    const ia = LOOP_TILES.indexOf(e.a), ib = LOOP_TILES.indexOf(e.b);
+    if (ia < 0 || ib < 0) return '';
+    const [ax, ay] = bandMid(ia), [bx, by] = bandMid(ib);
+    return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${e.color}" stroke-width="${BAND - 8}" stroke-linecap="round"/>`;
+  }).join('');
+  const trees = [[I0 + 70, I0 + 90], [I1 - 80, I0 + 70], [I0 + 110, I1 - 70], [I1 - 60, I1 - 110], [I0 + 300, I0 + 60]].map(([x, y]) =>
+    `<rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/>`).join('');
+  const midY = (I0 + I1) / 2;
+  const river = `M${I0} ${midY + 40} C ${I0 + 150} ${midY - 30}, ${I0 + 260} ${midY + 120}, ${I0 + 420} ${midY + 50} S ${I1 - 60} ${midY - 10}, ${I1} ${midY + 30}`;
+  const tiles = LOOP_TILES.map((n, i) => loopTile(n, i, owner, level)).join('');
+  return `<svg class="mat loop-mat" viewBox="0 0 ${LGEO.w} ${LGEO.h}" width="${LGEO.w}" height="${LGEO.h}" aria-hidden="true">
+    <rect x="${LM - 22}" y="${LM - 6}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#B59E78" stroke="${INK}" stroke-width="6"/>
+    <rect x="${LM - 22}" y="${LM - 22}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#F1E3C6" stroke="${INK}" stroke-width="6"/>
+    <rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="#D8EDC4" stroke="${INK}" stroke-width="4"/>
+    <path d="${river}" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#BFE3F5" stroke-width="56" stroke-linecap="round"/>
+    <path d="${river}" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="18 30" opacity=".8"/>
+    ${trees}
+    <g>${rails}</g>
+    <g transform="translate(${(I0 + I1) / 2} ${midY - 120}) rotate(-4)">
+      <rect x="-118" y="-46" width="236" height="92" rx="24" fill="${INK}"/><rect x="-118" y="-52" width="236" height="92" rx="24" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>
+      ${txt(0, 6, '역전', { size: 52, font: DISPLAY, weight: 400 })}${txt(0, 32, '2호선 순환선', { size: 17, fill: '#2FA84F' })}
+    </g>
+    <g>${tiles}</g><g>${chain}</g>
+  </svg>`;
+}
+
+/** 칸 i 의 띠 가운데 */
+function bandMid(i) {
+  const r = loopRect(i), x = r.x + 5, y = r.y + 5, w = r.w - 10, h = r.h - 10;
+  if (r.inner === 'top') return [x + w / 2, y + BAND / 2];
+  if (r.inner === 'bottom') return [x + w / 2, y + h - BAND / 2];
+  if (r.inner === 'right') return [x + w - BAND / 2, y + h / 2];
+  return [x + BAND / 2, y + h / 2];
 }

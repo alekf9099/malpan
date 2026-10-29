@@ -5,7 +5,7 @@
 
 import { dist, isTransfer } from './boards/seoul.js';
 import { links, stationPrice, isHot, baseToll } from './estate.js';
-import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, LINE_WIN, takeoverFor, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets } from './match.js';
+import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, takeoverFor, cornerAt, areaOf, isLoop, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets } from './match.js';
 import { chanceById } from './events.js';
 import { heroById } from './heroes.js';
 
@@ -27,15 +27,18 @@ function hotValue(m, p, n) {
   }
 }
 
+/** 순환선 모서리 칸에 서면 생기는 일의 값어치(대충) */
+const CORNER_VALUE = { start: 120, festival: 60, express: 70, maze: -90 };
+
 /** 남(rival)이 이 역을 가지면 독점이 되나 — 막아야 할 역 */
 function threatAt(m, p, n) {
   for (const q of alive(m)) {
     if (q === p) continue;
     const s = monopolyOf(m, q);
     if (isHot(n) && s.hot >= m.hotWin - 1) return q;
-    if (s.line >= LINE_WIN - 1) {
+    if (s.line >= m.lineWin - 1) {
       const next = { ...m.owned, [n]: q.id };
-      if ((links(next, q.id).at[n]?.len || 1) >= LINE_WIN) return q;
+      if ((links(next, q.id).at[n]?.len || 1) >= m.lineWin) return q;
     }
   }
   return null;
@@ -48,8 +51,8 @@ function monoGain(m, p, n) {
   if (isHot(n)) v += 60 + s.hot * 70 + (s.hot >= m.hotWin - 1 ? 2000 : 0);
   const next = { ...m.owned, [n]: p.id };
   const len = links(next, p.id).at[n]?.len || 1;
-  if (len >= LINE_WIN) v += 2000;
-  else if (len === LINE_WIN - 1) v += 150;
+  if (len >= m.lineWin) v += 2000;
+  else if (len === m.lineWin - 1) v += 150;
   return v;
 }
 
@@ -58,8 +61,12 @@ function pathValue(m, p, path, rng) {
   const end = path[path.length - 1];
   const ai = persona(p);
   let v = (rng.next() - 0.5) * 20;
-  if (path.includes(p.goal)) v += GOAL_BONUS + 100;
-  else v += (dist(p.node, p.goal) - dist(end, p.goal)) * 12;
+  if (p.goal) {
+    if (path.includes(p.goal)) v += GOAL_BONUS + 100;
+    else v += (dist(p.node, p.goal) - dist(end, p.goal)) * 12;
+  }
+  const corner = cornerAt(m, end);
+  if (corner) v += CORNER_VALUE[corner.kind] || 0;
   for (const [, f] of passFares(m, p, path)) v -= f.amount;
   const owner = m.owned[end];
   if (owner && owner !== p.id) {
@@ -68,7 +75,7 @@ function pathValue(m, p, path, rng) {
     if (toll >= p.money) v -= 2000; // 파산은 피한다
     // 중개인: 인수할 수 있는 남의 역이면 오히려 반갑다
     else if (heroById(p.hero).takeoverDiscount && m.levels[end] < 3 && p.money - toll - takeoverFor(m, end, p) >= 100) v += 60 + stationPrice(end) * 0.5;
-  } else if (!owner && !isChance(end)) {
+  } else if (!owner && !isChance(end) && !corner) {
     const price = priceFor(m, end);
     if (p.money - price >= ai.reserve) {
       v += 40 + stationPrice(end) * 0.25;
@@ -80,7 +87,7 @@ function pathValue(m, p, path, rng) {
     }
   } else if (owner === p.id) v += 30 + 50 * ai.build;
   if (isChance(end)) v += 25;
-  if (isHot(end)) v += hotValue(m, p, end);
+  if (isHot(end) && !corner) v += hotValue(m, p, end);
   const inc = incidentAt(m, end);
   if (inc?.kind === 'crowd') v += 90;
   if (inc?.kind === 'busk') v += 50;
@@ -138,6 +145,7 @@ export function chooseOption(m) {
   for (const o of c.options) {
     let v;
     if (c.kind === 'card') v = o === 'repair' ? -20 * stationsOf(m, p).length : CARD_VALUE[o] ?? 0;
+    else if (c.kind === 'festival') v = baseToll(m.owned, m.levels, o);
     else {
       v = (o === p.goal ? GOAL_BONUS + 60 : 0) + hotValue(m, p, o) * 0.3 + m.rng.next() * 10;
       const owner = m.owned[o];
@@ -179,14 +187,14 @@ export function wantsSkill(m) {
   switch (id) {
     case 'direct': return pick((n) => pathValue(m, p, [n], m.rng), 180);
     // 상대가 가까이 있는 비싼 내 역
-    case 'gate': return pick((n) => rivals.reduce((s, q) => s + (dist(q.node, n) <= 8 ? tollFor(m, n, q) : 0), 0), 40);
+    case 'gate': return pick((n) => rivals.reduce((s, q) => s + (areaOf(m).dist(q.node, n) <= 8 ? tollFor(m, n, q) : 0), 0), 40);
     case 'gather': return pick((n) => rivals.reduce((s, q) => s + Math.min(q.money, tollFor(m, n, q)), 0), 120);
     case 'hype': return pick((n) => baseToll(m.owned, m.levels, n), 30);
     case 'buyout': {
       const b = best(ts.filter((n) => p.money - buyoutFor(m, n) >= ai.reserve * 0.5), (n) => baseToll(m.owned, m.levels, n) + monoGain(m, p, n) * 0.5 + stationPrice(n) * 0.3);
       return b.target ? { target: b.target } : null;
     }
-    case 'cram': return cramTargets(m, p).length >= 2 || m.clock > m.end - 4 * 90 ? { target: null } : null;
+    case 'cram': return cramTargets(m, p).length >= 2 || m.clock > m.end - 4 * m.roundMin ? { target: null } : null;
     case 'combo': return { target: null };
     case 'transfuse': return rivals.some((q) => assets(m, q) > assets(m, p)) || p.money < 200 ? { target: null } : null;
     default: return null;

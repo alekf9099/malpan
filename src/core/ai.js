@@ -4,8 +4,8 @@
 // 독점: 명소역·이어진 노선을 노리고, 남이 독점 하나 앞이면 그 역을 먼저 사거나 인수해서 막는다
 
 import { dist, isTransfer } from './boards/seoul.js';
-import { links, stationPrice, isHot, HOT_LIST } from './estate.js';
-import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, LINE_WIN, takeoverFor, dieOptions, hotsOf } from './match.js';
+import { links, stationPrice, isHot, baseToll } from './estate.js';
+import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, LINE_WIN, takeoverFor, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets } from './match.js';
 import { chanceById } from './events.js';
 import { heroById } from './heroes.js';
 
@@ -93,10 +93,10 @@ function pathValue(m, p, path, rng) {
 export function chooseDie(m, rng = m.rng) {
   const p = current(m);
   let best = 0, bestV = -Infinity;
-  for (const i of [0, 1]) {
+  for (const i of dieChoices(m)) {
     let v = -Infinity;
     for (const path of dieOptions(m, i)) v = Math.max(v, pathValue(m, p, path, rng));
-    if (m.pending.rolls[i].bonus) v += 60;
+    if (i < 2 ? m.pending.rolls[i].bonus : m.pending.rolls.some((r) => r.bonus)) v += 60;
     if (v > bestV) { bestV = v; best = i; }
   }
   return best;
@@ -125,8 +125,8 @@ export function decideOffer(m) {
     return left >= Math.max(0, reserve);
   }
   if (o.kind === 'upgrade') return left >= ai.reserve + 120 - 200 * ai.build;
-  // 인수는 비싸다 — 중개인·급매 협상 중이면 과감하게
-  const keen = (heroById(p.hero).takeoverDiscount ? 150 : 0) + (p.deal ? 200 : 0);
+  // 인수는 비싸다 — 중개인은 과감하게
+  const keen = heroById(p.hero).takeoverDiscount ? 150 : 0;
   return left >= ai.reserve + 250 - 100 * ai.chain - keen;
 }
 
@@ -160,24 +160,35 @@ export function chooseInvest(m) {
   return can.sort((a, b) => stationPrice(b) - stationPrice(a) || m.levels[a] - m.levels[b])[0];
 }
 
-/** 굴리기 전에 스킬을 쓸까 */
+/**
+ * 굴리기 전에 스킬을 쓸까: 쓰면 { target }(역을 고르지 않는 스킬은 target null), 아니면 null.
+ * 노선 투자보다 먼저 묻는다(벼락치기는 투자를 한 단계 더 올려 준다).
+ */
 export function wantsSkill(m) {
   const p = current(m);
-  if (skillBlocked(m, p)) return false;
-  const id = heroById(p.hero).active.id;
-  if (id === 'dash') return dist(p.node, p.goal) <= 9;
-  if (id === 'again') return p.money >= 500 && m.clock > m.end - 6 * 60;
-  if (id === 'call') return stationsOf(m, p).length >= 3;
-  if (id === 'live') return HOT_LIST.some((n) => n !== p.node && dist(p.node, n) <= 5);
-  if (id === 'boost') return dist(p.node, p.goal) >= 6 && dist(p.node, p.goal) <= 12;
-  if (id === 'aid') return p.money < 120 && stationsOf(m, p).length >= 3;
-  if (id === 'deal') {
-    const near = Object.entries(m.owned).filter(([n, o]) => o !== p.id && m.levels[n] < 3 && dist(p.node, n) <= 5).length;
-    return near >= 3 && p.money >= 400;
+  if (skillBlocked(m, p)) return null;
+  const id = heroById(p.hero).active.id, ai = persona(p);
+  const rivals = alive(m).filter((q) => q !== p);
+  const best = (list, score) => {
+    let target = null, value = -Infinity;
+    for (const n of list) { const v = score(n); if (v > value) { value = v; target = n; } }
+    return { target, value };
+  };
+  const ts = skillTargets(m, p);
+  const pick = (score, min) => { const b = best(ts, score); return b.value >= min ? { target: b.target } : null; };
+  switch (id) {
+    case 'direct': return pick((n) => pathValue(m, p, [n], m.rng), 180);
+    // 상대가 가까이 있는 비싼 내 역
+    case 'gate': return pick((n) => rivals.reduce((s, q) => s + (dist(q.node, n) <= 8 ? tollFor(m, n, q) : 0), 0), 40);
+    case 'gather': return pick((n) => rivals.reduce((s, q) => s + Math.min(q.money, tollFor(m, n, q)), 0), 120);
+    case 'hype': return pick((n) => baseToll(m.owned, m.levels, n), 30);
+    case 'buyout': {
+      const b = best(ts.filter((n) => p.money - buyoutFor(m, n) >= ai.reserve * 0.5), (n) => baseToll(m.owned, m.levels, n) + monoGain(m, p, n) * 0.5 + stationPrice(n) * 0.3);
+      return b.target ? { target: b.target } : null;
+    }
+    case 'cram': return cramTargets(m, p).length >= 2 || m.clock > m.end - 4 * 90 ? { target: null } : null;
+    case 'combo': return { target: null };
+    case 'transfuse': return rivals.some((q) => assets(m, q) > assets(m, p)) || p.money < 200 ? { target: null } : null;
+    default: return null;
   }
-  if (id === 'shield') {
-    const rivals = Object.entries(m.owned).filter(([n, o]) => o !== p.id && dist(p.node, n) <= 7).length;
-    return rivals >= 4;
-  }
-  return false;
 }

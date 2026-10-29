@@ -16,11 +16,11 @@
 // (인파는 스킬·명소역으로만 생긴다).
 
 import { createRng } from './rng.js';
-import { paths, rollDie, spreadStations, isTransfer, regionOf, REGIONS } from './boards/seoul.js';
+import { paths, rollDie, spreadStations, isTransfer, regionOf, REGIONS, STATION_LINES, LINE_STATIONS } from './boards/seoul.js';
 import { stationPrice, upgradeCost, takeoverPrice, sellValue, invested, baseToll, MAX_LEVEL, links, HOTSPOTS, HOT_LIST, isHot } from './estate.js';
 import { INCIDENTS } from './incidents.js';
 import { CHANCE_CARDS, chanceById, pickWeighted } from './events.js';
-import { heroById, SKILL_USES } from './heroes.js';
+import { heroById } from './heroes.js';
 
 export const START_MONEY = 1000;
 export const GOAL_BONUS = 200;
@@ -65,8 +65,8 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false, regio
     players: heroes.map((hero, i) => ({
       id: 'p' + i, hero, human: i < humans, money: START_MONEY,
       node: starts[i], prev: null, goal: null, out: false, place: null,
-      skills: SKILL_USES, dash: 0, fly: false, again: false, rest: 0, coupon: false, goals: 0,
-      live: false, deal: false, rescued: false
+      charge: 0, dash: 0, fly: false, again: false, rest: 0, coupon: false, goals: 0,
+      combo: false, rescued: false
     })),
     owned: {},          // 역 → 주인 id
     levels: {},         // 역 → 단계(1~3)
@@ -117,16 +117,16 @@ function pickGoal(m, p) {
 
 export const incidentAt = (m, n) => m.incidents.find((i) => i.node === n);
 const fires = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].block).map((i) => i.node));
-const delays = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].stop).map((i) => i.node));
+/** p 를 세우는 역: 신호 장애 · 출입 통제(주인은 빼고) */
+const delays = (m, p = current(m)) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].stop && !(INCIDENTS[i.kind].own && m.owned[i.node] === p.id)).map((i) => i.node));
 export const buyable = (n) => !isChance(n);
 export const priceFor = (m, n) => stationPrice(n);
 export const upgradeFor = (m, n, p) => Math.round(upgradeCost(n) * (1 - (heroById(p.hero).buildDiscount || 0)));
-/** 인수 값: 들인 값 × 1.5 — 중개인은 30% 싸게, 급매 협상 중이면 들인 값 그대로 */
-export const takeoverFor = (m, n, p = current(m)) => {
-  const lv = m.levels[n] || 1;
-  const base = p.deal ? invested(n, lv) : takeoverPrice(n, lv);
-  return Math.round(base * (1 - (heroById(p.hero).takeoverDiscount || 0)));
-};
+/** 인수 값: 들인 값 × 1.5 — 중개인은 30% 싸게 */
+export const takeoverFor = (m, n, p = current(m)) => Math.round(takeoverPrice(n, m.levels[n] || 1) * (1 - (heroById(p.hero).takeoverDiscount || 0)));
+/** 강제 매수 값: 들인 값의 70% */
+export const BUYOUT_RATE = 0.7;
+export const buyoutFor = (m, n) => Math.round(invested(n, m.levels[n] || 1) * BUYOUT_RATE);
 
 /** payer 가 이 역에 서면 낼 통행료(면제권은 따로) */
 export function tollFor(m, n, payer) {
@@ -151,13 +151,25 @@ export function roll(m, rng = m.rng) {
   m.pending = { rolls, steps: null };
   m.phase = 'pick';
   const events = [{ type: 'roll', player: p.id, rolls }];
+  // 던질 때마다 스킬 1칸 충전
+  const cost = heroById(p.hero).active.charge;
+  if (p.charge < cost && ++p.charge === cost) events.push({ type: 'charged', player: p.id });
+  if (p.combo) { m.pending.combo = true; return events; }
   if (rolls[0].face === rolls[1].face) return events.concat(pickDie(m, 0));
   return events;
 }
 
-/** 주사위 i 를 고르면 몇 역 가나(스킬 급행 +3 · 콜 몰림/하늘길 ×2 포함) */
+/** 고를 수 있는 주사위: 0·1, 동시 배달 중이면 2(둘의 합)도 */
+export const dieChoices = (m) => (m.pending?.combo ? [0, 1, 2] : [0, 1]);
+/** 주사위 i(0·1, 2 는 둘의 합 — 동시 배달) */
+export function dieAt(m, i) {
+  const [a, b] = m.pending.rolls;
+  if (i !== 2) return m.pending.rolls[i];
+  return { value: a.value + b.value, face: 'sum', label: `${a.label}+${b.label}`, faces: [a.face, b.face], bonus: a.bonus || b.bonus, sum: true };
+}
+/** 주사위 i 를 고르면 몇 역 가나(급행 카드 +3 · 하늘길 ×2 포함) */
 export function dieSteps(m, i) {
-  const p = current(m), r = m.pending.rolls[i];
+  const p = current(m), r = dieAt(m, i);
   return r.value * (p.fly ? 2 : 1) + p.dash;
 }
 /** 주사위 i 로 갈 수 있는 길(도착역마다 하나) — 고르기 전에 보여 주거나 AI 가 따져 본다 */
@@ -170,14 +182,16 @@ export function dieOptions(m, i) {
 export function pickDie(m, i) {
   if (m.phase !== 'pick') throw new Error('고를 주사위가 없습니다');
   const p = current(m);
-  const r = m.pending.rolls[i];
-  if (!r) throw new Error('없는 주사위입니다: ' + i);
+  if (i === 2 && !m.pending.combo) throw new Error('동시 배달 중이 아닙니다');
+  if (!m.pending.rolls[i] && i !== 2) throw new Error('없는 주사위입니다: ' + i);
+  const r = dieAt(m, i);
   const steps = dieSteps(m, i);
   const events = [{ type: 'die', player: p.id, roll: r, index: i, steps, dash: p.dash, fly: p.fly }];
   p.dash = 0;
   p.fly = false;
+  p.combo = false;
   if (r.bonus) p.again = true;
-  m.pending = { roll: r, rolls: m.pending.rolls, steps };
+  m.pending = { roll: r, rolls: m.pending.rolls, steps, free: !!m.pending.combo };
   m.phase = 'move';
   if (!legalPaths(m).length) {
     events.push({ type: 'stuck', player: p.id });
@@ -200,8 +214,8 @@ export function nextStations(m, node, back) {
   if (!next.length) next = adj[node].filter((x) => !avoid.has(x));
   return next;
 }
-/** 이 역에 닿으면 남은 칸이 있어도 멈추나(신호 장애) */
-export const stopsAt = (m, n) => delays(m).has(n);
+/** 이 역에 닿으면 남은 칸이 있어도 멈추나(신호 장애 · 출입 통제) */
+export const stopsAt = (m, n, p = current(m)) => delays(m, p).has(n);
 
 /** 길이 규칙에 맞나: 한 역씩 이웃 · 되돌아가지 않기 · 불난 역 피하기 · 칸 수(신호 장애·막힘이면 더 짧게) */
 export function validPath(m, path) {
@@ -222,12 +236,13 @@ export function move(m, path) {
   if (!validPath(m, path)) throw new Error('갈 수 없는 길입니다: ' + path.join('→'));
   const p = current(m);
   const from = p.node;
+  const free = m.pending.free; // 동시 배달: 통과 요금 없이
   p.prev = path.length > 1 ? path[path.length - 2] : from;
   p.node = path[path.length - 1];
   m.pending = null;
   const events = [{ type: 'move', player: p.id, from, path }];
   if (path.includes(p.goal)) events.push(...reachGoal(m, p));
-  for (const [owner, info] of passFares(m, p, path)) {
+  for (const [owner, info] of free ? [] : passFares(m, p, path)) {
     events.push(...pay(m, p, info.amount, owner, { why: 'pass', nodes: info.nodes }));
     if (p.out) return events.concat(endTurn(m));
   }
@@ -266,7 +281,6 @@ function hotspotPower(m, p) {
   const cash = (amount) => { p.money += amount; events.push({ type: 'cash', player: p.id, node: n, amount, why: 'hot' }); };
   const hero = heroById(p.hero);
   if (hero.hotBonus) cash(hero.hotBonus);          // 여행 유튜버: 명소 브이로그
-  if (p.live) { p.live = false; cash(120); }       // 생방송 후원
   if (n === '서울역') {
     const options = warpOptions(m, p);
     if (options.length) m.choice = { kind: 'warp', node: n, options };
@@ -425,23 +439,28 @@ export function decide(m, yes) {
     }
     const chain = links(m.owned, p.id).at[o.node]?.len || 1;
     events.push({ type: o.kind, player: p.id, node: o.node, price: o.price, level: m.levels[o.node], from: o.from, chain, linked: chain > before && chain > 1 });
-    // 부동산 중개인: 남의 거래마다 수수료
-    if (o.kind !== 'upgrade') for (const q of alive(m)) { const fee = q !== p && heroById(q.hero).commission; if (fee) { q.money += fee; events.push({ type: 'cash', player: q.id, amount: fee, why: 'commission' }); } }
-    if (o.kind !== 'upgrade') {
-      const mono = monopolyOf(m, p);
-      if (monoWin(m, mono)) {
-        const kind = mono.hot >= m.hotWin ? 'hot' : 'line';
-        events.push({ type: 'monopoly', player: p.id, kind, line: mono.lineId });
-        m.mono = { kind, line: mono.lineId };
-        return events.concat(finish(m, 'monopoly', p));
-      }
-      if (mono.hot === m.hotWin - 1 && monoBefore.hot < mono.hot) events.push({ type: 'monoWarn', player: p.id, kind: 'hot', have: mono.hot, need: m.hotWin });
-      if (mono.line === LINE_WIN - 1 && monoBefore.line < mono.line) events.push({ type: 'monoWarn', player: p.id, kind: 'line', line: mono.lineId, have: mono.line, need: LINE_WIN });
-    }
+    if (o.kind !== 'upgrade' && gained(m, p, monoBefore, events)) return events;
   } else {
     events.push({ type: 'pass', player: p.id, node: o.node, kind: o.kind });
   }
   return events.concat(endTurn(m));
+}
+
+/** 역을 새로 가진 뒤: 중개 수수료 · 독점 검사(독점이면 판이 끝나고 true) */
+function gained(m, p, monoBefore, events) {
+  // 부동산 중개인: 남의 거래마다 수수료
+  for (const q of alive(m)) { const fee = q !== p && heroById(q.hero).commission; if (fee) { q.money += fee; events.push({ type: 'cash', player: q.id, amount: fee, why: 'commission' }); } }
+  const mono = monopolyOf(m, p);
+  if (monoWin(m, mono)) {
+    const kind = mono.hot >= m.hotWin ? 'hot' : 'line';
+    events.push({ type: 'monopoly', player: p.id, kind, line: mono.lineId });
+    m.mono = { kind, line: mono.lineId };
+    events.push(...finish(m, 'monopoly', p));
+    return true;
+  }
+  if (mono.hot === m.hotWin - 1 && monoBefore.hot < mono.hot) events.push({ type: 'monoWarn', player: p.id, kind: 'hot', have: mono.hot, need: m.hotWin });
+  if (mono.line === LINE_WIN - 1 && monoBefore.line < mono.line) events.push({ type: 'monoWarn', player: p.id, kind: 'line', line: mono.lineId, have: mono.line, need: LINE_WIN });
+  return false;
 }
 
 /**
@@ -560,7 +579,6 @@ function endTurn(m) {
     return events;
   }
   p.again = false;
-  p.deal = false; // 급매 협상은 그 차례에만
   const before = m.turn;
   do { m.turn = (m.turn + 1) % m.players.length; } while (m.players[m.turn].out);
   if (m.turn <= before) {
@@ -593,42 +611,104 @@ function finish(m, reason, winner = null) {
 
 // ── 스킬 ───────────────────────────────────────────────────
 
-export function skillBlocked(m, p = current(m)) {
-  const h = heroById(p.hero);
-  if (m.phase !== 'roll' || current(m) !== p) return '주사위 전에만 사용 가능';
-  if (p.skills <= 0) return '이번 판 사용 완료';
-  if (h.active.id === 'call' && !stationsOf(m, p).length) return '보유 역 없음';
-  if (h.active.id === 'shield' && p.coupon) return '이미 면제권 보유';
-  if (h.active.id === 'live' && p.live) return '이미 생방송 중';
-  if (h.active.id === 'boost' && p.fly) return '이미 이동 2배 적용 중';
-  if (h.active.id === 'aid' && !stationsOf(m, p).length) return '보유 역 없음';
-  if (h.active.id === 'deal' && p.deal) return '이미 급매 협상 중';
+/** 회식 소집 회식비(통행료 배수 · 한 명 상한) · 수혈 금액(꼴찌면 두 배) */
+export const GATHER_RATE = 0.25;
+export const GATHER_MAX = 80;
+export const TRANSFUSE = 60;
+
+export const CRAM_COUNT = 2;
+/** 벼락치기로 올릴 수 있는 내 역(비싼 것부터) */
+export const cramTargets = (m, p) => stationsOf(m, p).filter((n) => m.levels[n] < MAX_LEVEL).sort((a, b) => stationPrice(b) - stationPrice(a) || m.levels[a] - m.levels[b]);
+
+/** 스킬 칸 수(다 차야 쓸 수 있다) */
+export const skillCost = (p) => heroById(p.hero).active.charge;
+
+/** 역을 골라야 하는 스킬이면 고를 수 있는 역들, 아니면 null */
+export function skillTargets(m, p = current(m)) {
+  const id = heroById(p.hero).active.id, R = areaOf(m), fire = fires(m);
+  if (id === 'direct') return [...new Set((STATION_LINES[p.node] || []).flatMap((l) => LINE_STATIONS[l]))].filter((n) => n !== p.node && R.set.has(n) && !fire.has(n));
+  if (id === 'gate' || id === 'gather' || id === 'hype') return stationsOf(m, p).filter((n) => !fire.has(n));
+  if (id === 'buyout') return Object.keys(m.owned).filter((n) => m.owned[n] !== p.id && !isHot(n) && m.levels[n] < MAX_LEVEL && p.money >= buyoutFor(m, n));
   return null;
 }
 
-export function useSkill(m) {
+export function skillBlocked(m, p = current(m)) {
+  const h = heroById(p.hero), id = h.active.id;
+  if (m.phase !== 'roll' || current(m) !== p) return '주사위 전에만 사용 가능';
+  if (p.charge < h.active.charge) return `충전 중 ${p.charge}/${h.active.charge}`;
+  const t = skillTargets(m, p);
+  if (t && !t.length) return id === 'buyout' ? '살 수 있는 역 없음' : id === 'direct' ? '갈 수 있는 역 없음' : '보유 역 없음';
+  if (id === 'cram' && !cramTargets(m, p).length) return '증축할 역 없음';
+  if (id === 'combo' && p.combo) return '이미 적용 중';
+  return null;
+}
+
+/** 스킬을 쓴다. 역을 고르는 스킬이면 target 이 skillTargets 중 하나여야 한다 */
+export function useSkill(m, target = null) {
   const p = current(m);
   const why = skillBlocked(m, p);
   if (why) throw new Error(why);
-  const h = heroById(p.hero);
-  p.skills--;
-  const events = [{ type: 'skill', player: p.id, hero: h.id, skill: h.active.id, name: h.active.name, desc: h.active.desc }];
-  if (h.active.id === 'dash') p.dash += 3;
-  else if (h.active.id === 'again') p.again = true;
-  else if (h.active.id === 'shield') p.coupon = true;
-  else if (h.active.id === 'call') {
-    const mine = m.rng.shuffle(stationsOf(m, p).filter((n) => !incidentAt(m, n))).slice(0, 2);
-    for (const n of mine) events.push(...spawnIncident(m, 'crowd', n));
-  } else if (h.active.id === 'live') p.live = true;
-  else if (h.active.id === 'boost') p.fly = true;
-  else if (h.active.id === 'deal') p.deal = true;
-  else if (h.active.id === 'aid') {
-    const n = stationsOf(m, p).sort((a, b) => invested(a, m.levels[a]) - invested(b, m.levels[b]))[0];
-    const v = invested(n, m.levels[n]);
-    p.money += v;
-    delete m.owned[n]; delete m.levels[n];
-    events.push({ type: 'sell', player: p.id, node: n, amount: v, aid: true });
+  const h = heroById(p.hero), id = h.active.id;
+  const targets = skillTargets(m, p);
+  if (targets && !targets.includes(target)) throw new Error('고를 수 없는 역입니다: ' + target);
+  p.charge = 0;
+  const events = [{ type: 'skill', player: p.id, hero: h.id, skill: id, name: h.active.name, desc: h.active.desc, node: targets ? target : null }];
+  const rivals = alive(m).filter((q) => q !== p);
+  if (id === 'cram') {
+    // 벼락치기: 비싼 내 역부터 CRAM_COUNT 곳 무료 증축
+    for (const n of cramTargets(m, p).slice(0, CRAM_COUNT)) {
+      m.levels[n] = nextLevel(n, m.levels[n]);
+      events.push({ type: 'upgrade', player: p.id, node: n, price: 0, level: m.levels[n], free: true, chain: links(m.owned, p.id).at[n]?.len || 1 });
+    }
   }
+  else if (id === 'combo') p.combo = true;
+  else if (id === 'direct') {
+    // 직통 열차: 굴리지 않고 그 역으로 — 그 역에 선 것과 같다
+    const from = p.node;
+    p.prev = null;
+    p.node = target;
+    events.push({ type: 'warp', player: p.id, from, to: target, by: 'direct' });
+    if (target === p.goal) events.push(...reachGoal(m, p));
+    events.push(...land(m, p));
+    if (p.out) return events.concat(endTurn(m));
+    return afterLand(m, p, events);
+  } else if (id === 'gate') events.push(...spawnIncident(m, 'gate', target));
+  else if (id === 'hype') {
+    events.push(...spawnIncident(m, 'hype', target));
+    for (const q of rivals) if (q.node !== target && q.goal !== target) {
+      const from = q.goal;
+      q.goal = target;
+      events.push({ type: 'newGoal', player: q.id, from, goal: target, by: 'hype' });
+    }
+  } else if (id === 'gather') {
+    // 회식 소집: 모두 그 역으로 불려 와서 회식비(통행료 × GATHER_RATE, 한 명 GATHER_MAX 까지)를 낸다
+    for (const q of rivals) {
+      const from = q.node;
+      q.prev = null;
+      q.node = target;
+      events.push({ type: 'warp', player: q.id, from, to: target, by: 'gather' });
+      const amount = Math.min(GATHER_MAX, Math.round(tollFor(m, target, q) * GATHER_RATE));
+      if (!amount) continue;
+      if (q.coupon) { q.coupon = false; events.push({ type: 'tollFree', player: q.id, node: target, amount }); }
+      else events.push(...pay(m, q, amount, p.id, { node: target, why: 'toll' }));
+    }
+  } else if (id === 'transfuse') {
+    const rank = (q) => assets(m, q);
+    const top = rivals.slice().sort((a, b) => rank(b) - rank(a))[0];
+    const last = rivals.every((q) => rank(q) >= rank(p));
+    events.push(...pay(m, top, last ? TRANSFUSE * 2 : TRANSFUSE, p.id, { why: 'transfuse' }));
+  } else if (id === 'buyout') {
+    const price = buyoutFor(m, target), from = m.owned[target], seller = playerById(m, from);
+    const before = links(m.owned, p.id).at[target]?.len || 0;
+    const monoBefore = monopolyOf(m, p);
+    p.money -= price;
+    seller.money += price;
+    m.owned[target] = p.id;
+    const chain = links(m.owned, p.id).at[target]?.len || 1;
+    events.push({ type: 'takeover', player: p.id, node: target, price, level: m.levels[target], from, chain, linked: chain > before && chain > 1, buyout: true });
+    if (gained(m, p, monoBefore, events)) return events;
+  }
+  if (alive(m).length <= 1) return events.concat(endTurn(m));
   return events;
 }
 

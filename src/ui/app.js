@@ -6,13 +6,15 @@
 // 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
 
 import {
-  createMatch, roll, pickDie, dieOptions, dieSteps, areaOf, move, decide, choose, useSkill, skillBlocked, invest, investable, current, playerById, alive, assets, stationsOf,
+  createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
+  invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
   monopolyOf, HOT_WIN, LINE_WIN
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
-import { HEROES as HERO_DATA, heroById, SKILL_USES, STARTERS } from '../core/heroes.js';
+import { HEROES as HERO_DATA, heroById, STARTERS } from '../core/heroes.js';
+import { skillArt } from './skill-art.js';
 import { createRng } from '../core/rng.js';
 import { LINES, STATION_LINES, dist, lineOfEdge } from '../core/boards/seoul.js';
 import { BOARDS } from '../core/boards/index.js';
@@ -300,8 +302,8 @@ function pickHero(i = myIndex()) {
         <div class="pk-name"><b>${h.job} ${h.name}</b><span>${i + 1} / ${HERO_DATA.length}</span></div>
       </div>
       <div class="pk-cards">
-        <div class="pk-card"><span class="pk-kind">패시브 · ${h.skill}</span><p>${h.desc}</p></div>
-        <div class="pk-card skill"><span class="pk-kind">스킬 · ${h.active.name} (판당 ${SKILL_USES}회)</span><p>${h.active.desc}</p></div>
+        <div class="pk-card"><span class="pk-kind">고유 · ${h.skill}</span><p>${h.desc}</p></div>
+        ${skillCard(h, 'pk')}
         <div class="pk-card lead"><span class="pk-kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
       </div>
       <div class="pk-thumbs">${thumbs}</div>
@@ -364,8 +366,8 @@ const AI_NOTE = {
   staff: '여유 자금 유지 · 연결되는 역만 적극 구매',
   worker: '환승역 우선 수집',
   student: '같은 노선 연결 · 증축 집중',
-  youtuber: '명소역 위주 이동 · 명소 근처에서 생방송',
-  rider: '먼 목적지는 콜 몰림으로 단숨에 이동',
+  youtuber: '명소역 위주 이동 · 비싼 내 역을 떡상',
+  rider: '충전되면 바로 동시 배달로 질주',
   nurse: '구조를 믿고 공격적으로 구매',
   broker: '남의 역 도착 시 적극 인수'
 };
@@ -392,9 +394,8 @@ function dex(which = 0) {
           <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div></div>
         <div class="dex-info">
           <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>${lockNote}
-          <div class="dex-card"><span class="kind">패시브</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
-          <div class="dex-card skill"><span class="kind">스킬 · 판당 ${SKILL_USES}회</span><h3>${h.active.name}</h3><p>${h.active.desc}</p>
-            <div class="dex-rule">내 턴 · 주사위 전에 사용</div><button class="btn small yellow" id="dexSkill">미리 보기</button></div>
+          <div class="dex-card"><span class="kind">고유</span><h3>${h.skill}</h3><p>${h.desc}</p></div>
+          ${skillCard(h, 'dex')}
           <div class="dex-card tip"><span class="kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
         </div>
       </div>
@@ -411,7 +412,7 @@ function dex(which = 0) {
     const btn = ev.currentTarget;
     if (btn.disabled) return;
     btn.disabled = true; Sound.unlock();
-    await skillCutin({ hero: h.id, name: h.active.name, desc: h.active.desc });
+    await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: h.active.desc });
     act(big, 'cheer', 1200);
     btn.disabled = false;
   };
@@ -456,6 +457,7 @@ function guide(then = null) {
     ['통행료', '남의 역 도착 시 통행료, 지나가기만 해도 20% · 같은 노선 연결 ×2~×4 · 단계 ×3 · ×7'],
     ['인수', '통행료를 낸 뒤 1.5배 가격에 인수 · 랜드마크는 인수 불가'],
     ['노선 투자', '주사위 전, 연결된 내 역(2역 이상)은 어디서든 증축'],
+    ['스킬', '주사위를 던질 때마다 1칸 충전 · 다 차면(캐릭터마다 3~5칸) 주사위 전에 사용 · 쓰면 다시 0칸'],
     ['목적지', `목적지를 지나거나 도착 시 +${GOAL_BONUS} · 새 목적지 지급`],
     ['명소역', '그림 간판이 있는 역 11곳 · 가격 1.5배 · 도착 시 특수 효과(서울역 KTX, 김포공항 이동 2배, 명동 카드 선택 등) · 목적지로 자주 등장'],
     ['찬스 · 인파', '? 역 도착 시 찬스 카드 · 인파 역(도착 시 +100, 통행료 2배)은 스킬·명소역으로 발생'],
@@ -619,7 +621,7 @@ function enterGame() {
       <div class="me-row" id="meRow"></div>
       <div class="controls">
         <div class="throw-wrap"><button class="btn main" id="throw">출발</button></div>
-        <div class="side"><button class="btn small white" id="skillBtn"></button><button class="btn small white" id="investBtn"></button></div>
+        <div class="side"><button class="btn small white skill-btn" id="skillBtn"></button><button class="btn small white" id="investBtn"></button></div>
       </div>
     </div>
     <div class="fx-layer" id="fx"></div>`;
@@ -746,9 +748,10 @@ async function humanTurn(p) {
 async function aiTurn(p) {
   const m = M();
   await play([{ type: 'turnStart', player: p.id }]);
+  const sk = wantsSkill(m);
+  if (sk) await play(useSkill(m, sk.target));
   for (let n = chooseInvest(m); n; n = chooseInvest(m)) await play(invest(m, n));
-  if (wantsSkill(m)) await play(useSkill(m));
-  await play(roll(m));
+  if (m.phase === 'roll' && current(m) === p) await play(roll(m));
   if (m.phase === 'pick') await play(pickDie(m, chooseDie(m)));
   if (m.phase === 'move') await play(move(m, choosePath(m)));
   if (m.phase === 'choose') { await sleep(300); await play(choose(m, chooseOption(m))); }
@@ -766,10 +769,108 @@ async function onThrow() {
 
 async function onSkill() {
   const m = M();
-  if (G.busy || !current(m).human || skillBlocked(m)) { Sound.deny(); if (skillBlocked(m)) toast(skillBlocked(m)); return; }
+  if (G.busy || app.querySelector('.sheet')) return;
   Sound.unlock();
-  await play(useSkill(m));
+  Sound.click();
+  const target = await skillSheet();
+  if (target === undefined) return;
+  const p = current(m);
+  await play(useSkill(m, target));
   drawControls();
+  // 직통 열차처럼 차례가 이어지면(거래·고르기·다음 사람) 기다리던 차례를 푼다
+  if (m.phase !== 'roll' || current(m) !== p) G.wait?.();
+}
+
+// ── 스킬 창 ────────────────────────────────────────────────
+
+/** 충전 칸: 찬 칸은 캐릭터 색, 다 차면 반짝 */
+function skillPips(charge, cost) {
+  return `<span class="sk-pips ${charge >= cost ? 'full' : ''}">${Array.from({ length: cost }, (_, i) => `<i class="${i < charge ? 'on' : ''}"></i>`).join('')}</span>`;
+}
+
+/** 캐릭터 고르기·도감의 스킬 카드 */
+function skillCard(h, kind) {
+  const a = h.active;
+  return `<div class="${kind === 'pk' ? 'pk-card' : 'dex-card'} skill sk-card" style="--hc:${h.color}">
+    <span class="sk-icon">${skillArt(a.id, 44)}</span>
+    <div class="sk-body"><span class="${kind === 'pk' ? 'pk-kind' : 'kind'}">스킬 · 충전 ${a.charge}칸</span>
+      <h3>${a.name}</h3><p>${a.desc}</p>${skillPips(a.charge, a.charge)}
+      ${kind === 'dex' ? '<div class="dex-rule">던질 때마다 1칸 · 다 차면 주사위 전에 사용</div><button class="btn small yellow" id="dexSkill">미리 보기</button>' : ''}</div>
+  </div>`;
+}
+
+/** 스킬 대상 한 줄: 그 역에 쓰면 어떻게 되나 */
+function targetRow(m, p, id, n) {
+  const owner = m.owned[n] ? playerById(m, m.owned[n]) : null;
+  const lv = m.levels[n] || 0;
+  const toll = owner ? baseToll(m.owned, m.levels, n) : 0;
+  const rivals = alive(m).filter((q) => q !== p);
+  let info, note = '';
+  if (id === 'direct') {
+    info = n === p.goal ? '<i class="good">목적지</i>' : !owner ? (isChance(n) ? '찬스 역' : `빈 역 · ${priceFor(m, n)}`) : owner === p ? '내 역' : `<i class="bad">${nameOf(owner)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
+    info += ` · ${dist(p.node, n)}역`;
+    if (n === p.goal) note = `<em class="goal">+${GOAL_BONUS + (heroById(p.hero).goalBonus || 0)}</em>`;
+    else if (HOTSPOTS[n]) note = '<em class="hot">명소</em>';
+  } else if (id === 'buyout') {
+    info = `${nameOf(owner)} 역 · ${LEVEL_NAME[lv]} · 통행료 ${toll}`;
+    note = `<em class="price">${buyoutFor(m, n).toLocaleString()}</em>`;
+  } else {
+    info = `${LEVEL_NAME[lv]} · 통행료 ${toll}`;
+    if (id === 'gather') note = `<em class="price">+${rivals.reduce((s, q) => s + Math.min(GATHER_MAX, Math.round(tollFor(m, n, q) * GATHER_RATE)), 0)}</em>`;
+    else if (id === 'hype') note = `<em class="price">→ ${toll * 2}</em>`;
+    else if (id === 'gate') note = `<em class="price">근처 상대 ${rivals.filter((q) => dist(q.node, n) <= 8).length}</em>`;
+  }
+  const lines = (STATION_LINES[n] || []).map((l) => `<i style="--lc:${LINES[l].color}"></i>`).join('');
+  return `<button class="sk-row" data-v="${n}" style="--pc:${owner ? colorOf(owner) : '#FFFDF7'}">
+    <span class="sk-lines">${lines}</span><div><b>${hotArt(n, 18) || ''}${n}</b><span>${info}</span></div>${note}</button>`;
+}
+
+/** 대상 순서: 쓸 만한 것부터 */
+function sortTargets(m, p, id, list) {
+  const score = (n) => {
+    if (id === 'direct') return (n === p.goal ? 1e6 : 0) + (HOTSPOTS[n] ? 1e4 : 0) + (!m.owned[n] ? 1e3 : 0) - dist(p.node, n);
+    return baseToll(m.owned, m.levels, n);
+  };
+  return list.slice().sort((a, b) => score(b) - score(a));
+}
+
+/**
+ * 스킬 창: 캐릭터 · 스킬 아이콘 · 설명 · 충전 칸. 쓸 수 있으면 [사용](역을 고르는 스킬은 역 목록).
+ * 고른 대상(역을 안 고르면 null)을 돌려주고, 닫으면 undefined.
+ */
+function skillSheet() {
+  const m = M(), me = ME(), h = heroById(me.hero), a = h.active;
+  const cost = skillCost(me), why = skillBlocked(m, me);
+  const mine = current(m) === me && !!G.wait;
+  const blocked = !mine ? '내 차례 주사위 전에 사용' : why;
+  const targets = !blocked ? skillTargets(m, me) : null;
+  const ready = me.charge >= cost;
+  const list = targets ? sortTargets(m, me, a.id, targets) : null;
+  const extra = a.id === 'cram' && !blocked ? `<div class="sk-preview">${cramTargets(m, me).slice(0, CRAM_COUNT).map((n) => `<span>${n} <b>${LEVEL_NAME[m.levels[n]]} → ${LEVEL_NAME[n === '잠실' ? 3 : m.levels[n] + 1]}</b></span>`).join('')}</div>` : '';
+  const s = sheet(`
+    <div class="sk-sheet ${ready ? 'ready' : ''}" style="--hc:${h.color}">
+      <div class="sk-top">
+        <div class="sk-burst"></div>
+        <div class="sk-char">${character(h.id, 118, ready ? 'cheer' : 'idle')}</div>
+        <div class="sk-medal">${skillArt(a.id, 58)}</div>
+      </div>
+      <span class="sk-who">${h.job} ${h.name}의 스킬</span>
+      <h2>${a.name}</h2>
+      <p class="sk-desc">${a.desc}</p>
+      <div class="sk-charge">${skillPips(me.charge, cost)}<b>${ready ? '충전 완료' : `충전 ${me.charge} / ${cost}`}</b><em>던질 때마다 1칸</em></div>
+      ${extra}
+      ${list ? `<div class="sk-pick"><span class="sk-pick-h">${a.target} 선택</span><div class="sk-list">${list.map((n) => targetRow(m, me, a.id, n)).join('')}</div></div>` : ''}
+      <div class="row"><button class="btn white" id="skClose">닫기</button>
+        ${list ? '' : `<button class="btn ${blocked ? 'white' : 'yellow'} sk-go" id="skUse" ${blocked ? 'disabled' : ''}>${blocked ? `<small>${blocked}</small>` : '사용'}</button>`}</div>
+    </div>`);
+  if (list) { clearDest(); for (const n of list.slice(0, 12)) addDest(n, me, null, 2); }
+  return new Promise((resolve) => {
+    const done = (v) => { closeSheet(); clearDest(); resolve(v); };
+    s.querySelector('#skClose').onclick = () => { Sound.click(); done(undefined); };
+    app.querySelector('.sheet-back').onclick = () => done(undefined);
+    s.querySelector('#skUse')?.addEventListener('click', () => { Sound.click(); done(null); });
+    s.querySelectorAll('.sk-row').forEach((b) => { b.onclick = () => { Sound.click(); done(b.dataset.v); }; });
+  });
 }
 
 // ── 주사위 고르기 ──────────────────────────────────────────
@@ -789,8 +890,8 @@ function dieNote(m, p, o) {
 /** 주사위 둘 중 하나 고르기: 눈마다 도착할 곳을 지도 고리와 단추에 보여 준다 */
 function pickDiePrompt() {
   const m = M(), p = current(m);
-  const opts = [0, 1].map((i) => {
-    const r = m.pending.rolls[i];
+  const opts = dieChoices(m).map((i) => {
+    const r = dieAt(m, i);
     const list = dieOptions(m, i);
     return { i, r, steps: dieSteps(m, i), ends: [...new Set(list.map((x) => x[x.length - 1]))], goal: list.some((x) => x.includes(p.goal)) };
   });
@@ -802,10 +903,10 @@ function pickDiePrompt() {
   return new Promise((resolve) => {
     const box = document.createElement('div');
     box.className = 'die-pick';
-    box.innerHTML = `<div class="dp-row">${opts.map((o) => `
-      <button class="dp-btn opt${o.i} ${o.r.bonus ? 'express' : ''}" data-i="${o.i}">
-        <span class="dp-face">${o.r.bonus ? '급행' : o.r.value}</span>
-        <span class="dp-txt"><b>${o.steps}역${o.r.bonus ? ' + 한 번 더' : ''}</b><em>${dieNote(m, p, o)}</em></span>
+    box.innerHTML = `${opts.length > 2 ? `<div class="dp-head">${skillArt('combo', 20)} 동시 배달 · 하나 또는 합 · 통과 요금 없음</div>` : ''}<div class="dp-row ${opts.length > 2 ? 'three' : ''}">${opts.map((o) => `
+      <button class="dp-btn opt${o.i} ${o.r.bonus ? 'express' : ''} ${o.r.sum ? 'sum' : ''}" data-i="${o.i}">
+        <span class="dp-face">${o.r.sum ? `${o.r.value}<small>합</small>` : o.r.bonus ? '급행' : o.r.value}</span>
+        <span class="dp-txt"><b>${o.steps}역${o.r.bonus ? (opts.length > 2 ? ' · 한 번 더' : ' + 한 번 더') : ''}</b><em>${dieNote(m, p, o)}</em></span>
       </button>`).join('')}</div>`;
     $('#board').appendChild(box);
     tween(box, [{ transform: 'translateY(30px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
@@ -1087,7 +1188,7 @@ function drawHud() {
   const m = M();
   $('#players').innerHTML = m.players.map((p) => `
     <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${p.human ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
-      <span class="pa">${character(p.hero, 34)}</span>
+      <span class="pa">${character(p.hero, 34)}${p.out ? '' : hudCharge(p)}</span>
       <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
     </div>`).join('');
   // 돈이 바뀌었으면 숫자가 차오르고(늘면 초록, 줄면 빨강) 반짝인다
@@ -1101,6 +1202,12 @@ function drawHud() {
     G.hudMoney[p.id] = p.money;
   }
   drawClock();
+}
+
+/** 플레이어 판의 스킬 충전 막대 — 다 차면 스킬 아이콘 */
+function hudCharge(p) {
+  const cost = skillCost(p), k = Math.min(p.charge, cost);
+  return `<i class="pl-sk ${k >= cost ? 'ready' : ''}" style="--k:${(100 * k) / cost}%;--hc:${heroById(p.hero).color}">${k >= cost ? skillArt(heroById(p.hero).active.id, 16) : ''}</i>`;
 }
 
 function drawClock() {
@@ -1125,8 +1232,13 @@ function drawControls() {
   tb.innerHTML = mine ? `출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>주사위 2개</small>'}`
     : who.human ? `내 차례<small>${m.phase === 'pick' ? '주사위 선택 중' : m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
   const sb = $('#skillBtn'), h = heroById(me.hero);
-  sb.disabled = !mine || !!skillBlocked(m, me);
-  sb.innerHTML = `${h.active.name} <b>×${me.skills}</b>`;
+  const cost = skillCost(me), ready = me.charge >= cost;
+  sb.classList.toggle('ready', ready);
+  sb.classList.toggle('usable', mine && !skillBlocked(m, me));
+  sb.style.setProperty('--hc', h.color);
+  sb.style.setProperty('--k', (100 * Math.min(me.charge, cost)) / cost);
+  sb.style.setProperty('--n', cost);
+  sb.innerHTML = `<span class="sk-ring">${skillArt(h.active.id, 26)}</span><span class="sk-txt"><b>${h.active.name}</b><em>${ready ? '충전 완료' : `${me.charge}/${cost}`}</em></span>`;
   const ib = $('#investBtn');
   const can = mine ? investable(m, me).length : 0;
   ib.disabled = !can;
@@ -1184,6 +1296,8 @@ const INC_ART = {
   fire: '<path d="M20 4c2 7 10 10 10 20a10 10 0 0 1-20 0c0-5 3-8 5-10 0 4 2 6 4 6-1-6 1-11 1-16z" fill="#F2733D" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/><path d="M20 20c1 3 5 5 5 9a5 5 0 0 1-10 0c0-3 3-5 5-9z" fill="#F7C94A"/>',
   delay: '<circle cx="20" cy="21" r="14" fill="#FFFDF7" stroke="#22201D" stroke-width="3"/><path d="M20 21V12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/><path class="inc-hand" d="M20 21l7 4" stroke="#E0533D" stroke-width="3" stroke-linecap="round"/><path d="M14 4h12" stroke="#22201D" stroke-width="3" stroke-linecap="round"/>',
   crowd: '<circle cx="11" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M3 35c0-7 4-12 8-12s8 5 8 12z" fill="#2EA6DA" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="29" cy="15" r="5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M21 35c0-7 4-12 8-12s8 5 8 12z" fill="#E2337A" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="11" r="5.5" fill="#FFFDF7" stroke="#22201D" stroke-width="2.4"/><path d="M11 33c0-8 4-13 9-13s9 5 9 13z" fill="#F2B33D" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/>',
+  gate: '<rect x="5" y="14" width="6" height="22" rx="2" fill="#6E6A5E" stroke="#22201D" stroke-width="2.6"/><rect x="9" y="12" width="28" height="8" rx="3" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6"/><path d="M15 12l-4 8M23 12l-4 8M31 12l-4 8" stroke="#E0533D" stroke-width="3.4"/><rect x="9" y="12" width="28" height="8" rx="3" fill="none" stroke="#22201D" stroke-width="2.6"/><circle class="inc-lamp" cx="8" cy="10" r="3.5" fill="#E0533D" stroke="#22201D" stroke-width="2.4"/>',
+  hype: '<path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#22201D" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#E2588F" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 10h9v9z" fill="#E2588F" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/>',
   busk: '<path d="M15 30V8l16-4v20" fill="none" stroke="#22201D" stroke-width="3.2" stroke-linejoin="round"/><ellipse cx="11" cy="30" rx="6" ry="4.5" fill="#E2337A" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="25" rx="6" ry="4.5" fill="#8E63B0" stroke="#22201D" stroke-width="2.6"/>'
 };
 const incidentArt = (kind, size = 34) => `<svg class="inc-art" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">${INC_ART[kind]}</svg>`;
@@ -1191,9 +1305,11 @@ const INC_FX = {
   fire: '<i class="smoke s1"></i><i class="smoke s2"></i><i class="smoke s3"></i><i class="ember"></i>',
   delay: '<i class="pulse"></i><i class="pulse p2"></i>',
   crowd: '<i class="hop h1"></i><i class="hop h2"></i>',
-  busk: '<i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i>'
+  busk: '<i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i>',
+  gate: '<i class="pulse"></i>',
+  hype: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>'
 };
-const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹' };
+const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹', gate: (i) => `통제 ~${hhmm(i.until)}`, hype: (i) => `떡상 ×2 ~${hhmm(i.until)}` };
 
 function addIncident(i) {
   const el = document.createElement('div');
@@ -1276,7 +1392,7 @@ async function skillCutin(e) {
   c.style.setProperty('--hc', h.color);
   c.innerHTML = `<div class="cut-band"><div class="cut-lines"></div></div>
     <div class="cut-hero">${character(h.id, 190, 'cheer')}</div>
-    <div class="cut-text"><span class="who">${h.job} ${h.name}의 스킬</span><b>${e.name}</b><span class="what">${e.desc}</span></div>`;
+    <div class="cut-text"><span class="who">${h.job} ${h.name}의 스킬</span><span class="cut-icon">${skillArt(e.skill || h.active.id, 64)}</span><b>${e.name}</b><span class="what">${e.desc}</span>${e.node ? `<span class="tgt">▶ ${e.node}</span>` : ''}</div>`;
   app.appendChild(c);
   flash(app);
   const band = c.querySelector('.cut-band'), hero = c.querySelector('.cut-hero'), text = c.querySelector('.cut-text');
@@ -1330,6 +1446,12 @@ async function play(events) {
 
 const isMe = (pid) => playerById(M(), pid)?.human;
 const quick = (pid) => !isMe(pid);
+
+/** 요소 가운데의 앱 좌표(FX 층 기준) */
+function appSpot(el) {
+  const r = el.getBoundingClientRect(), a = app.getBoundingClientRect(), k = a.width / app.offsetWidth || 1;
+  return [(r.left - a.left + r.width / 2) / k, (r.top - a.top + r.height / 2) / k];
+}
 
 function toast(text) {
   app.querySelectorAll('.toast').forEach((t) => t.remove());
@@ -1409,7 +1531,7 @@ const HANDLERS = {
         await Roller.animate(spot, BOARDS.metro, e.rolls[0], 'me');
         setTimeout(() => spot.classList.remove('show'), 600);
       }
-      stampText(`${e.rolls[0].label} · ${e.rolls[1].label}`, '', e.rolls[0].face === e.rolls[1].face ? '같은 눈!' : '하나를 고르세요');
+      stampText(`${e.rolls[0].label} · ${e.rolls[1].label}`, '', M().pending?.combo ? '동시 배달 · 합도 가능' : e.rolls[0].face === e.rolls[1].face ? '같은 눈!' : '하나를 고르세요');
       await sleep(250);
     } else Sound.clatter();
   },
@@ -1439,7 +1561,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player), to = e.to ? playerById(M(), e.to) : null;
     const node = e.node || (e.nodes ? e.nodes[e.nodes.length - 1] : p.node);
     const at = nodeApp(node);
-    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : `−${e.amount}`;
+    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
     if (e.why === 'toll') { Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
     else Sound.coin();
@@ -1495,6 +1617,19 @@ const HANDLERS = {
     await sleep(120);
   },
   async incident(e) {
+    if (e.kind === 'gate' || e.kind === 'hype') {
+      // 스킬로 생긴 표지: 컷인 뒤에 그 역에 꽂힌다
+      Camera.follow(nodeXY(e.node), 300);
+      await sleep(300);
+      const el = addIncident(e);
+      const [x, y] = nodeApp(e.node);
+      Sound.stamp(); FX.ring(x, y, e.kind === 'gate' ? '#E0533D' : '#E2588F');
+      if (e.kind === 'hype') FX.sparkle(x, y - 30, 14, '#E2588F');
+      FX.pow(x, y - 64, e.kind === 'gate' ? '출입 통제!' : '떡상!', e.kind === 'gate' ? '#E0533D' : '#E2588F', '#FFFDF7', -6);
+      await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.4)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+      await sleep(350);
+      return;
+    }
     await drawCard({ tone: INCIDENTS[e.kind].cash || INCIDENTS[e.kind].again ? 'good' : 'warn', deck: '역 사건 카드', title: e.name, short: e.short, art: incidentArt(e.kind, 96), place: e.node, to: e.node, quick: true });
     const el = addIncident(e);
     const [x, y] = nodeApp(e.node);
@@ -1524,7 +1659,21 @@ const HANDLERS = {
     await sleep(500);
   },
   async extend(e) { toast(`막차 연장 · ${hhmm(e.end)}`); drawClock(); await sleep(400); },
-  async skill(e) { await skillCutin(e); },
+  async skill(e) { await skillCutin(e); drawHud(); },
+  async charged(e) {
+    const p = playerById(M(), e.player);
+    drawHud();
+    if (!p.human) return;
+    drawControls();
+    const b = $('#skillBtn');
+    if (!b) return;
+    const [x, y] = appSpot(b);
+    Sound.big(); buzz(25);
+    FX.sparkle(x, y, 16, heroById(p.hero).color);
+    FX.pow(x - 40, y - 50, '스킬 충전 완료!', heroById(p.hero).color, '#FFFDF7', -4);
+    tween(b, [{ transform: 'scale(1)' }, { transform: 'scale(1.18) rotate(-3deg)' }, { transform: 'scale(1)' }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.4)' });
+    await sleep(250);
+  },
   async rescue(e) {
     const p = playerById(M(), e.player);
     await drawCard({ tone: 'good', deck: '응급 대기', title: `${p.human ? '나' : nameOf(p)} 긴급 구조!`, short: `빚 ${e.debt} 탕감 · ${e.amount}으로 재출발 (1회)`, art: character(p.hero, 96, 'cheer'), quick: !p.human });
@@ -1540,7 +1689,9 @@ const HANDLERS = {
     const el = pieceEl(p.id);
     const from = nodeApp(e.from);
     Sound.whoosh();
-    FX.pow(from[0], from[1] - 70, 'KTX 출발!', '#2EA6DA', '#FFFDF7', -5);
+    const WARP_TEXT = { direct: ['직통 열차!', '#2F6FD0'], gather: ['회식 소집!', '#E0533D'] };
+    const [wt, wc] = WARP_TEXT[e.by] || ['KTX 출발!', '#2EA6DA'];
+    FX.pow(from[0], from[1] - 70, wt, wc, '#FFFDF7', -5);
     await tween(el, [{ transform: 'translateY(0) scale(1)', opacity: 1 }, { transform: 'translateY(-90px) scale(.4)', opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' });
     drawDest([e.to], p);
     Camera.follow(nodeXY(e.to), 520);
@@ -1559,7 +1710,7 @@ const HANDLERS = {
   async newGoal(e) {
     const p = playerById(M(), e.player);
     drawMarks();
-    if (p.human) toast(`새 목적지 ${e.goal} (${dist(p.node, e.goal)}역)`);
+    if (p.human) toast(e.by === 'hype' ? `떡상! 목적지 → ${e.goal}` : `새 목적지 ${e.goal} (${dist(p.node, e.goal)}역)`);
     await sleep(p.human ? 500 : 150);
   },
   async monoWarn(e) {

@@ -21,9 +21,10 @@ for (let k = 0; k < N; k++) {
     let ev;
     if (m.phase === 'roll') {
       ev = [];
+      const sk = wantsSkill(m);
+      if (sk) { ev.push(...useSkill(m, sk.target)); stat.skills = (stat.skills || 0) + 1; }
       for (let n = chooseInvest(m); n; n = chooseInvest(m)) ev.push(...invest(m, n));
-      if (wantsSkill(m)) useSkill(m);
-      ev.push(...roll(m));
+      if (m.phase === 'roll') ev.push(...roll(m));
     }
     else if (m.phase === 'pick') ev = pickDie(m, chooseDie(m));
     else if (m.phase === 'move') ev = move(m, choosePath(m));
@@ -61,4 +62,5 @@ console.log(`끝: 파산으로 ${pct(stat.bankrupt)} · 막차로 ${pct(stat.las
 console.log(`1등(나온 판 기준, 기준 ${(100 / SIZE).toFixed(0)}%):`, ids.filter((id) => stat.plays[id]).map((id) => `${id} ${(100 * (stat.wins[id] || 0) / stat.plays[id]).toFixed(1)}%`).join(' · '));
 console.log(`한 판 평균: 사기 ${(stat.buys / N).toFixed(1)} · 증축 ${(stat.ups / N).toFixed(1)} · 인수 ${(stat.takes / N).toFixed(1)} · 통행료 ${(stat.tolls / N).toFixed(1)}번(평균 ${Math.round(stat.tollSum / Math.max(1, stat.tolls))}, 최대 ${stat.maxToll}) · 통과 요금 ${(stat.pass / N).toFixed(1)}번(평균 ${Math.round(stat.passSum / Math.max(1, stat.pass))}) · 목적지 ${(stat.goals / N).toFixed(1)}번`);
 console.log(`명소역: 서기 ${(stat.hot / N).toFixed(1)}번 · KTX ${(stat.warps / N).toFixed(1)}번 · 사기 ${(stat.hotBuys / N).toFixed(1)}곳 · 독점 경고 ${(stat.warns / N).toFixed(2)}번`);
+console.log(`스킬 판당 ${((stat.skills || 0) / N).toFixed(1)}번`);
 console.log(`끝날 때 남은 사람 평균 자산 ${Math.round(stat.endAssets / Math.max(1, stat.alive))} · 역 ${(stat.endStations / Math.max(1, stat.alive)).toFixed(1)}곳`);

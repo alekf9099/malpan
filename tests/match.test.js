@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
-  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor
+  nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor,
+  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE
 } from '../src/core/match.js';
 import { matchPoints } from '../src/core/ranking.js';
 import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
@@ -132,18 +133,129 @@ test('길 검사: 되돌아가기·건너뛰기·불난 역은 안 된다', () =
   assert.ok(legalPaths(m).every((x) => !x.includes('숙대입구')));
 });
 
-test('스킬은 한 판에 두 번, 굴리기 전에', () => {
+test('스킬: 던질 때마다 1칸 충전, 다 차면 굴리기 전에 쓰고 다시 0칸', () => {
   const m = game();
   const p = current(m);
-  useSkill(m); assert.equal(p.dash, 3);
-  useSkill(m); assert.equal(p.dash, 6);
-  assert.match(skillBlocked(m), /사용 완료/);
+  assert.equal(p.charge, 0);
+  assert.match(skillBlocked(m), /충전 중 0\/4/);
+  const ev = [];
+  for (let k = 0; k < 4; k++) {
+    m.turn = 0; m.phase = 'roll';
+    ev.push(...roll(m));
+  }
+  assert.equal(p.charge, 4);
+  assert.ok(ev.some((e) => e.type === 'charged'));
+  m.turn = 0; m.phase = 'roll'; m.pending = null;
+  assert.equal(skillBlocked(m), null);
+  const target = skillTargets(m)[0];
+  useSkill(m, target);
+  assert.equal(p.charge, 0);
+});
+
+/** 스킬 시험용: hero 를 첫 자리에 두고 충전을 채운다 */
+function skilled(hero, n = 3) {
+  const m = createMatch({ seed: 7, heroes: [hero, 'driver', 'staff', 'worker'].slice(0, n), humans: 1, region: 'all' });
+  const p = current(m);
+  p.charge = 9;
+  return { m, p };
+}
+
+test('직통 열차: 굴리지 않고 지금 호선의 역으로 바로, 그 역에서 살 수 있다', () => {
+  const { m, p } = skilled('student');
+  m.players[0].hero = 'driver';
+  p.node = '서울역';
+  const ts = skillTargets(m);
+  assert.ok(ts.includes('시청') && ts.includes('숙대입구') && !ts.includes('서울역'));
+  assert.throws(() => useSkill(m, '강남'));
+  useSkill(m, '숙대입구');
+  assert.equal(p.node, '숙대입구');
+  assert.equal(m.phase, 'decide');
+  assert.equal(m.offer.kind, 'buy');
+});
+
+test('출입 통제: 지나가는 상대만 내 역에서 멈춘다', () => {
+  const { m, p } = skilled('staff');
+  m.owned['숙대입구'] = p.id; m.levels['숙대입구'] = 1;
+  useSkill(m, '숙대입구');
+  assert.equal(m.incidents[0].kind, 'gate');
+  const via = () => legalPaths(m).filter((x) => x.includes('숙대입구'));
+  m.turn = 1;
+  at(m, '서울역', '시청', 3);
+  assert.ok(via().length && via().every((x) => x[x.length - 1] === '숙대입구'));
+  m.turn = 0;
+  at(m, '서울역', '시청', 3);
+  assert.ok(via().some((x) => x.length === 3));
+});
+
+test('회식 소집: 상대 모두 내 역으로 와서 회식비를 낸다', () => {
+  const { m, p } = skilled('worker');
+  m.owned['숙대입구'] = p.id; m.levels['숙대입구'] = 2;
+  const before = p.money;
+  const fee = (q) => Math.min(GATHER_MAX, Math.round(tollFor(m, '숙대입구', q) * GATHER_RATE));
+  const total = fee(m.players[1]) + fee(m.players[2]);
+  useSkill(m, '숙대입구');
+  for (const q of m.players.slice(1)) assert.equal(q.node, '숙대입구');
+  assert.ok(total > 0);
+  assert.equal(p.money, before + total);
+});
+
+test('벼락치기: 비싼 내 역 2곳 무료 증축', () => {
+  const { m, p } = skilled('student');
+  assert.match(skillBlocked(m), /증축할 역 없음/);
+  for (const n of ['숙대입구', '삼각지', '신용산']) { m.owned[n] = p.id; m.levels[n] = 1; }
+  const money = p.money;
+  useSkill(m);
+  assert.equal(p.money, money);
+  assert.equal(Object.values(m.levels).filter((l) => l === 2).length, 2);
+});
+
+test('떡상: 내 역 통행료 2배, 상대 목적지가 그 역으로', () => {
+  const { m, p } = skilled('youtuber');
+  m.owned['숙대입구'] = p.id; m.levels['숙대입구'] = 1;
+  const t = tollFor(m, '숙대입구', m.players[1]);
+  useSkill(m, '숙대입구');
+  assert.ok(Math.abs(tollFor(m, '숙대입구', m.players[1]) - t * 2) <= 1);
+  for (const q of m.players.slice(1)) assert.equal(q.goal, '숙대입구');
+});
+
+test('동시 배달: 주사위 하나 또는 둘의 합 중 고르고, 통과 요금이 없다', () => {
+  const { m, p } = skilled('rider', 2);
+  useSkill(m);
+  roll(m, rngAlways(0.4)); // 3 · 3
+  assert.equal(m.phase, 'pick');
+  assert.deepEqual(dieChoices(m), [0, 1, 2]);
+  assert.equal(dieSteps(m, 2), 6);
+  pickDie(m, 2);
+  assert.equal(m.pending.steps, 6);
+  assert.equal(p.combo, false);
+});
+
+test('수혈: 자산 1등에게서 받는다(내가 꼴찌면 두 배)', () => {
+  const { m, p } = skilled('nurse');
+  m.players[1].money = 2000; m.players[2].money = 1500;
+  p.money = 100;
+  useSkill(m);
+  assert.equal(p.money, 100 + TRANSFUSE * 2);
+  assert.equal(m.players[1].money, 2000 - TRANSFUSE * 2);
+});
+
+test('강제 매수: 남의 역을 30% 싸게 바로 인수 — 명소역·랜드마크는 안 된다', () => {
+  const { m, p } = skilled('broker');
+  m.owned['숙대입구'] = 'p1'; m.levels['숙대입구'] = 2;
+  m.owned['서울역'] = 'p1'; m.levels['서울역'] = 1;
+  m.owned['삼각지'] = 'p2'; m.levels['삼각지'] = 3;
+  assert.deepEqual(skillTargets(m), ['숙대입구']);
+  const price = buyoutFor(m, '숙대입구'), seller = m.players[1].money, money = p.money;
+  useSkill(m, '숙대입구');
+  assert.equal(m.owned['숙대입구'], p.id);
+  assert.equal(p.money, money - price);
+  assert.equal(m.players[1].money, seller + price);
 });
 
 test('한 바퀴마다 시계가 45분 흐르고, 막차가 되면 자산 순위로 끝난다', () => {
   const m = game(3);
   for (let g = 0; g < 4000 && m.phase !== 'over'; g++) {
-    if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
+    if (m.phase === 'roll') { const sk = wantsSkill(m); if (sk) useSkill(m, sk.target); for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (m.phase === 'roll') roll(m); }
     else if (m.phase === 'pick') pickDie(m, chooseDie(m));
     else if (m.phase === 'move') move(m, choosePath(m));
     else if (m.phase === 'choose') choose(m, chooseOption(m));
@@ -159,7 +271,7 @@ test('AI 만으로 200판: 늘 끝나고, 돈이 음수가 되지 않는다', ()
     const m = createMatch({ seed: s, heroes: ['driver', 'staff', 'worker', 'student'].slice(0, 2 + (s % 3)), humans: 0 });
     let g = 0;
     while (m.phase !== 'over' && g++ < 6000) {
-      if (m.phase === 'roll') { for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (wantsSkill(m)) useSkill(m); roll(m); }
+      if (m.phase === 'roll') { const sk = wantsSkill(m); if (sk) useSkill(m, sk.target); for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (m.phase === 'roll') roll(m); }
       else if (m.phase === 'pick') pickDie(m, chooseDie(m));
     else if (m.phase === 'move') move(m, choosePath(m));
       else if (m.phase === 'choose') choose(m, chooseOption(m));
@@ -220,7 +332,7 @@ test('독점: 명소역 하나 앞이면 경고, 다 가지면 그 자리에서 
   assert.equal(m.ranking[0].id, p.id);
 });
 
-test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, 중개인 수수료·급매 협상', () => {
+test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, 중개인 수수료·인수 할인', () => {
   // 라이더: 같은 길에서 통과 요금이 반
   const a = createMatch({ seed: 7, heroes: ['rider', 'driver'], humans: 1 , region: 'all' });
   const b = createMatch({ seed: 7, heroes: ['driver', 'worker'], humans: 1 , region: 'all' });
@@ -240,7 +352,7 @@ test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, �
   assert.equal(nu.out, false);
   assert.equal(nu.money, 300);
 
-  // 중개인: 남이 역을 사면 +6, 급매 협상이면 들인 값 그대로(× 0.7) 인수
+  // 중개인: 남이 역을 사면 +6, 인수는 30% 할인
   const k = createMatch({ seed: 7, heroes: ['driver', 'broker'], humans: 1 , region: 'all' });
   const before = k.players[1].money;
   at(k, '서울역', '시청', 1);
@@ -248,9 +360,7 @@ test('새 캐릭터: 라이더 통과 요금 반값, 간호사 한 번 구제, �
   decide(k, true);
   assert.equal(k.players[1].money, before + 6);
   k.turn = 1; k.phase = 'roll';
-  const br = current(k);
-  br.deal = true;
-  assert.equal(takeoverFor(k, '숙대입구', br), Math.round(stationPrice('숙대입구') * 0.7));
+  assert.equal(takeoverFor(k, '숙대입구', current(k)), Math.round(takeoverPrice('숙대입구', 1) * 0.7));
 });
 
 test('승점: 판마다 기본 +10, 가진 역 +1(15까지), 1등 보너스', () => {

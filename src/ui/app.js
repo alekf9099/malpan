@@ -104,7 +104,10 @@ const ICON = {
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5 Q9.5 7 12 7 Q14.5 7 14.5 9.3 Q14.5 11 12 12 V14 M12 17 V17.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7 V12 L15 14"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 Q18 12 16 15 M18.5 7 Q22 12 18.5 17"/></svg>',
-  mute: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 L21 15 M21 9 L16 15"/></svg>'
+  mute: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 L21 15 M21 9 L16 15"/></svg>',
+  swap: '<svg viewBox="0 0 24 24"><path d="M5 9 H18 L14.5 5.5 M19 15 H6 L9.5 18.5"/></svg>',
+  ticket: '<svg viewBox="0 0 24 24"><path d="M3 7 H21 V10 Q19 10 19 12 Q19 14 21 14 V17 H3 V14 Q5 14 5 12 Q5 10 3 10 Z M14 7 V17" /></svg>',
+  play: '<svg viewBox="0 0 24 24"><path d="M8 5 L19 12 L8 19 Z"/></svg>'
 };
 const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비'], ['rank', '랭킹'], ['dex', '도감']];
 
@@ -121,6 +124,13 @@ function lobbyBanners() {
   out.push({ go: 'daily', tag: '오늘의 대결', text: `${t.getMonth() + 1}월 ${t.getDate()}일 · 모두 같은 맵`, tone: 'ink' });
   return out;
 }
+const BANNER_ICON = { attend: 'cal', mission: 'mission', chars: 'chars', daily: 'today' };
+/** 배너 한 장: 그림 · 꼬리표 · 글 · 넘김 점 */
+const bannerHTML = (list, i) => {
+  const x = list[i];
+  return `<span class="bn-body tone-${x.tone}"><span class="bn-ic">${ICON[BANNER_ICON[x.go]]}</span><span class="bn-tx"><i>${x.tag}</i><b>${x.text}</b></span><span class="bn-go">›</span></span>
+    ${list.length > 1 ? `<span class="bn-dots">${list.map((_, k) => `<i class="${k === i ? 'on' : ''}"></i>`).join('')}</span>` : ''}`;
+};
 
 function title(fromSplash = false) {
   G.m = null;
@@ -132,36 +142,51 @@ function title(fromSplash = false) {
   const banners = lobbyBanners();
   const at = Daily.attendance(), ready = Daily.claimable();
   const today = new Date();
+  const missions = Daily.missions(), mDone = missions.filter((x) => x.done).length;
+  const rivals = Prefs.getRivals();
+  // 배경 반짝이: 자리·크기·박자는 매번 같게(화면이 다시 그려져도 튀지 않게)
+  const sparks = Array.from({ length: 10 }, (_, i) => `<i style="left:${(i * 37 + 9) % 94}%;top:${(i * 53 + 14) % 70}%;--s:${4 + (i % 3) * 3}px;--d:${2.4 + (i % 4) * .7}s;--w:${(i * .37) % 2}s"></i>`).join('');
+  app.style.setProperty('--lbc', h.color);
   app.innerHTML = `
+    <div class="lb-bg" aria-hidden="true">
+      <div class="lb-rays"></div>
+      <svg class="lb-lines" viewBox="0 0 390 520" preserveAspectRatio="none">${[1, 2, 3, 4].map((id, i) => `<path d="M-20 ${250 + i * 26} C 110 ${170 + i * 30}, 250 ${360 + i * 12}, 410 ${232 + i * 30}" stroke="${LINES[id].color}"/>`).join('')}
+        ${[1, 2, 3, 4].map((_, i) => `<path class="run" d="M-20 ${250 + i * 26} C 110 ${170 + i * 30}, 250 ${360 + i * 12}, 410 ${232 + i * 30}" style="animation-delay:${-i * 1.3}s"/>`).join('')}</svg>
+      <div class="lb-spark">${sparks}</div>
+    </div>
     <div class="lobby ${fromSplash ? 'enter' : ''}">
       <header class="lb-top">
-        <button class="lb-prof" id="lbProf" aria-label="랭킹">
-          <span class="lb-ava" style="--pc:${h.color}">${character(h.id, 40)}</span>
-          <span class="lb-pi"><b>${tierBadge(tier, 16)} ${tier.label}</b><span class="lb-xp"><i style="width:${tier.pct}%;background:${tier.color}"></i></span><em>${tier.hi ? `${rank.rp} / ${tier.hi} RP` : `${rank.rp} RP`}</em></span>
+        <button class="lb-prof glass" id="lbProf" aria-label="랭킹">
+          <span class="lb-ava" style="--pc:${h.color};--tc:${tier.color}">${character(h.id, 40)}</span>
+          <span class="lb-pi"><b>${tierBadge(tier, 16)} ${tier.label}</b><span class="lb-xp"><i style="width:${tier.pct}%;background:${tier.color}"></i></span><em>${tier.hi ? `${rank.rp} / ${tier.hi} RP` : `${rank.rp} RP`}${rank.plays ? ` · ${rank.wins}승` : ''}</em></span>
         </button>
-        <button class="ticket-btn" id="tix">${ticketPill()}</button>
-        <button class="lb-icon" id="snd" aria-label="소리">${Sound.isOn() ? ICON.sound : ICON.mute}</button>
+        <button class="lb-tix glass" id="tix" aria-label="승차권 — 캐릭터를 여는 데 쓴다"><span class="tk-ic">${ICON.ticket}</span><b>${Records.tickets().toLocaleString()}</b><i>+</i></button>
+        <button class="lb-icon glass" id="snd" aria-label="소리">${Sound.isOn() ? ICON.sound : ICON.mute}</button>
       </header>
-      <button class="lb-banner tone-${banners[0].tone}" id="lbBanner"><i>${banners[0].tag}</i><span>${banners[0].text}</span><b>›</b></button>
-      <div class="lb-stage" style="--hc:${h.color}">
-        <div class="lb-wall" aria-hidden="true">${[1, 2, 3, 4].map((id) => `<i style="--lc:${LINES[id].color}"></i>`).join('')}</div>
-        <div class="lb-sign" aria-hidden="true"><span>${GAME_TITLE.main}</span><em>${GAME_TITLE.hanja}</em></div>
-        <div class="lb-floor" aria-hidden="true"><i></i></div>
+      <button class="lb-banner glass" id="lbBanner">${bannerHTML(banners, 0)}</button>
+      <div class="lb-stage">
+        <div class="lb-logo" aria-hidden="true"><span>${GAME_TITLE.main}</span><em>${GAME_TITLE.hanja}</em></div>
         <div class="lb-side left">
-          <button class="lb-float" data-go="attend">${ICON.cal}<b>출석</b>${at.today ? '' : '<i class="dot"></i>'}</button>
-          <button class="lb-float" data-go="mission">${ICON.mission}<b>미션</b>${ready ? `<i class="dot n">${ready}</i>` : ''}</button>
+          <button class="lb-float" data-go="attend"><span>${ICON.cal}</span><b>출석</b>${at.today ? '' : '<i class="dot"></i>'}</button>
+          <button class="lb-float" data-go="mission"><span>${ICON.mission}</span><b>미션 ${mDone}/${missions.length}</b>${ready ? `<i class="dot n">${ready}</i>` : ''}</button>
         </div>
         <div class="lb-side right">
-          <button class="lb-float" data-go="daily">${ICON.today}<b>${today.getMonth() + 1}/${today.getDate()}<br>오늘의 대결</b></button>
-          <button class="lb-float" data-go="guide">${ICON.help}<b>도움말</b></button>
+          <button class="lb-float hot" data-go="daily"><span>${ICON.today}</span><b>오늘의 대결</b><i class="lb-date">${today.getMonth() + 1}/${today.getDate()}</i></button>
+          <button class="lb-float" data-go="guide"><span>${ICON.help}</span><b>도움말</b></button>
         </div>
-        <div class="lb-hero" id="homeHero">${character(h.id, 200, 'idle')}</div>
-        <div class="lb-name"><b>${h.job} ${h.name}</b><em>${h.skill} · 스킬 ${h.active.name}</em></div>
-        <button class="lb-change" id="pickBtn">변경</button>
+        <div class="lb-podium" aria-hidden="true"><i></i></div>
+        <div class="lb-hero" id="homeHero">${character(h.id, 210, 'idle')}</div>
+        <div class="lb-card">
+          <div class="lb-nm"><em>${h.job}</em><b>${h.name}</b><button class="lb-change" id="pickBtn" aria-label="캐릭터 변경">${ICON.swap}</button></div>
+          <div class="lb-chips">
+            <span class="lb-chip"><i>고유</i>${h.skill}</span>
+            <span class="lb-chip sk">${skillArt(h.active.id, 18)}${h.active.name}<i>${h.active.charge}칸</i></span>
+          </div>
+        </div>
       </div>
       <div class="lb-play">
-        <button class="lb-rivals" id="lbRivals" aria-label="상대 수 바꾸기"><span>상대</span><b id="rvN">${Prefs.getRivals()}명</b><i>변경</i></button>
-        <button class="btn lb-start" id="start">대결 시작<small>06:00 첫차 → 24:00 막차</small></button>
+        <div class="lb-seg" role="radiogroup" aria-label="상대 수"><span>상대</span>${[1, 2, 3].map((n) => `<button role="radio" data-n="${n}" class="${n === rivals ? 'on' : ''}" aria-checked="${n === rivals}">${n}</button>`).join('')}<span>명</span></div>
+        <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>06:00 첫차 → 24:00 막차</small></span></button>
       </div>
       <nav class="lb-tabs">${TABS.map(([k, n]) => `<button data-go="${k}" class="${k === 'lobby' ? 'on' : ''}">${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>
     </div>
@@ -183,13 +208,14 @@ function title(fromSplash = false) {
   $('#pickBtn').onclick = () => go('chars');
   $('#homeHero').onclick = () => { Sound.unlock(); Sound.click(); act($('#homeHero'), 'cheer', 1200); };
   $('#tix').onclick = () => { Sound.unlock(); Sound.click(); const lock = HERO_DATA.findIndex((x) => !isOpen(x.id)); pickHero(lock < 0 ? li : lock); };
-  $('#lbRivals').onclick = () => {
-    Sound.click();
-    const n = (Prefs.getRivals() % 3) + 1;
-    Prefs.setRivals(n);
-    $('#rvN').textContent = n + '명';
-    tween($('#rvN'), [{ transform: 'scale(1.4)' }, { transform: 'scale(1)' }], { duration: 220 });
-  };
+  app.querySelectorAll('.lb-seg button').forEach((b) => {
+    b.onclick = () => {
+      Sound.unlock(); Sound.click();
+      Prefs.setRivals(+b.dataset.n);
+      app.querySelectorAll('.lb-seg button').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+      tween(b, [{ transform: 'scale(1.25)' }, { transform: 'scale(1)' }], { duration: 220 });
+    };
+  });
   $('#start').onclick = () => startGame(false);
   // 배너는 3.5초마다 넘어간다(누르면 그 일로)
   let bi = 0;
@@ -199,10 +225,8 @@ function title(fromSplash = false) {
   if (banners.length > 1) G.bannerTimer = setInterval(() => {
     if (!document.body.contains(banner)) { clearInterval(G.bannerTimer); return; }
     bi = (bi + 1) % banners.length;
-    const x = banners[bi];
-    banner.className = `lb-banner tone-${x.tone}`;
-    banner.innerHTML = `<i>${x.tag}</i><span>${x.text}</span><b>›</b>`;
-    tween(banner, [{ transform: 'translateY(6px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 260 });
+    banner.innerHTML = bannerHTML(banners, bi);
+    tween(banner.querySelector('.bn-body'), [{ transform: 'translateX(14px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 280 });
   }, 3500);
   if (fromSplash) setTimeout(() => act($('#homeHero'), 'cheer', 1000), 350);
   // 오늘 출석을 안 했으면 로비에 들어오자마자 출석 판을 띄운다

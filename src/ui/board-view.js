@@ -251,6 +251,44 @@ function loopTile(n, i, owner, level) {
   return out;
 }
 
+// ── 판의 살아 있는 것들: 한강 유람선 · 지름길 열차 · 구름 · 흔들리는 나무 ──
+// 판은 살 때마다 다시 그려진다. 움직임이 처음으로 튀지 않게, 처음 그린 뒤 흐른 시간만큼 앞당겨 시작한다.
+const T0 = performance.now();
+const since = (dur, shift = 0) => `-${((((performance.now() - T0) / 1000) + shift) % dur).toFixed(2)}s`;
+const calm = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/** 유람선(오른쪽을 본다, 가운데가 원점) */
+const BOAT = `<path d="M-30 6 h8 M-38 12 h10" stroke="#FFFDF7" stroke-width="3" stroke-linecap="round" opacity=".9"/>
+  <path d="M-22 -2 H24 L15 11 H-15 Z" fill="#FFFDF7" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+  <rect x="-12" y="-13" width="20" height="11" rx="3" fill="#E0533D" stroke="${INK}" stroke-width="3"/>
+  <rect x="-8" y="-10" width="5" height="4" fill="#BFE3F5"/><rect x="0" y="-10" width="5" height="4" fill="#BFE3F5"/>`;
+/** 지름길 두 칸 열차(오른쪽을 본다) */
+const railTrain = (c) => `<rect x="-34" y="-9" width="32" height="18" rx="7" fill="#F4F1EA" stroke="${INK}" stroke-width="3"/>
+  <rect x="0" y="-9" width="34" height="18" rx="8" fill="#F4F1EA" stroke="${INK}" stroke-width="3"/>
+  <rect x="-34" y="2" width="68" height="4" fill="${c}"/><rect x="24" y="-5" width="7" height="6" rx="2" fill="#BFE3F5" stroke="${INK}" stroke-width="1.6"/>
+  <rect x="-28" y="-5" width="7" height="5" fill="#BFE3F5"/><rect x="-16" y="-5" width="7" height="5" fill="#BFE3F5"/><rect x="6" y="-5" width="7" height="5" fill="#BFE3F5"/>`;
+const CLOUD = `<g fill="#FFFDF7" opacity=".75"><ellipse cx="0" cy="0" rx="46" ry="20"/><ellipse cx="-30" cy="6" rx="28" ry="15"/><ellipse cx="32" cy="7" rx="26" ry="13"/><ellipse cx="6" cy="-14" rx="26" ry="16"/></g>`;
+
+function ambient(river, railPaths, I0, I1) {
+  if (calm()) return { back: '', mid: '', front: '' };
+  const midY = (I0 + I1) / 2;
+  const boats = `<g><g>${BOAT}</g><animateMotion dur="38s" begin="${since(38)}" repeatCount="indefinite" rotate="auto" path="${river}"/></g>`
+    + `<g><g transform="scale(.85)">${BOAT}</g><animateMotion dur="46s" begin="${since(46, 20)}" repeatCount="indefinite" rotate="auto-reverse" keyPoints="1;0" keyTimes="0;1" calcMode="linear" path="${river}"/></g>`;
+  // 지름길 열차: 한쪽 역에서 나와 건너가고, 잠시 쉬었다가 다시
+  const trains = railPaths.map(({ d, c }, k) => {
+    const dur = 12, t = since(dur, k * 6);
+    return `<g opacity="0"><g>${railTrain(c)}</g><animateMotion dur="${dur}s" begin="${t}" repeatCount="indefinite" rotate="auto" keyPoints="0;0;1;1" keyTimes="0;.45;.8;1" calcMode="linear" path="${d}"/>`
+      + `<animate attributeName="opacity" dur="${dur}s" begin="${t}" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.44;.48;.77;.81;1"/></g>`;
+  }).join('');
+  const clouds = [[midY - 210, 70, 0, 1], [midY + 150, 95, 40, 0.8]].map(([y, dur, shift, k]) =>
+    `<g transform="translate(0 ${y}) scale(${k})"><g>${CLOUD}<animateTransform attributeName="transform" type="translate" from="${(I0 - 120) / k} 0" to="${(I1 + 120) / k} 0" dur="${dur}s" begin="${since(dur, shift)}" repeatCount="indefinite"/></g></g>`).join('');
+  return {
+    back: boats,
+    mid: trains,
+    front: `<g clip-path="url(#parkClip)">${clouds}</g>`
+  };
+}
+
 /** 칸 i 의 판 가운데 쪽 가장자리 가운데(지름길 레일이 닿는 곳) */
 function innerPoint(i) {
   const r = loopRect(i);
@@ -264,10 +302,12 @@ function loopSvg(state = {}) {
   const owner = state.owner || {}, level = state.level || {};
   const I0 = LM + LC, I1 = LM + LS - LC; // 가운데 마당
   // 지름길 레일: 살짝 휜 곡선(먹선 · 호선 색 · 가운데 흰 침목)
+  const railPaths = [];
   const rails = SHORTCUTS.map(([a, b, l]) => {
     const p = innerPoint(LOOP_TILES.indexOf(a)), q = innerPoint(LOOP_TILES.indexOf(b));
     const mx = (p[0] + q[0]) / 2 + (l === 3 ? -70 : 70), my = (p[1] + q[1]) / 2;
     const d = `M${p[0]} ${p[1]} Q${mx} ${my} ${q[0]} ${q[1]}`;
+    railPaths.push({ d, c: LINES[l].color });
     const badge = ([x, y]) => `<circle cx="${x}" cy="${y}" r="17" fill="${LINES[l].color}" stroke="${INK}" stroke-width="3.5"/>${txt(x, y + 7, l, { size: 20, fill: '#FFFDF7' })}`;
     return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="30" stroke-linecap="round"/><path d="${d}" fill="none" stroke="${LINES[l].color}" stroke-width="20" stroke-linecap="round"/>`
       + `<path d="${d}" fill="none" stroke="#FFFDF7" stroke-width="4" stroke-dasharray="10 12" stroke-linecap="round" opacity=".9"/>`
@@ -280,19 +320,24 @@ function loopSvg(state = {}) {
     const [ax, ay] = bandMid(ia), [bx, by] = bandMid(ib);
     return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${e.color}" stroke-width="${BAND - 8}" stroke-linecap="round"/>`;
   }).join('');
-  const trees = [[I0 + 70, I0 + 90], [I1 - 80, I0 + 70], [I0 + 110, I1 - 70], [I1 - 60, I1 - 110], [I0 + 300, I0 + 60]].map(([x, y]) =>
-    `<rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/>`).join('');
+  const trees = [[I0 + 70, I0 + 90], [I1 - 80, I0 + 70], [I0 + 110, I1 - 70], [I1 - 60, I1 - 110], [I0 + 300, I0 + 60]].map(([x, y], k) =>
+    `<g class="amb-tree" style="transform-origin:${x}px ${y + 18}px;animation-delay:${since(3.4, k * 0.7)}"><rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/></g>`).join('');
   const midY = (I0 + I1) / 2;
   const river = `M${I0} ${midY + 40} C ${I0 + 150} ${midY - 30}, ${I0 + 260} ${midY + 120}, ${I0 + 420} ${midY + 50} S ${I1 - 60} ${midY - 10}, ${I1} ${midY + 30}`;
-  const tiles = LOOP_TILES.map((n, i) => loopTile(n, i, owner, level)).join('');
+  const tiles = LOOP_TILES.map((n, i) => `<g class="lt" data-n="${n}">${loopTile(n, i, owner, level)}</g>`).join('');
+  const amb = ambient(river, railPaths, I0, I1);
   return `<svg class="mat loop-mat" viewBox="0 0 ${LGEO.w} ${LGEO.h}" width="${LGEO.w}" height="${LGEO.h}" aria-hidden="true">
     <rect x="${LM - 22}" y="${LM - 6}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#B59E78" stroke="${INK}" stroke-width="6"/>
     <rect x="${LM - 22}" y="${LM - 22}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#F1E3C6" stroke="${INK}" stroke-width="6"/>
     <rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="#D8EDC4" stroke="${INK}" stroke-width="4"/>
     <path d="${river}" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#BFE3F5" stroke-width="56" stroke-linecap="round"/>
-    <path d="${river}" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="18 30" opacity=".8"/>
+    <clipPath id="parkClip"><rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36"/></clipPath>
+    <path class="amb-flow" style="animation-delay:${since(2.4)}" d="${river}" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="18 30" opacity=".8"/>
+    ${amb.back}
     ${trees}
     <g>${rails}</g>
+    ${amb.mid}
+    ${amb.front}
     <g transform="translate(${(I0 + I1) / 2} ${midY - 120}) rotate(-4)">
       <rect x="-118" y="-46" width="236" height="92" rx="24" fill="${INK}"/><rect x="-118" y="-52" width="236" height="92" rx="24" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>
       ${txt(0, 6, '역전', { size: 52, font: DISPLAY, weight: 400 })}${txt(0, 32, '2호선 순환선', { size: 17, fill: '#2FA84F' })}

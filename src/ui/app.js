@@ -17,6 +17,7 @@ import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeO
 import { LOOP_START, SALARY, CORNERS, ahead, forward, loopIndex } from '../core/boards/loop.js';
 import { skillArt } from './skill-art.js';
 import * as SFX from './skill-fx.js';
+import * as EFX from './estate-fx.js';
 import { createRng } from '../core/rng.js';
 import { LINES, STATION_LINES, ALL_EDGES, dist, lineOfEdge } from '../core/boards/seoul.js';
 import { BOARDS } from '../core/boards/index.js';
@@ -1292,7 +1293,7 @@ function drawHud() {
     const prev = G.hudMoney[p.id];
     if (prev != null && prev !== p.money && !p.out) {
       const el = $(`#players [data-player="${p.id}"] .money`);
-      if (el) { countUp(el.querySelector('.mv'), prev, p.money); el.classList.add(p.money > prev ? 'gain' : 'loss'); }
+      if (el) { countUp(el.querySelector('.mv'), prev, p.money); el.classList.add(p.money > prev ? 'gain' : 'loss'); moneyDelta(el, p.money - prev); }
     }
     G.hudMoney[p.id] = p.money;
   }
@@ -1311,10 +1312,38 @@ function drawClock() {
   const pos = (v) => Math.max(0, Math.min(100, (100 * (v - CLOCK.start)) / span));
   const seg = (a, b, cls) => `<i class="${cls}" style="left:${pos(a)}%;width:${pos(b) - pos(a)}%"></i>`;
   const t = timeOf(m);
+  const was = G.clockPos, now = pos(m.clock);
+  G.clockPos = now;
   $('#clock').innerHTML = `<span class="now">${hhmm(m.clock)}</span>
     <span class="track">${seg(CLOCK.last, m.end, 'last')}
       <i class="done" style="width:${pos(m.clock)}%"></i><b class="hand" style="left:${pos(m.clock)}%"></b></span>
     ${t === 'last' ? `<span class="band time-last">${TIME_NAME.last}</span>` : ''}<span class="left">${Math.min(m.round, roundsOf(m))} / ${roundsOf(m)}바퀴</span>`;
+  // 바퀴가 넘어가면 시곗바늘이 미끄러져 가고 시각이 톡 튄다
+  if (was != null && was !== now) {
+    const ms = { duration: 520, easing: 'cubic-bezier(.3,.7,.3,1.2)' };
+    tween($('#clock .hand'), [{ left: was + '%' }, { left: now + '%' }], ms);
+    tween($('#clock .done'), [{ width: was + '%' }, { width: now + '%' }], ms);
+    tween($('#clock .now'), [{ transform: 'scale(1)' }, { transform: 'scale(1.25) rotate(-4deg)', offset: 0.4 }, { transform: 'scale(1)' }], { duration: 420 });
+  }
+}
+
+/** 돈이 바뀌면 플레이어 판 위로 +/− 숫자가 떠오른다 */
+function moneyDelta(el, d) {
+  const [x, y] = appSpot(el);
+  const t = document.createElement('div');
+  t.className = 'fx-delta ' + (d > 0 ? 'gain' : 'loss');
+  t.textContent = (d > 0 ? '+' : '−') + Math.abs(d).toLocaleString();
+  t.style.left = x + 'px'; t.style.top = y + 'px';
+  $('#fx').appendChild(t);
+  tween(t, [{ transform: 'translate(-50%,-50%) scale(.5)', opacity: 0 }, { transform: 'translate(-50%,-120%) scale(1.15)', opacity: 1, offset: 0.22 }, { transform: 'translate(-50%,-150%) scale(1)', opacity: 1, offset: 0.6 },
+    { transform: 'translate(-50%,-230%) scale(.95)', opacity: 0 }], { duration: 1100, easing: 'ease-out' }).then(() => t.remove());
+}
+
+/** 순환선 칸이 눌렸다 튀어 오른다(말이 밟을 때 · 땅이 바뀔 때). 노선도에는 칸이 없어 그냥 넘어간다 */
+function pressTile(n, k = 1) {
+  const g = $('#mat')?.querySelector(`.lt[data-n="${n}"]`);
+  if (!g) return;
+  g.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${7 * k}px)`, offset: 0.3 }, { transform: `translateY(${-3 * k}px)`, offset: 0.65 }, { transform: 'translateY(0)' }], { duration: 260 + 60 * k, easing: 'ease-out' });
 }
 
 function drawControls() {
@@ -1843,19 +1872,39 @@ async function travel(pid, from, path) {
   // 동시 배달: 상자를 이고 초록 잔상을 남기며 달린다
   const load = G.combo?.pid === pid ? G.combo.boxes : null;
   if (load) el.classList.add('combo');
-  for (let k = 0; k < path.length; k++) {
-    const to = nodeXY(path[k]);
+  // 남은 칸 수가 머리 위에서 줄어든다(두 칸 이상일 때)
+  const n = path.length, s = pieceSize();
+  const left = n > 1 ? document.createElement('div') : null;
+  if (left) { left.className = 'step-left'; left.style.setProperty('--pc', colorOf(playerById(M(), pid))); $('#layer').appendChild(left); }
+  const showLeft = (at, k) => {
+    if (!left) return;
+    left.textContent = n - k;
+    left.style.left = at[0] + 'px'; left.style.top = at[1] - s * 1.62 + 'px'; left.style.zIndex = depth(at[1]) + 95;
+    tween(left, [{ transform: 'translate(-50%,-50%) scale(1.45)' }, { transform: 'translate(-50%,-50%) scale(1)' }], { duration: 200, easing: 'cubic-bezier(.3,.7,.3,1.4)', fill: 'forwards' });
+  };
+  // 출발은 천천히, 가운데는 빠르게, 마지막 칸은 크게 뛰어 쿵
+  const pace = (k) => (n <= 2 ? 1 : k === 0 ? 1.2 : k === n - 1 ? 1.35 : 0.85);
+  showLeft(prev, 0);
+  for (let k = 0; k < n; k++) {
+    const to = nodeXY(path[k]), last = k === n - 1;
     Camera.follow(to, fast ? 160 : 220);
     face(el, to[0] - prev[0]);
     place(el, path[k]);
-    if (load) SFX.carry(load, to, pieceSize());
-    await hop(el, prev, to, { height: 24, duration: fast ? 120 : 170 });
+    if (load) SFX.carry(load, to, s);
+    if (left) { left.style.left = to[0] + 'px'; left.style.top = to[1] - s * 1.62 + 'px'; }
+    await hop(el, prev, to, { height: last ? 34 : 24, duration: (fast ? 120 : 170) * pace(k) });
     Sound.step(k);
+    pressTile(path[k], last ? 1.4 : 0.55);
+    if (!last) showLeft(to, k + 1);
     prev = to;
   }
+  left?.remove();
   act(el, 'idle');
   clearDest();
-  FX.dust(...nodeApp(path[path.length - 1]), 4);
+  const endAt = nodeApp(path[n - 1]);
+  FX.dust(...endAt, fast ? 5 : 8);
+  if (!fast) FX.ring(endAt[0], endAt[1], colorOf(playerById(M(), pid)));
+  squish(el, 0.72);
   if (load) {
     el.classList.remove('combo');
     G.combo = null;
@@ -1900,6 +1949,11 @@ const HANDLERS = {
     drawPieces(); drawHud();
     showPlayer(p);
     setHint(`${nameOf(p)} 차례`);
+    // 차례가 온 사람: 플레이어 판이 톡 튀어나오고 말이 제자리에서 한 번 뛴다
+    const card = $(`#players [data-player="${p.id}"]`);
+    if (card) tween(card, [{ transform: 'translateX(-10px) scale(.96)' }, { transform: 'translateX(4px) translateY(-2px) scale(1.05)', offset: 0.55 }, { transform: 'translateY(-2px) scale(1)' }], { duration: 380, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+    const pe = pieceEl(p.id);
+    if (pe.style.display !== 'none') { act(pe, 'cheer', 600); squish(pe, 0.78); }
     await sleep(300);
   },
   async turn(e) { drawPieces(); drawHud(); },
@@ -1957,7 +2011,7 @@ const HANDLERS = {
     const at = nodeApp(node);
     const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
-    if (e.why === 'toll') { Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
+    if (e.why === 'toll') { pressTile(node, 1.2); FX.ring(at[0], at[1], to ? colorOf(to) : '#E0533D'); Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
     else Sound.coin();
     FX.pow(at[0], at[1] - (e.why === 'pass' ? 50 : 70), label, to ? colorOf(to) : '#6E6A5E', '#FFFDF7', e.why === 'pass' ? 4 : -6);
     if (e.why === 'toll') shake($(`#players [data-player="${p.id}"]`), 6, 300);
@@ -2230,7 +2284,12 @@ async function estateFx(e, word, sound) {
   const at = nodeApp(e.node);
   if (e.price) await moneyFly(panelSpot(p.id), at, e.price);
   sound.call(Sound);
-  drawBoard();
+  // 땅에 닿는 순간 칸을 새 색으로 칠하고 눌러 준다
+  const xy = nodeXY(e.node), opt = { s: pieceSize(), z: depth(xy[1]) + 70, color: colorOf(p), quick: !p.human, onHit: () => { drawBoard(); pressTile(e.node, 1.3); } };
+  if (e.type === 'upgrade' && e.level >= 2) await EFX.rise($('#layer'), xy, { ...opt, level: e.level });
+  else if (e.type === 'takeover') await EFX.plant($('#layer'), xy, { ...opt, from: e.from ? colorOf(playerById(M(), e.from)) : null });
+  else if (e.type === 'buy') await EFX.plant($('#layer'), xy, opt);
+  else drawBoard();
   FX.ring(at[0], at[1], colorOf(p));
   FX.ring(at[0], at[1], '#FFFDF7');
   FX.confetti(at[0], at[1] - 30, p.human ? 22 : 8, 1);

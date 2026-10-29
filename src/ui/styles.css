@@ -1896,3 +1896,29 @@ body.land .demo-sheet > .row { grid-column: 2; grid-row: 4; }
 body.land .result-sheet .res-list { margin-top: 6px; }
 body.land .result-sheet .res-row { padding-top: 3px; padding-bottom: 3px; }
 body.land .demo-sheet .dm-steps li { padding: 4px 10px; }
+
+/* ══ v3.15 움직임 다듬기 ══ */
+/* 판의 살아 있는 것들 — 흔들리는 나무 · 흐르는 강물 */
+.loop-mat .amb-tree { animation: treeSway 3.4s ease-in-out infinite alternate; }
+@keyframes treeSway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+.loop-mat .amb-flow { animation: riverFlow 2.4s linear infinite; }
+@keyframes riverFlow { to { stroke-dashoffset: -48; } }
+/* 남은 칸 수 */
+.step-left { position: absolute; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 3px solid var(--ink); border-radius: 50%; background: #FFFDF7; box-shadow: 0 3px 0 var(--ink), inset 0 0 0 3px var(--pc); font-family: var(--display); font-size: 17px; line-height: 1; color: var(--ink); pointer-events: none; transform: translate(-50%,-50%); }
+/* 돈 +/− 떠오르기 */
+.fx-delta { position: absolute; z-index: 86; pointer-events: none; white-space: nowrap; padding: 1px 8px; border: 2.5px solid var(--ink); border-radius: 999px; font-family: var(--display); font-size: 15px; line-height: 1.2; box-shadow: 0 2px 0 var(--ink); }
+.fx-delta.gain { background: #DDF0E3; color: #2C7A47; }
+.fx-delta.loss { background: #FFE1DA; color: #C43E2A; }
+/* 땅 연출(estate-fx.js) */
+.efx { position: absolute; pointer-events: none; }
+.efx svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.efx-flag { transform-origin: 22% 96%; filter: drop-shadow(0 3px 0 rgba(34,32,29,.28)); }
+.efx-flag.wave .cloth { transform-box: fill-box; transform-origin: 0 50%; animation: flagWave .5s ease-in-out infinite alternate; }
+@keyframes flagWave { from { transform: skewY(-6deg) scaleX(.94); } to { transform: skewY(5deg) scaleX(1.04); } }
+.efx-bld { transform-origin: 50% 100%; filter: drop-shadow(0 4px 0 rgba(34,32,29,.3)); }
+.efx-beam { transform-origin: 50% 100%; border-radius: 40% 40% 8px 8px; background: linear-gradient(0deg, rgba(242,179,61,.9), rgba(255,236,170,.55) 60%, rgba(255,255,255,0)); -webkit-mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); mask: linear-gradient(90deg, transparent, #000 25%, #000 75%, transparent); }
+.efx-puff { border-radius: 50%; background: rgba(240,230,210,.95); border: 2px solid rgba(34,32,29,.22); }
+.efx-star { background: #FFE27A; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
+@media (prefers-reduced-motion: reduce) {
+  .loop-mat .amb-tree, .loop-mat .amb-flow, .efx-flag.wave .cloth { animation: none; }
+}

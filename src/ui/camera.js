@@ -13,9 +13,9 @@ let wired = false;
 export const MAX_ZOOM = 1.0;
 // 노선도가 크기 때문에, 고를 때·따라갈 때 이보다 멀어지면 역 이름이 안 읽힌다(서울 전체는 whole()로만)
 export const MIN_ZOOM = 0.4;
-let FOLLOW_ZOOM = 0.55;
-/** 따라갈 때 배율(순환선 판은 판이 작아 조금 멀리서) */
-export function setFollowZoom(z = 0.55) { FOLLOW_ZOOM = z; }
+let FOLLOW_ZOOM = 0.55, EXACT = false;
+/** 따라갈 때 배율. exact 면 늘 그 배율로(순환선 판: 판이 작아 같은 거리에서 따라간다) */
+export function setFollowZoom(z = 0.55, exact = false) { FOLLOW_ZOOM = z; EXACT = exact; }
 
 export function attach(viewEl, camEl, canvas) {
   view = viewEl;
@@ -85,7 +85,7 @@ export function frame(points, { maxZoom = MAX_ZOOM, minZoom = MIN_ZOOM, pad = 80
 }
 
 export function follow([x, y], ms = 260) {
-  state.s = Math.max(state.s, FOLLOW_ZOOM);
+  state.s = EXACT ? FOLLOW_ZOOM : Math.max(state.s, FOLLOW_ZOOM);
   state.cx = x;
   state.cy = y - 30;
   apply(ms);

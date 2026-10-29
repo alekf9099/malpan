@@ -1752,3 +1752,136 @@ body.wide .skill-btn .sk-txt b { font-size: 12.5px; }
 .lb-opts { display: flex; justify-content: center; gap: 8px; flex-wrap: wrap; }
 .lb-board button { width: auto; padding: 0 12px; font-family: var(--body); font-size: 12.5px; font-weight: 900; }
 .lb-board button.on { background: #2FA84F; color: #FFFDF7; }
+
+/* ══ v3.13 가로 화면(body.land) — 높이 420 틀. 폰 가로와 PC 가 같은 틀을 크기만 바꿔 쓴다 ══ */
+
+/* 세로로 들었을 때: 돌려 달라는 안내 */
+.rotate-ask { display: none; }
+body.turn-me .rotate-ask { position: fixed; inset: 0; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: #F4EADB; text-align: center; font-family: var(--body); color: var(--ink); }
+body.turn-me #stage { visibility: hidden; }
+.rotate-ask b { font-family: var(--display); font-weight: 400; font-size: 30px; }
+.rotate-ask span { font-size: 14px; font-weight: 800; color: var(--ink-2); }
+.rotate-ask button { margin-top: 14px; appearance: none; cursor: pointer; padding: 8px 18px; border: 2.5px solid var(--ink); border-radius: 999px; background: #FFFDF7; box-shadow: 0 3px 0 var(--ink); font-family: var(--body); font-size: 13px; font-weight: 900; color: var(--ink-2); }
+.rotate-ask svg { animation: raTurn 2.2s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes raTurn { 0%, 25% { transform: rotate(0); } 55%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+
+/* 공통: 시트는 가운데 모달, 높이가 넘치면 안에서 스크롤 */
+body.land .sheet { left: 50%; right: auto; bottom: auto; top: 50%; width: 470px; margin-left: -235px; translate: 0 -50%; max-height: calc(100% - 16px); overflow-y: auto; border-radius: 22px; padding-top: 14px; padding-bottom: 14px; }
+body.land .toast { left: 50%; right: auto; top: 10px; width: auto; max-width: 460px; translate: -50% 0; }
+
+/* ── 대결: 판(정사각형)은 왼쪽 가득, 플레이어·시계·조작은 오른쪽 패널 ── */
+body.land .app.game { display: grid; grid-template-columns: 412px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; column-gap: 10px; }
+body.land .app.game > .hud { grid-column: 2; grid-row: 1; padding: 8px 10px 0 0; }
+body.land .app.game > #board { grid-column: 1; grid-row: 1 / 4; width: 412px; height: 412px !important; margin: 4px 0 4px 4px !important; border: 3px solid var(--ink); border-radius: 20px; box-shadow: 0 4px 0 var(--ink); background: #EDE3CF; }
+body.land .app.game > .dock { grid-column: 2; grid-row: 3; margin: 0 10px 10px 0; }
+body.land .app.game > :is(.sheet, .sheet-back, .toast, .fx-layer, .cutin, .card-stage, .big-hit, .turn-banner, .offer-card) { grid-column: auto; grid-row: auto; }
+body.land .players { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+body.land .pl { min-height: 40px; }
+body.land .pl .pi { flex-direction: row; align-items: center; gap: 10px; flex: 1; }
+body.land .pl .pi b { min-width: 52px; }
+body.land .pl .pi em { margin-left: auto; }
+body.land .pl { padding: 4px 6px 4px 3px; }
+body.land .pl .pi b { font-size: 12px; }
+body.land .pl .money { font-size: 14px; }
+body.land .clockbar { margin-top: 8px; }
+body.land .app.game .hint { position: absolute; left: 10px; top: 10px; bottom: auto; z-index: 2000; margin: 0; height: auto; padding: 3px 9px; border: 2px solid var(--ink); border-radius: 999px; background: rgba(255,253,247,.92); font-size: 11.5px; }
+body.land .app.game .hint:empty { display: none; }
+body.land .app.game .stamp-spot { right: 18px; top: 60px; }
+body.land .app.game .help-btn2 { top: 10px; right: 10px; }
+body.land .app.game > .offer-card { left: 432px; right: 10px; bottom: 10px; width: auto; max-width: none; }
+body.land .dock .controls .btn.main { height: 68px; }
+
+/* ── 로비: 위 프로필 줄 / 왼쪽 캐릭터 무대 / 오른쪽 배너·시작 / 아래 탭 ── */
+body.land .lobby { display: grid; grid-template-columns: minmax(0, 1fr) 330px; grid-template-rows: auto auto minmax(0, 1fr) auto auto; gap: 8px 16px; padding: 8px 16px 8px; }
+body.land .lb-top { grid-column: 1 / 3; grid-row: 1; }
+body.land .lb-prof { flex: 0 1 360px; margin-right: auto; }
+body.land .lb-stage { grid-column: 1; grid-row: 2 / 5; padding-bottom: 0; }
+body.land .lb-banner { grid-column: 2; grid-row: 2; }
+body.land .lb-play { grid-column: 2; grid-row: 4; }
+body.land .lobby > .gnb { grid-column: 1 / 3; grid-row: 5; justify-self: center; width: 100%; max-width: 640px; padding: 4px 6px; }
+body.land .lobby > .gnb button.on { margin-top: -18px; }
+body.land .lb-logo { top: -2px; }
+body.land .lb-logo span { font-size: 34px; }
+body.land .lb-side { top: 46px; gap: 8px; }
+body.land .lb-float > span { width: 46px; height: 46px; }
+body.land .lb-hero .char { width: 150px !important; height: 150px !important; }
+body.land .lb-hero::before { width: 160px; height: 42px; }
+body.land .lb-hero::after { width: 120px; height: 22px; bottom: 10px; }
+body.land .lb-card { margin-top: 10px; gap: 5px; }
+body.land .lb-nm b { font-size: 26px; }
+body.land .lb-start, body.land .lobby #start { height: 72px; }
+body.land .lb-play .lb-opts { justify-content: space-between; }
+body.land .lb-podium { width: 280px; height: 280px; top: 52%; }
+body.land .lb-lines { top: 6%; height: 80%; }
+
+/* ── 캐릭터: 왼쪽 큰 무대 / 오른쪽 설명 카드·썸네일·버튼 ── */
+body.land .pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); grid-template-rows: auto minmax(0, 1fr) auto auto auto; gap: 8px 16px; padding: 8px 16px; height: 100%; min-height: 0; }
+body.land .pick > .dex-head { grid-column: 1 / 3; grid-row: 1; }
+body.land .pk-stage { grid-column: 1; grid-row: 2 / 5; height: auto; min-height: 0; padding-bottom: 46px; }
+body.land .pk-hero .char { width: 190px !important; height: 190px !important; }
+body.land .pk-cards { grid-column: 2; grid-row: 2; min-height: 0; overflow-y: auto; }
+body.land .pk-thumbs { grid-column: 2; grid-row: 3; grid-template-columns: repeat(8, 1fr); gap: 4px; }
+body.land .pk-btns { grid-column: 2; grid-row: 4; margin-top: 0; }
+body.land .pk-btns .btn { height: 46px; font-size: 17px; }
+body.land .pick > .gnb { grid-column: 1 / 3; grid-row: 5; justify-self: center; width: 100%; max-width: 640px; }
+
+/* ── 미션 · 랭킹 · 도감: 두 칸으로 ── */
+body.land .dex { padding: 8px 16px; }
+body.land .dex > .gnb { justify-self: center; width: 100%; max-width: 640px; margin-top: 0; }
+body.land .dex > :nth-last-child(2) { margin-bottom: 0; }
+body.land .dex:has(> .ms-list) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px 16px; }
+body.land .dex:has(> .ms-list) > .dex-head { grid-column: 1 / 3; grid-row: 1; }
+body.land .dex:has(> .ms-list) > .ms-attend { grid-column: 1; grid-row: 2; }
+body.land .dex:has(> .ms-list) > .ms-note { grid-column: 1; grid-row: 3; align-self: start; }
+body.land .dex:has(> .ms-list) > .ms-head { grid-column: 2; grid-row: 2; align-self: end; }
+body.land .dex:has(> .ms-list) > .ms-list { grid-column: 2; grid-row: 3; overflow-y: auto; min-height: 0; }
+body.land .dex:has(> .ms-list) > .gnb { grid-column: 1 / 3; grid-row: 4; }
+body.land .dex:has(> .rank-list) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); grid-template-rows: auto auto minmax(0, 1fr) auto; gap: 8px 16px; }
+body.land .dex:has(> .rank-list) > .dex-head { grid-column: 1 / 3; grid-row: 1; }
+body.land .dex:has(> .rank-list) > .rank-me { grid-column: 1; grid-row: 2; margin: 0; }
+body.land .dex:has(> .rank-list) > .rank-rule { grid-column: 1; grid-row: 3; align-self: start; margin: 0; }
+body.land .dex:has(> .rank-list) > .rank-list { grid-column: 2; grid-row: 2 / 4; min-height: 0; overflow-y: auto; }
+body.land .dex:has(> .rank-list) > .gnb { grid-column: 1 / 3; grid-row: 4; }
+body.land .dex:has(> .dex-tabs) .dex-tabs { grid-template-columns: repeat(8, 1fr); gap: 5px; margin: 6px 0; }
+body.land .dex-tab { padding: 2px 0; }
+body.land .dex:has(> .dex-tabs) .dex-body { flex-direction: row; gap: 12px; overflow: hidden; align-items: stretch; }
+body.land .dex:has(> .dex-tabs) .dex-stage { flex: none; width: 300px; height: auto; }
+body.land .dex:has(> .dex-tabs) .dex-info { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; }
+body.land .app.game > .die-pick { left: 432px; right: 10px; bottom: 10px; grid-column: auto; grid-row: auto; padding: 8px; border: 3px solid var(--ink); border-radius: 18px; background: var(--paper); box-shadow: 0 4px 0 var(--ink); }
+body.land .dex:not(:has(> .ms-list)):not(:has(> .rank-list)) > .gnb { align-self: center; margin-top: 6px; }
+
+/* ── 대결 매칭: 왼쪽 전광판·팁·취소 / 오른쪽 자리 넷·노선 로딩 ── */
+body.land .mm { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: auto auto auto minmax(0, 1fr) auto; gap: 10px 18px; padding: 10px 16px 12px; }
+body.land .mm-head { grid-column: 1 / 3; grid-row: 1; }
+body.land .mm-board { grid-column: 1; grid-row: 2; margin: 0; }
+body.land .mm-meta { grid-column: 1; grid-row: 3; margin: 0; }
+body.land .mm #mmCancel { grid-column: 1; grid-row: 5; margin: 0; }
+body.land .mm-slots { grid-column: 2; grid-row: 2 / 4; align-self: start; }
+body.land .mm-line { grid-column: 2; grid-row: 4 / 6; align-self: end; margin: 0 12px 4px; }
+
+/* ── 스플래시: 로고는 위로, 캐릭터·안내는 아래로 ── */
+body.land .sp-logo { margin-top: -78px; zoom: .82; }
+body.land .sp-cast { bottom: 46px; }
+body.land .sp-tap { bottom: 14px; font-size: 18px; }
+
+/* ── 큰 시트는 가로에서 두 칸으로(높이 420 안에) ── */
+body.land .sheet.result-sheet { width: 680px; margin-left: -340px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 16px; align-items: start; }
+body.land .result-sheet > .rs-head { grid-column: 1; grid-row: 1; margin: -14px 0 0 -16px; border-radius: 19px 0 0 0; }
+body.land .result-sheet > .res-list { grid-column: 1; grid-row: 2 / 6; }
+body.land .result-sheet > .rs-reward { grid-column: 2; grid-row: 1; margin-top: 4px; }
+body.land .result-sheet > .rs-tier { grid-column: 2; grid-row: 2; }
+body.land .result-sheet > .rs-extra { grid-column: 2; grid-row: 3; }
+body.land .result-sheet > .row { grid-column: 2; grid-row: 4; }
+body.land .sheet:has(> .sk-sheet) { width: 660px; margin-left: -330px; }
+body.land .sk-sheet { display: grid; grid-template-columns: 230px minmax(0, 1fr); column-gap: 16px; text-align: left; align-items: start; }
+body.land .sk-sheet > .sk-top { grid-column: 1; grid-row: 1 / 9; height: 100%; min-height: 300px; margin: -14px 0 -14px -16px; border-radius: 19px 0 0 19px; }
+body.land .sk-sheet > :not(.sk-top) { grid-column: 2; }
+body.land .sk-sheet .sk-charge { margin: 8px 0 0; justify-self: start; }
+body.land .sheet.demo-sheet { width: 720px; margin-left: -360px; display: grid; grid-template-columns: 336px minmax(0, 1fr); column-gap: 16px; align-items: start; }
+body.land .demo-sheet > .kind, body.land .demo-sheet > .dm-title { grid-column: 1 / 3; }
+body.land .demo-sheet > .dm-stage { grid-column: 1; grid-row: 3 / 5; margin-top: 8px; }
+body.land .demo-sheet > .dm-steps { grid-column: 2; grid-row: 3; margin-top: 8px; }
+body.land .demo-sheet > .row { grid-column: 2; grid-row: 4; }
+body.land .result-sheet .res-list { margin-top: 6px; }
+body.land .result-sheet .res-row { padding-top: 3px; padding-bottom: 3px; }
+body.land .demo-sheet .dm-steps li { padding: 4px 10px; }

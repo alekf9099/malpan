@@ -28,6 +28,13 @@
 </head>
 <body>
 <div id="stage"><div class="app" id="app"></div></div>
+<!-- 세로로 들면: 가로로 돌려 달라는 안내(세로로 계속할 수도 있다) -->
+<div class="rotate-ask" id="rotateAsk" role="dialog" aria-label="가로로 돌려 주세요">
+  <svg viewBox="0 0 120 90" width="132" height="99" aria-hidden="true"><rect class="ra-phone" x="38" y="8" width="44" height="74" rx="9" fill="#FFFDF7" stroke="#22201D" stroke-width="4"/><rect class="ra-screen" x="44" y="16" width="32" height="54" rx="3" fill="#2FA84F"/><path class="ra-arrow" d="M96 30 A34 34 0 0 1 96 62" fill="none" stroke="#E0533D" stroke-width="5" stroke-linecap="round"/><path class="ra-arrow" d="M90 60 L96 66 L101 58" fill="none" stroke="#E0533D" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <b>가로로 돌려 주세요</b>
+  <span>역전은 가로 화면에서 판이 크게 보여요</span>
+  <button type="button" id="keepPortrait">세로로 계속</button>
+</div>
 <script type="module" src="src/ui/app.js"></script>
 <script>
   // 오프라인 캐시(sw.js). 개발 서버(localhost)에서는 캐시가 수정 확인을 방해하지 않게 등록하지 않는다.

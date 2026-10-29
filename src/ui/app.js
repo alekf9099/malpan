@@ -708,7 +708,7 @@ function enterGame() {
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   useBoard(isLoop(M()) ? 'loop' : 'map');
-  Camera.setFollowZoom(isLoop(M()) ? 0.48 : undefined);
+  Camera.setFollowZoom(isLoop(M()) ? 0.6 : undefined, isLoop(M()));
   Camera.attach($('#board'), $('#cam'), canvasSize());
   $('#throw').onclick = () => onThrow();
   $('#skillBtn').onclick = onSkill;
@@ -991,7 +991,8 @@ function pickDiePrompt() {
         <span class="dp-face">${o.r.sum ? `${o.r.value}<small>합</small>` : o.r.bonus ? '급행' : o.r.value}</span>
         <span class="dp-txt"><b>${o.steps}역${o.r.bonus ? (opts.length > 2 ? ' · 한 번 더' : ' + 한 번 더') : ''}</b><em>${dieNote(m, p, o)}</em></span>
       </button>`).join('')}</div>`;
-    $('#board').appendChild(box);
+    // 가로 화면에서는 판을 가리지 않게 오른쪽 패널(조작판 자리)에 띄운다
+    (document.body.classList.contains('land') ? app : $('#board')).appendChild(box);
     tween(box, [{ transform: 'translateY(30px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 240, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
     box.querySelectorAll('.dp-btn').forEach((b) => {
       b.onclick = () => { Sound.click(); box.remove(); clearDest(); setHint(''); resolve(Number(b.dataset.i)); };
@@ -1161,7 +1162,7 @@ function offerPrompt() {
       <div class="oc-body"><span>${title}</span>
         <em>가격 <b>${o.price.toLocaleString()}</b> · 잔액 ${(p.money - o.price).toLocaleString()} · 예상 통행료 <b>${toll}</b>${chain > 1 ? ` · <strong>${chain}역 연결 ×${chain}</strong>` : ''}</em></div>
       <div class="oc-btns"><button class="btn small white" data-a="no">패스</button><button class="btn small yellow" data-a="yes">${btn} · ${o.price.toLocaleString()}</button></div>`;
-    $('#board').appendChild(card);
+    (document.body.classList.contains('land') ? app : $('#board')).appendChild(card);
     tween(card, [{ transform: 'translateY(40px)', opacity: 0 }, { transform: 'translateY(0)', opacity: 1 }], { duration: 280, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
     card.querySelector('[data-a=no]').onclick = () => { Sound.click(); card.remove(); resolve(false); };
     card.querySelector('[data-a=yes]').onclick = () => { Sound.unlock(); card.remove(); resolve(true); };
@@ -2322,17 +2323,20 @@ function closeSheet() { app.querySelectorAll('.sheet, .sheet-back').forEach((n) 
 
 // ── 시작 ───────────────────────────────────────────────────
 
-// 화면 틀: 세로(폰) 390×844 고정, 가로가 긴 창(PC)에서는 높이 780 에 창 비율만큼 넓힌다.
+// 화면 틀: 가로가 기본 — 높이 420 에 창 비율만큼 넓힌 판(760~980)을 화면에 맞춰 키우고 줄인다(폰 가로 · PC 같은 틀).
+// 세로로 들면 돌려 달라고 안내하고, '세로로 계속'을 고르면 예전 세로 틀(390×844)로 그린다.
 const PHONE = { w: 390, h: 844 };
-const WIDE_H = 780;
+const LAND_H = 420;
 
 function fit() {
   const W = window.innerWidth, H = window.innerHeight;
-  const wide = W / H >= 1.15 && W >= 820;
-  document.body.classList.toggle('wide', wide);
-  const sh = wide ? WIDE_H : PHONE.h;
-  const sw = wide ? Math.round(Math.min(1800, Math.max(1100, (W / H) * sh))) : PHONE.w;
-  const k = wide ? Math.min(H / sh, W / sw) : Math.min(1, H / sh, W / sw);
+  const tall = H > W * 1.05;
+  const land = !(tall && G.portrait);
+  document.body.classList.toggle('land', land);
+  document.body.classList.toggle('turn-me', tall && !G.portrait);
+  const sh = land ? LAND_H : PHONE.h;
+  const sw = land ? Math.round(Math.min(980, Math.max(760, (W / H) * sh))) : PHONE.w;
+  const k = land ? Math.min(H / sh, W / sw) : Math.min(1, H / sh, W / sw);
   const root = document.documentElement.style;
   root.setProperty('--sw', sw + 'px');
   root.setProperty('--sh', sh + 'px');
@@ -2341,6 +2345,7 @@ function fit() {
   stage.style.marginBottom = sh * (k - 1) + 'px';
   if (M() && $('#board')) { Camera.refit(); drawZoom(); }
 }
+document.getElementById('keepPortrait')?.addEventListener('click', () => { G.portrait = true; fit(); });
 window.addEventListener('resize', fit);
 fit();
 

@@ -321,6 +321,60 @@ export async function transfuse(layer, from, to, { s = 56, z = 900, n = 5 } = {}
   fadeOut(bag, 250);
 }
 
+// ── 착공 · 개통 ──────────────────────────────────────────
+
+const FENCE = `<svg viewBox="0 0 60 30" aria-hidden="true"><path d="M10 22v7M50 22v7" stroke="#22201D" stroke-width="3.4" stroke-linecap="round"/>
+  <rect x="3" y="6" width="54" height="15" rx="3" fill="#FFFDF7" ${K}/><path d="M13 6l-7 15M25 6l-7 15M37 6l-7 15M49 6l-7 15M58 9l-5 12" stroke="#F28C28" stroke-width="4.5"/>
+  <rect x="3" y="6" width="54" height="15" rx="3" fill="none" ${K}/><circle cx="8" cy="4" r="3" fill="#F7C94A" stroke="#22201D" stroke-width="2"/><circle cx="52" cy="4" r="3" fill="#F7C94A" stroke="#22201D" stroke-width="2"/></svg>`;
+
+/** 바리케이드가 떨어져 둘러서고 안전모가 튀어 오른 뒤 망치질 세 번, 먼지 */
+export async function construct(layer, at, { s = 56, z = 900 } = {}) {
+  const fence = put(layer, 'sfx-fence', [at[0], at[1] + s * 0.1], FENCE, z + 1);
+  fence.style.width = s * 1.7 + 'px';
+  fence.style.height = s * 0.85 + 'px';
+  await tween(fence, [{ transform: `translate(-50%,-100%) translateY(-${s * 1.4}px)`, opacity: 0 }, { transform: 'translate(-50%,-100%) translateY(4px)', opacity: 1, offset: 0.8 }, { transform: 'translate(-50%,-100%)', opacity: 1 }], { duration: 300, easing: 'ease-in', fill: 'forwards' });
+  Sound.clank();
+  const hat = put(layer, 'sfx-icon', [at[0], at[1] - s * 1.3], skillArt('build', s), z + 2);
+  tween(hat, [{ transform: 'translate(-50%,-50%) scale(0) rotate(-20deg)' }, { transform: 'translate(-50%,-50%) translateY(-10px) scale(1.2) rotate(6deg)', offset: 0.6 }, { transform: 'translate(-50%,-50%) scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,.7,.3,1.3)', fill: 'forwards' });
+  for (let i = 0; i < 3; i++) {
+    await sleep(200);
+    Sound.clank();
+    tween(hat, [{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: 'translate(-50%,-50%) translateY(6px) scale(1.08,.9)' }, { transform: 'translate(-50%,-50%) scale(1)' }], { duration: 160 });
+    const puff = put(layer, 'sfx-puff', [at[0] + (i - 1) * s * 0.5, at[1] - s * 0.15], '', z + 3);
+    puff.style.width = puff.style.height = s * 0.36 + 'px';
+    tween(puff, [{ transform: 'translate(-50%,-50%) scale(.4)', opacity: 0.9 }, { transform: `translate(-50%,-50%) translate(${(i - 1) * s * 0.3}px,-${s * 0.4}px) scale(1.6)`, opacity: 0 }], { duration: 520 }).then(() => puff.remove());
+  }
+  word(layer, [at[0], at[1] - s * 2.4], '착공!', { color: '#E39A1E', s, z: z + 50 });
+  await sleep(600);
+  fadeOut(hat, 250);
+  fadeOut(fence, 300);
+}
+
+/** 테이프 커팅: 리본이 가운데서 끊어져 양쪽으로 떨어지고 별이 터진다 */
+export async function ribbon(layer, at, { s = 56, z = 900 } = {}) {
+  const halves = [-1, 1].map((k) => {
+    const h = put(layer, 'sfx-ribbon', [at[0] + k * s * 0.42, at[1] - s * 0.7], '', z + 2);
+    h.style.width = s * 0.84 + 'px';
+    h.style.height = s * 0.16 + 'px';
+    return h;
+  });
+  const bow = put(layer, 'sfx-bow', [at[0], at[1] - s * 0.7], '', z + 3);
+  bow.style.width = bow.style.height = s * 0.42 + 'px';
+  await Promise.all([...halves, bow].map((el) => tween(el, [{ transform: 'translate(-50%,-50%) scaleX(0)' }, { transform: 'translate(-50%,-50%) scaleX(1)' }], { duration: 260, easing: 'ease-out', fill: 'forwards' })));
+  await sleep(240);
+  Sound.clink();
+  fadeOut(bow, 160);
+  halves.forEach((h, i) => tween(h, [{ transform: 'translate(-50%,-50%) rotate(0)', opacity: 1 }, { transform: `translate(-50%,-50%) translate(${(i ? 1 : -1) * s * 0.3}px, ${s * 0.6}px) rotate(${i ? 50 : -50}deg)`, opacity: 0 }], { duration: 520, easing: 'ease-in', fill: 'forwards' }).then(() => h.remove()));
+  Sound.rise();
+  for (let i = 0; i < 9; i++) {
+    const st = put(layer, 'sfx-star', [at[0] + (Math.random() - 0.5) * s * 1.8, at[1] - s * (0.4 + Math.random() * 2)], '', z + 1);
+    st.style.width = st.style.height = s * (0.18 + Math.random() * 0.14) + 'px';
+    tween(st, [{ transform: 'translate(-50%,-50%) scale(0) rotate(0)', opacity: 1 }, { transform: 'translate(-50%,-50%) scale(1.3) rotate(90deg)', opacity: 1, offset: 0.5 }, { transform: 'translate(-50%,-50%) scale(0) rotate(180deg)', opacity: 0 }], { duration: 700, delay: i * 50 }).then(() => st.remove());
+  }
+  ripple(layer, at, { color: '#F2B33D', s: s * 1.2, z: z - 1 });
+  await word(layer, [at[0], at[1] - s * 2.2], '개통!', { color: '#E39A1E', s, z: z + 50 });
+}
+
 // ── 강제 매수 ─────────────────────────────────────────────
 
 /** 경매 망치가 내려치고 '낙찰' 도장이 찍힌다 */

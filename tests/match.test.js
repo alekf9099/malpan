@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
   nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor,
-  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf
+  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf, incidentAt
 } from '../src/core/match.js';
 import { LOOP_START, SALARY } from '../src/core/boards/loop.js';
 import { matchPoints } from '../src/core/ranking.js';
@@ -491,7 +491,7 @@ test('순환선 연결: 고리를 따라 이어 가진 칸이 통행료 배수�
 
 test('AI 만으로 순환선 100판: 늘 끝나고, 돈이 음수가 되지 않는다', () => {
   for (let k = 0; k < 100; k++) {
-    const m = createMatch({ seed: 900 + k, heroes: ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'broker'].slice(k % 3, (k % 3) + 4), humans: 0, region: 'loop' });
+    const m = createMatch({ seed: 900 + k, heroes: ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'foreman', 'broker'].slice(k % 6, (k % 6) + 4), humans: 0, region: 'loop' });
     let guard = 0;
     while (m.phase !== 'over' && guard++ < 6000) {
       if (m.phase === 'roll') { const sk = wantsSkill(m); if (sk) useSkill(m, sk.target); for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (m.phase === 'roll') roll(m); }
@@ -503,4 +503,73 @@ test('AI 만으로 순환선 100판: 늘 끝나고, 돈이 음수가 되지 않�
     }
     assert.equal(m.phase, 'over', 'seed ' + (900 + k));
   }
+});
+
+test('현장소장 착공: 공사 중엔 통행료 0, (순환선은) 3바퀴 뒤 랜드마크로 개통 + 개통 축제(통행료 2배)', () => {
+  const m = loopGame(2, ['foreman', 'worker']);
+  const me = current(m), rival = m.players[1];
+  m.owned['신당'] = me.id; m.levels['신당'] = 1;
+  const lv1 = tollFor(m, '신당', rival);
+  me.charge = 9;
+  assert.deepEqual(skillTargets(m, me), ['신당']);
+  useSkill(m, '신당');
+  assert.equal(incidentAt(m, '신당').kind, 'build');
+  assert.equal(tollFor(m, '신당', rival), 0);
+  assert.equal(skillTargets(m, me).length, 0); // 공사 중인 역에 또 착공할 수 없다
+  // 세 바퀴: 둘 다 쉬게 해서 차례만 넘긴다(두 바퀴로는 아직 공사 중)
+  const ev = [];
+  for (let k = 0; k < 4; k++) { current(m).rest = 1; ev.push(...roll(m)); }
+  assert.equal(incidentAt(m, '신당').kind, 'build');
+  for (let k = 0; k < 2; k++) { current(m).rest = 1; ev.push(...roll(m)); }
+  assert.equal(m.levels['신당'], MAX_LEVEL);
+  assert.ok(ev.some((e) => e.type === 'upgrade' && e.opened));
+  assert.equal(incidentAt(m, '신당').kind, 'opening');
+  assert.ok(tollFor(m, '신당', rival) >= lv1 * 7 * 2 - 2);
+});
+
+test('현장소장 착공: 공사 중에 남이 인수하면 공사가 끝난다', () => {
+  const m = loopGame(2, ['foreman', 'worker']);
+  const me = current(m), rival = m.players[1];
+  m.owned['신당'] = me.id; m.levels['신당'] = 1;
+  me.charge = 9;
+  useSkill(m, '신당');
+  m.turn = 1; m.phase = 'move'; rival.node = '동대문역사문화공원'; rival.prev = '을지로3가';
+  m.pending = { roll: { value: 1 }, steps: 1 };
+  move(m, ['신당']);
+  assert.equal(rival.money, START_MONEY); // 공사 중이라 통행료 없음
+  assert.equal(m.offer.kind, 'takeover');
+  decide(m, true);
+  assert.equal(m.owned['신당'], rival.id);
+  assert.equal(incidentAt(m, '신당'), undefined);
+});
+
+test('현장소장 환승센터: 내 랜드마크에 서면 다른 내 랜드마크로(시청을 넘으면 월급) · 그대로 있어도 된다', () => {
+  const m = loopGame(2, ['foreman', 'worker']);
+  const me = current(m);
+  for (const n of ['신당', '을지로입구']) { m.owned[n] = me.id; m.levels[n] = MAX_LEVEL; }
+  at(m, '동대문역사문화공원', '을지로3가', 1);
+  move(m, ['신당']);
+  assert.equal(m.phase, 'choose');
+  assert.equal(m.choice.kind, 'transfer');
+  assert.deepEqual(m.choice.options.sort(), ['신당', '을지로입구'].sort());
+  choose(m, '을지로입구');
+  assert.equal(me.node, '을지로입구');
+  assert.equal(me.money, START_MONEY + SALARY);
+
+  const m2 = loopGame(2, ['foreman', 'worker']);
+  const p2 = current(m2);
+  for (const n of ['신당', '을지로입구']) { m2.owned[n] = p2.id; m2.levels[n] = MAX_LEVEL; }
+  at(m2, '동대문역사문화공원', '을지로3가', 1);
+  move(m2, ['신당']);
+  choose(m2, '신당');
+  assert.equal(p2.node, '신당');
+  assert.equal(m2.phase, 'roll');
+
+  // 다른 캐릭터는 랜드마크에 서도 환승이 없다
+  const m3 = loopGame(2, ['worker', 'foreman']);
+  const p3 = current(m3);
+  for (const n of ['신당', '을지로입구']) { m3.owned[n] = p3.id; m3.levels[n] = MAX_LEVEL; }
+  at(m3, '동대문역사문화공원', '을지로3가', 1);
+  move(m3, ['신당']);
+  assert.notEqual(m3.phase, 'choose');
 });

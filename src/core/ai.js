@@ -4,8 +4,9 @@
 // 독점: 명소역·이어진 노선을 노리고, 남이 독점 하나 앞이면 그 역을 먼저 사거나 인수해서 막는다
 
 import { dist, isTransfer } from './boards/seoul.js';
-import { links, stationPrice, isHot, baseToll } from './estate.js';
-import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, takeoverFor, cornerAt, areaOf, isLoop, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets } from './match.js';
+import { links, stationPrice, isHot, baseToll, LEVEL_MULT, MAX_LEVEL } from './estate.js';
+import { forward, loopIndex, SALARY } from './boards/loop.js';
+import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, takeoverFor, cornerAt, areaOf, isLoop, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets, transferOptions, perkOf } from './match.js';
 import { chanceById } from './events.js';
 import { heroById } from './heroes.js';
 
@@ -85,7 +86,11 @@ function pathValue(m, p, path, rng) {
       v += monoGain(m, p, end) * 0.5;
       if (threatAt(m, p, end)) v += 300;
     }
-  } else if (owner === p.id) v += 30 + 50 * ai.build;
+  } else if (owner === p.id) {
+    v += 30 + 50 * ai.build;
+    // 현장소장: 환승센터가 있는 랜드마크면 갈 곳이 하나 더 생긴다
+    if (transferOptions(m, { ...p, node: end }).length) v += 50;
+  }
   if (isChance(end)) v += 25;
   if (isHot(end) && !corner) v += hotValue(m, p, end);
   const inc = incidentAt(m, end);
@@ -137,6 +142,14 @@ export function decideOffer(m) {
   return left >= ai.reserve + 250 - 100 * ai.chain - keen;
 }
 
+/** 환승센터로 갈 랜드마크의 값: 순환선은 시청 월급과 앞길 통행료, 노선도는 목적지까지 거리 */
+function spotValue(m, p, n) {
+  if (!isLoop(m)) return p.goal ? (n === p.goal ? GOAL_BONUS + 60 : -areaOf(m).dist(n, p.goal) * 12) : 0;
+  let v = loopIndex(n) < loopIndex(p.node) ? SALARY + (perkOf(m, p).goalBonus || 0) : 0;
+  for (const x of forward(n, 12)) v -= tollFor(m, x, p) / 6;
+  return v;
+}
+
 /** 명소역에서 고르기: KTX 로 갈 역 · 명동 찬스 카드 */
 const CARD_VALUE = { bonus: 150, build: 120, coupon: 90, refund: 80, express: 60, rest: -60, fine: -100 };
 export function chooseOption(m) {
@@ -146,6 +159,7 @@ export function chooseOption(m) {
     let v;
     if (c.kind === 'card') v = o === 'repair' ? -20 * stationsOf(m, p).length : CARD_VALUE[o] ?? 0;
     else if (c.kind === 'festival') v = baseToll(m.owned, m.levels, o);
+    else if (c.kind === 'transfer') v = (o === p.node ? 0 : spotValue(m, p, o) - spotValue(m, p, p.node)) + m.rng.next() * 10;
     else {
       v = (o === p.goal ? GOAL_BONUS + 60 : 0) + hotValue(m, p, o) * 0.3 + m.rng.next() * 10;
       const owner = m.owned[o];
@@ -194,6 +208,8 @@ export function wantsSkill(m) {
       const b = best(ts.filter((n) => p.money - buyoutFor(m, n) >= ai.reserve * 0.5), (n) => baseToll(m.owned, m.levels, n) + monoGain(m, p, n) * 0.5 + stationPrice(n) * 0.3);
       return b.target ? { target: b.target } : null;
     }
+    // 착공: 랜드마크가 되면 통행료가 가장 크게 오르는 역(끝나기 전에 개통할 수 있을 때만)
+    case 'build': return m.clock + 2 * m.roundMin <= m.end ? pick((n) => baseToll(m.owned, m.levels, n) * (LEVEL_MULT[MAX_LEVEL] / LEVEL_MULT[m.levels[n]] - 1), 0) : null;
     case 'cram': return cramTargets(m, p).length >= 2 || m.clock > m.end - 4 * m.roundMin ? { target: null } : null;
     case 'combo': return { target: null };
     case 'transfuse': return rivals.some((q) => assets(m, q) > assets(m, p)) || p.money < 200 ? { target: null } : null;

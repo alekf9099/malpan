@@ -14,7 +14,7 @@ import {
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeOf } from '../core/heroes.js';
-import { LOOP_START, SALARY, CORNERS, ahead, forward } from '../core/boards/loop.js';
+import { LOOP_START, SALARY, CORNERS, ahead, forward, loopIndex } from '../core/boards/loop.js';
 import { skillArt } from './skill-art.js';
 import * as SFX from './skill-fx.js';
 import { createRng } from '../core/rng.js';
@@ -428,6 +428,7 @@ const AI_NOTE = {
   youtuber: '명소역 위주 이동 · 비싼 내 역을 떡상',
   rider: '충전되면 바로 동시 배달로 질주',
   nurse: '구조를 믿고 공격적으로 구매',
+  foreman: '비싼 내 역부터 착공 · 랜드마크끼리 환승',
   broker: '남의 역 도착 시 적극 인수'
 };
 
@@ -436,7 +437,7 @@ const AI_NOTE = {
 const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
 const DEX_LINE = {
   driver: '새벽 첫차를 모는 20년 차 기관사', staff: '노선도를 통째로 외운 역무원', worker: '환승 3번은 기본인 출근길 직장인', student: '정기권 한 장으로 서울을 누비는 새내기',
-  youtuber: '구독자 10만, 서울 명소 정복이 목표', rider: '골목길은 내비보다 빠삭한 배달 라이더', nurse: '밤샘 근무에도 지치지 않는 간호사', broker: '역세권이라면 냄새부터 맡는 부동산 중개인'
+  youtuber: '구독자 10만, 서울 명소 정복이 목표', rider: '골목길은 내비보다 빠삭한 배달 라이더', nurse: '밤샘 근무에도 지치지 않는 간호사', foreman: '역 공사 현장만 30년, 안전모를 벗은 적 없는 현장소장', broker: '역세권이라면 냄새부터 맡는 부동산 중개인'
 };
 
 function dex(which = 0) {
@@ -674,7 +675,7 @@ async function startGame(daily) {
   const today = new Date();
   const seed = daily ? today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
-  // 상대는 여덟 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
+  // 상대는 아홉 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
   const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
   const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: Prefs.getBoard() === 'loop' ? 'loop' : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
@@ -901,6 +902,7 @@ function targetRow(m, p, id, n) {
     info = `${LEVEL_NAME[lv]} · 통행료 ${toll}`;
     if (id === 'gather') note = `<em class="price">+${rivals.reduce((s, q) => s + Math.min(GATHER_MAX, Math.round(tollFor(m, n, q) * GATHER_RATE)), 0)}</em>`;
     else if (id === 'hype') note = `<em class="price">→ ${toll * 2}</em>`;
+    else if (id === 'build') note = `<em class="price">→ ${baseToll(m.owned, { ...m.levels, [n]: MAX_LEVEL }, n)}</em>`;
     else if (id === 'gate') note = `<em class="price">근처 상대 ${rivals.filter((q) => dist(q.node, n) <= 8).length}</em>`;
   }
   const lines = (STATION_LINES[n] || []).map((l) => `<i style="--lc:${LINES[l].color}"></i>`).join('');
@@ -1119,7 +1121,12 @@ function choicePrompt() {
   const m = M(), p = current(m), c = m.choice;
   return new Promise((resolve) => {
     let s;
-    if (c.kind === 'festival') {
+    if (c.kind === 'transfer') {
+      const rows = c.options.map((n) => n === p.node
+        ? `<button class="warp-row" data-v="${n}" style="--pc:#FFFDF7"><span class="wr-flag">그대로</span><div><b>${n}에 머물기</b><span>환승하지 않음</span></div></button>`
+        : `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">랜드마크</span>'}<div><b>${n}</b><span>내 랜드마크 · 통행료 ${baseToll(m.owned, m.levels, n)}${isLoop(m) ? `${loopIndex(n) < loopIndex(p.node) ? ' · 월급!' : ''}` : ` · ${dist(p.node, n)}역`}</span></div></button>`).join('');
+      s = sheet(`<span class="kind">${skillArt('build', 22)} 현장소장 · 환승센터</span><h2 style="margin-top:6px">환승할 랜드마크</h2><p>내 랜드마크로 바로 · 시청을 넘으면 월급</p><div class="warp-list">${rows}</div>`);
+    } else if (c.kind === 'festival') {
       const rows = c.options.map((n) => `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">축제</span>'}<div><b>${n}</b><span>통행료 ${baseToll(m.owned, m.levels, n)} → <i class="good">${baseToll(m.owned, m.levels, n) * 2}</i></span></div></button>`).join('');
       s = sheet(`<span class="kind">성수 · 팝업 축제</span><h2 style="margin-top:6px">축제를 열 내 역</h2><p>${c.options.length}곳 중 하나 · 통행료 2배(3바퀴)</p><div class="warp-list">${rows}</div>`);
     } else if (c.kind === 'card') {
@@ -1395,6 +1402,8 @@ const INC_ART = {
   gate: '<rect x="5" y="14" width="6" height="22" rx="2" fill="#6E6A5E" stroke="#22201D" stroke-width="2.6"/><rect x="9" y="12" width="28" height="8" rx="3" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6"/><path d="M15 12l-4 8M23 12l-4 8M31 12l-4 8" stroke="#E0533D" stroke-width="3.4"/><rect x="9" y="12" width="28" height="8" rx="3" fill="none" stroke="#22201D" stroke-width="2.6"/><circle class="inc-lamp" cx="8" cy="10" r="3.5" fill="#E0533D" stroke="#22201D" stroke-width="2.4"/>',
   festival: '<path d="M20 26 Q17 32 21 37" fill="none" stroke="#22201D" stroke-width="2.2"/><ellipse cx="13" cy="15" rx="8" ry="10" fill="#E2588F" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="13" rx="8" ry="10" fill="#F2B33D" stroke="#22201D" stroke-width="2.6"/><ellipse cx="20" cy="21" rx="8" ry="10" fill="#2F6BD8" stroke="#22201D" stroke-width="2.6"/>',
   hype: '<path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#22201D" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 31l8-8 6 4 12-14" fill="none" stroke="#E2588F" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25 10h9v9z" fill="#E2588F" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/>',
+  build: '<path d="M8 32v5M32 32v5" stroke="#22201D" stroke-width="3" stroke-linecap="round"/><rect x="4" y="24" width="32" height="8" rx="2" fill="#FFFDF7" stroke="#22201D" stroke-width="2.6"/><path d="M11 24l-4 8M19 24l-4 8M27 24l-4 8M35 24l-4 8" stroke="#F28C28" stroke-width="3.4"/><rect x="4" y="24" width="32" height="8" rx="2" fill="none" stroke="#22201D" stroke-width="2.6"/><path d="M9 19a11 11 0 0 1 22 0z" fill="#F4BF2A" stroke="#22201D" stroke-width="2.6" stroke-linejoin="round"/><rect x="5" y="18" width="30" height="4" rx="2" fill="#F4BF2A" stroke="#22201D" stroke-width="2.6"/>',
+  opening: '<path d="M4 16 Q20 22 36 16" fill="none" stroke="#22201D" stroke-width="7" stroke-linecap="round"/><path d="M4 16 Q20 22 36 16" fill="none" stroke="#E0533D" stroke-width="4" stroke-linecap="round"/><path d="M20 19l-7 14 5-2 2 5zM20 19l7 14-5-2-2 5z" fill="#E0533D" stroke="#22201D" stroke-width="2.4" stroke-linejoin="round"/><circle cx="20" cy="19" r="4.5" fill="#F7C94A" stroke="#22201D" stroke-width="2.4"/>',
   busk: '<path d="M15 30V8l16-4v20" fill="none" stroke="#22201D" stroke-width="3.2" stroke-linejoin="round"/><ellipse cx="11" cy="30" rx="6" ry="4.5" fill="#E2337A" stroke="#22201D" stroke-width="2.6"/><ellipse cx="27" cy="25" rx="6" ry="4.5" fill="#8E63B0" stroke="#22201D" stroke-width="2.6"/>'
 };
 const incidentArt = (kind, size = 34) => `<svg class="inc-art" viewBox="0 0 40 40" width="${size}" height="${size}" aria-hidden="true">${INC_ART[kind]}</svg>`;
@@ -1405,9 +1414,11 @@ const INC_FX = {
   busk: '<i class="note n1">♪</i><i class="note n2">♫</i><i class="note n3">♪</i>',
   gate: '<i class="pulse"></i>',
   hype: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>',
-  festival: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>'
+  festival: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>',
+  build: '<i class="dust"></i>',
+  opening: '<i class="spark k1">✦</i><i class="spark k2">✦</i><i class="spark k3">✦</i>'
 };
-const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹', gate: (i) => (i.once ? '통제 · 1명' : `통제 ~${hhmm(i.until)}`), hype: (i) => `떡상 ×${i.tollX || 2} ~${hhmm(i.until)}`, festival: (i) => `축제 ×2 ~${hhmm(i.until)}` };
+const INC_TAG = { fire: (i) => `화재 ~${hhmm(i.until)}`, delay: () => '신호 장애', crowd: () => '인파 +100', busk: () => '버스킹', gate: (i) => (i.once ? '통제 · 1명' : `통제 ~${hhmm(i.until)}`), hype: (i) => `떡상 ×${i.tollX || 2} ~${hhmm(i.until)}`, festival: (i) => `축제 ×2 ~${hhmm(i.until)}`, build: (i) => `공사 ~${hhmm(i.until)}`, opening: (i) => `개통 ×2 ~${hhmm(i.until)}` };
 
 function addIncident(i) {
   const el = document.createElement('div');
@@ -1554,6 +1565,13 @@ const DEMO = {
     ['자산 1등 자동 지목', (d) => SFX.ripple(d.layer, d.at(4), { color: '#E0533D', s: DEMO_S })],
     ['1등에게서 60 수혈', async (d) => { await SFX.transfuse(d.layer, d.at(4), d.at(1), { s: DEMO_S, z: 300 }); d.cash('r0', 840); d.cash('me', 100); }],
     ['내가 꼴찌면 120', (d) => SFX.word(d.layer, d.top(1), '꼴찌면 ×2', { color: '#E0533D', s: DEMO_S })]
+  ] },
+  build: { me: 0, own: { 2: 'me', 4: 'me' }, level: { 2: 1, 4: 3 }, rivals: [3], steps: [
+    ['공사할 내 역 고르기', (d) => d.pick(2)],
+    ['착공! 펜스를 치고 공사 시작', async (d) => { await SFX.construct(d.layer, d.at(2), { s: DEMO_S, z: 300 }); d.mark(2, 'build'); }],
+    ['공사 중엔 상대가 서도 통행료 0', async (d) => { await d.walk(d.r[0], [2]); await SFX.word(d.layer, d.top(2), '통행료 0', { color: '#E39A1E', s: DEMO_S }); }],
+    ['공사가 끝나면 랜드마크로 개통 · 1바퀴 통행료 2배', async (d) => { d.layer.querySelectorAll('.dm-mark').forEach((x) => x.remove()); await SFX.ribbon(d.layer, d.at(2), { s: DEMO_S, z: 300 }); d.level(2, 2); }],
+    ['고유 능력 환승센터: 내 랜드마크에 서면 다른 랜드마크로', async (d) => { await d.walk(d.me, [1, 2]); await d.ride(2, 4); }]
   ] },
   buyout: { me: 1, own: { 3: 'r0' }, level: { 3: 2 }, rivals: [5], steps: [
     ['사들일 남의 역 고르기', (d) => d.pick(3)],
@@ -1972,6 +1990,15 @@ const HANDLERS = {
   },
   async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); },
   async upgrade(e) {
+    if (e.opened) {
+      // 착공한 역이 개통: 테이프 커팅
+      Camera.follow(nodeXY(e.node), 260); await sleep(240);
+      drawBoard();
+      await SFX.ribbon($('#layer'), nodeXY(e.node), sfxAt(e.node));
+      if (isMe(e.player)) await bigHit('랜드마크 개통!', '#E39A1E');
+      await estateFx(e, '개통!', Sound.big);
+      return;
+    }
     if (e.free) { Camera.follow(nodeXY(e.node), 260); await sleep(240); await SFX.bolt($('#layer'), nodeXY(e.node), sfxAt(e.node)); }
     if (e.level >= MAX_LEVEL && isMe(e.player)) await bigHit('랜드마크!', '#F2B33D');
     await estateFx(e, e.level >= MAX_LEVEL ? '랜드마크!' : e.free ? '무료 증축!' : '증축!', Sound.big);
@@ -2015,6 +2042,18 @@ const HANDLERS = {
       await sleep(300);
       return;
     }
+    if (e.kind === 'build' || e.kind === 'opening') {
+      Camera.follow(nodeXY(e.node), 300);
+      await sleep(e.kind === 'build' ? 300 : 120);
+      if (e.kind === 'build') await SFX.construct($('#layer'), nodeXY(e.node), sfxAt(e.node));
+      const el = addIncident(e);
+      const [x, y] = nodeApp(e.node);
+      FX.ring(x, y, '#E39A1E');
+      if (e.kind === 'opening') { FX.confetti(x, y - 30, 20); FX.pow(x, y - 64, '개통 축제! ×2', '#F2B33D', '#22201D', -6); }
+      await tween(el, [{ transform: 'scale(0)', opacity: 0 }, { transform: 'scale(1.4)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+      await sleep(300);
+      return;
+    }
     if (e.kind === 'gate' || e.kind === 'hype') {
       // 스킬로 생긴 표지: 컷인 뒤에 그 역에 꽂힌다
       Camera.follow(nodeXY(e.node), 300);
@@ -2041,6 +2080,7 @@ const HANDLERS = {
   },
   async incidentEnd(e) {
     const el = $('#layer').querySelector(`.incident[data-node="${e.node}"]`);
+    if (e.cancelled) { const [x, y] = nodeApp(e.node); FX.pow(x, y - 60, '공사 중단!', '#6E6A5E', '#FFFDF7', -5); Sound.penalty(); }
     if (e.used) { const [x, y] = nodeApp(e.node); const gate = e.kind === 'gate'; FX.pow(x, y - 60, gate ? '강제 정차!' : '한 번 더!', gate ? '#E0533D' : '#E2337A', '#FFFDF7', -5); if (gate) Sound.clank(); else Sound.coin(); }
     if (el) { await tween(el, [{ opacity: 1 }, { opacity: 0, transform: 'scale(1.3)' }], { duration: 300, fill: 'forwards' }); el.remove(); }
   },
@@ -2107,7 +2147,7 @@ const HANDLERS = {
   async warp(e) {
     const p = playerById(M(), e.player);
     const el = pieceEl(p.id);
-    if (e.by === 'direct' || e.by === 'express') {
+    if (e.by === 'direct' || e.by === 'express' || e.by === 'transfer') {
       // 직통 열차: 열차가 들어와 태우고, 같은 호선을 따라 달려 내려 준다
       const { path, line } = linePath(e.from, e.to);
       const pts = path.map(nodeXY), end = pts[pts.length - 1], lc = LINES[line]?.color || colorOf(p);

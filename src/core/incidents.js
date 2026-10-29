@@ -4,6 +4,7 @@
 //   stop   : 지나가던 열차가 그 역에서 멈춘다(신호 대기)
 //   cash   : 그 역에 서면 받는 돈 · tollX : 그 역 통행료 배수
 //   again  : 그 역에 서면 한 번 더 굴린다
+//   free   : 그 역 통행료가 없다(공사 중)
 //   short  : 사건 카드에 쓰는 한 줄
 
 export const INCIDENTS = {
@@ -14,7 +15,10 @@ export const INCIDENTS = {
   // 스킬로만 생긴다 — own: 역 주인은 막히지 않는다
   gate: { id: 'gate', name: '출입 통제', minutes: 270, stop: true, own: true, weight: 0, short: '상대 열차 강제 정차' },
   hype: { id: 'hype', name: '떡상', minutes: 270, tollX: 2, weight: 0, short: '통행료 2배 · 모두의 목적지' },
-  festival: { id: 'festival', name: '팝업 축제', minutes: 180, tollX: 2, weight: 0, short: '통행료 2배' }
+  festival: { id: 'festival', name: '팝업 축제', minutes: 180, tollX: 2, weight: 0, short: '통행료 2배' },
+  // 착공(현장소장): 공사 중엔 통행료가 없고, 끝나면 랜드마크로 개통하며 개통 축제(1바퀴 통행료 2배)
+  build: { id: 'build', name: '공사 중', minutes: 180, free: true, weight: 0, short: '2바퀴 뒤 랜드마크 · 통행료 없음' },
+  opening: { id: 'opening', name: '개통 축제', minutes: 90, tollX: 2, weight: 0, short: '통행료 2배' }
 };
 
 /** 한 번에 노선도에 있을 수 있는 사건 수 · 한 바퀴마다 새 사건이 생길 확률 */

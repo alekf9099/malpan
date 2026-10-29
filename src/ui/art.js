@@ -4,14 +4,14 @@ const INK = '#22201D';
 const S = `stroke="${INK}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"`;
 
 /** 내 말 4종. 순서대로 m0~m3. 능력은 core/heroes.js */
-export const HEROES = ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'broker'];
+export const HEROES = ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'foreman', 'broker'];
 
 // 캐릭터는 Kenney Mini Characters(CC0) 3D 모델을 판과 같은 시점으로 찍은 스프라이트 시트다(tools/render-chars.html).
 // 시트 한 장 = 동작 5줄 × 8프레임. 줄 순서는 ACTS 와 같다.
 // 예전 기록에 남은 동물 캐릭터 id 는 같은 자리의 사람으로 보여 준다
 const SHEET = {
   driver: 'driver', staff: 'staff', worker: 'worker', student: 'student',
-  youtuber: 'youtuber', rider: 'rider', nurse: 'nurse', broker: 'broker',
+  youtuber: 'youtuber', rider: 'rider', nurse: 'nurse', foreman: 'foreman', broker: 'broker',
   tiger: 'driver', rabbit: 'staff', parrot: 'worker', panda: 'student'
 };
 export const ACTS = ['idle', 'walk', 'cheer', 'sad', 'dance'];

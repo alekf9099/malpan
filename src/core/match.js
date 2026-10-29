@@ -159,6 +159,7 @@ export function tollFor(m, n, payer) {
   const owner = m.owned[n];
   if (!owner || owner === payer.id || fires(m).has(n)) return 0;
   const at = incidentAt(m, n), inc = INCIDENTS[at?.kind];
+  if (inc?.free) return 0; // 공사 중
   const x = (at?.tollX || inc?.tollX || 1) * (CROWD_TOLL[m.players.length] || 1) * (1 - (perkOf(m, payer).tollDiscount || 0)) * (1 + (perkOf(m, playerById(m, owner)).tollBonus || 0));
   return Math.round(baseToll(m.owned, m.levels, n) * x);
 }
@@ -284,6 +285,7 @@ export function move(m, path) {
   if (corner) events.push(...cornerPower(m, p, corner));
   else if (isHot(p.node)) events.push(...hotspotPower(m, p));
   if (p.out) return events.concat(endTurn(m));
+  if (!m.choice) m.choice = transferChoice(m, p);
   if (m.choice) {
     m.phase = 'choose';
     events.push({ type: 'choice', player: p.id, ...m.choice });
@@ -376,6 +378,36 @@ function cornerPower(m, p, c) {
   return events;
 }
 
+// ── 현장소장: 환승센터 · 착공 ─────────────────────────────────
+
+/** 환승센터: 내 랜드마크에 서면 다른 내 랜드마크로 갈 수 있다(지금 역을 고르면 그대로) */
+export function transferOptions(m, p) {
+  if (!perkOf(m, p).transfer || m.owned[p.node] !== p.id || m.levels[p.node] < MAX_LEVEL) return [];
+  const fire = fires(m);
+  return stationsOf(m, p).filter((n) => n !== p.node && m.levels[n] >= MAX_LEVEL && !fire.has(n));
+}
+function transferChoice(m, p) {
+  const options = transferOptions(m, p);
+  return options.length ? { kind: 'transfer', node: p.node, options: [...options, p.node] } : null;
+}
+
+/** 공사가 걷힌다(주인이 바뀌거나 역이 팔리면 공사도 끝) */
+function dropBuild(m, n) {
+  const at = incidentAt(m, n);
+  if (at?.kind !== 'build') return [];
+  m.incidents = m.incidents.filter((i) => i !== at);
+  return [{ type: 'incidentEnd', node: n, kind: 'build', cancelled: true }];
+}
+
+/** 공사가 끝나면: 그대로 내 역이면 랜드마크로 개통 + 개통 축제 */
+function openBuild(m, i) {
+  const p = playerById(m, i.by);
+  if (!p || p.out || m.owned[i.node] !== p.id) return [];
+  m.levels[i.node] = MAX_LEVEL;
+  return [{ type: 'upgrade', player: p.id, node: i.node, price: 0, level: MAX_LEVEL, free: true, opened: true, chain: links(m.owned, p.id).at[i.node]?.len || 1 },
+    ...spawnIncident(m, 'opening', i.node)];
+}
+
 /** 명소역에서 고르기: warp 면 갈 역, card 면 찬스 카드 id */
 export function choose(m, value) {
   if (m.phase !== 'choose' || !m.choice) throw new Error('고를 것이 없습니다');
@@ -385,7 +417,17 @@ export function choose(m, value) {
   const events = [];
   if (c.kind === 'card') events.push(...applyChance(m, p, chanceById(value), true));
   else if (c.kind === 'festival') events.push(...spawnIncident(m, 'festival', value));
-  else {
+  else if (c.kind === 'transfer') {
+    if (value !== p.node) {
+      const from = p.node;
+      p.prev = null;
+      p.node = value;
+      events.push({ type: 'warp', player: p.id, from, to: value, by: 'transfer' });
+      if (value === p.goal) events.push(...reachGoal(m, p));
+      events.push(...crossStart(m, p, from, value));
+      events.push(...land(m, p));
+    }
+  } else {
     const from = p.node;
     p.prev = null;
     p.node = value;
@@ -509,6 +551,7 @@ export function decide(m, yes) {
       const seller = playerById(m, o.from);
       seller.money += o.price;
       m.owned[o.node] = p.id;
+      events.push(...dropBuild(m, o.node));
     }
     const chain = links(m.owned, p.id).at[o.node]?.len || 1;
     events.push({ type: o.kind, player: p.id, node: o.node, price: o.price, level: m.levels[o.node], from: o.from, chain, linked: chain > before && chain > 1 });
@@ -549,7 +592,7 @@ function pay(m, p, amount, to, info = {}) {
       const v = sellValue(n, m.levels[n]);
       p.money += v;
       delete m.owned[n]; delete m.levels[n];
-      events.push({ type: 'sell', player: p.id, node: n, amount: v });
+      events.push({ type: 'sell', player: p.id, node: n, amount: v }, ...dropBuild(m, n));
     }
   }
   const paid = Math.min(amount, p.money);
@@ -572,8 +615,9 @@ function pay(m, p, amount, to, info = {}) {
 function bankrupt(m, p) {
   p.out = true;
   p.place = alive(m).length + 1;
-  for (const n of stationsOf(m, p)) { delete m.owned[n]; delete m.levels[n]; }
-  return [{ type: 'bankrupt', player: p.id, place: p.place }];
+  const events = [{ type: 'bankrupt', player: p.id, place: p.place }];
+  for (const n of stationsOf(m, p)) { delete m.owned[n]; delete m.levels[n]; events.push(...dropBuild(m, n)); }
+  return events;
 }
 
 // ── 노선 투자(굴리기 전 증축) ─────────────────────────────────
@@ -629,14 +673,19 @@ function spawnIncident(m, kind, at = null, extra = {}) {
   const info = INCIDENTS[k];
   const until = m.clock + Math.round((info.minutes * m.roundMin) / CLOCK.round);
   m.incidents = m.incidents.filter((i) => i.node !== node);
-  m.incidents.push({ node, kind: k, until, ...extra });
-  return [{ type: 'incident', node, kind: k, until, name: info.name, short: info.short }];
+  const inc = { node, kind: k, until, ...extra };
+  m.incidents.push(inc);
+  return [{ type: 'incident', node, kind: k, until: inc.until, name: info.name, short: info.short }];
 }
 
 function tickIncidents(m) {
   const events = [];
-  for (const i of m.incidents.filter((x) => m.clock >= x.until)) events.push({ type: 'incidentEnd', node: i.node, kind: i.kind });
+  const done = m.incidents.filter((x) => m.clock >= x.until);
   m.incidents = m.incidents.filter((x) => m.clock < x.until);
+  for (const i of done) {
+    events.push({ type: 'incidentEnd', node: i.node, kind: i.kind });
+    if (i.kind === 'build') events.push(...openBuild(m, i));
+  }
   return events;
 }
 
@@ -695,6 +744,11 @@ export const CRAM_COUNT = 2;
 /** 벼락치기로 올릴 수 있는 내 역(비싼 것부터) */
 export const cramTargets = (m, p) => stationsOf(m, p).filter((n) => m.levels[n] < MAX_LEVEL).sort((a, b) => stationPrice(b) - stationPrice(a) || m.levels[a] - m.levels[b]);
 
+/** 순환선의 착공은 한 바퀴가 짧아 3바퀴 걸린다(노선도는 2바퀴) */
+export const BUILD_LOOP_ROUNDS = 3;
+/** 착공할 수 있는 내 역: 랜드마크 전, 사건(공사·축제 …)이 없는 역 */
+export const buildTargets = (m, p) => stationsOf(m, p).filter((n) => m.levels[n] < MAX_LEVEL && !incidentAt(m, n));
+
 /** 스킬 칸 수(다 차야 쓸 수 있다) */
 export const skillCost = (p) => p.cost ?? heroById(p.hero).active.charge;
 
@@ -706,6 +760,7 @@ export function skillTargets(m, p = current(m)) {
     return [...new Set((STATION_LINES[p.node] || []).flatMap((l) => LINE_STATIONS[l]))].filter((n) => n !== p.node && R.set.has(n) && !fire.has(n));
   }
   if (id === 'gate' || id === 'gather' || id === 'hype') return stationsOf(m, p).filter((n) => !fire.has(n));
+  if (id === 'build') return buildTargets(m, p);
   if (id === 'buyout') return Object.keys(m.owned).filter((n) => m.owned[n] !== p.id && !isHot(n) && m.levels[n] < MAX_LEVEL && p.money >= buyoutFor(m, n));
   return null;
 }
@@ -715,7 +770,7 @@ export function skillBlocked(m, p = current(m)) {
   if (m.phase !== 'roll' || current(m) !== p) return '주사위 전에만 사용 가능';
   if (p.charge < skillCost(p)) return `충전 중 ${p.charge}/${skillCost(p)}`;
   const t = skillTargets(m, p);
-  if (t && !t.length) return id === 'buyout' ? '살 수 있는 역 없음' : id === 'direct' ? '갈 수 있는 역 없음' : '보유 역 없음';
+  if (t && !t.length) return id === 'buyout' ? '살 수 있는 역 없음' : id === 'direct' ? '갈 수 있는 역 없음' : id === 'build' && stationsOf(m, p).length ? '공사할 역 없음' : '보유 역 없음';
   if (id === 'cram' && !cramTargets(m, p).length) return '증축할 역 없음';
   if (id === 'combo' && p.combo) return '이미 적용 중';
   return null;
@@ -751,7 +806,8 @@ export function useSkill(m, target = null) {
     events.push(...land(m, p));
     if (p.out) return events.concat(endTurn(m));
     return afterLand(m, p, events);
-  } else if (id === 'gate') events.push(...spawnIncident(m, 'gate', target, isLoop(m) ? { once: true } : {}));
+  } else if (id === 'build') events.push(...spawnIncident(m, 'build', target, { by: p.id, ...(isLoop(m) ? { until: m.clock + BUILD_LOOP_ROUNDS * m.roundMin } : {}) }));
+  else if (id === 'gate') events.push(...spawnIncident(m, 'gate', target, isLoop(m) ? { once: true } : {}));
   else if (id === 'hype') {
     events.push(...spawnIncident(m, 'hype', target, isLoop(m) ? { tollX: HYPE_LOOP_X } : {}));
     if (!isLoop(m)) for (const q of rivals) if (q.node !== target && q.goal !== target) {
@@ -784,7 +840,7 @@ export function useSkill(m, target = null) {
     seller.money += price;
     m.owned[target] = p.id;
     const chain = links(m.owned, p.id).at[target]?.len || 1;
-    events.push({ type: 'takeover', player: p.id, node: target, price, level: m.levels[target], from, chain, linked: chain > before && chain > 1, buyout: true });
+    events.push({ type: 'takeover', player: p.id, node: target, price, level: m.levels[target], from, chain, linked: chain > before && chain > 1, buyout: true }, ...dropBuild(m, target));
     if (gained(m, p, monoBefore, events)) return events;
   }
   if (alive(m).length <= 1) return events.concat(endTurn(m));

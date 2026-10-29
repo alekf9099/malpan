@@ -34,7 +34,11 @@ const ART = {
   // 강제 매수: 경매 망치 + 받침
   buyout: `<rect x="5" y="31" width="20" height="5" rx="2" fill="#8A5A3B" ${K}/><path d="M17 20L32 35" stroke="#22201D" stroke-width="5.5" stroke-linecap="round"/>
     <path d="M17 20L32 35" stroke="#C98A4B" stroke-width="2.6" stroke-linecap="round"/>
-    <rect x="8" y="5" width="12" height="20" rx="3" fill="#B97A47" ${K} transform="rotate(-45 14 15)"/><path d="M24 8h10M29 3v10" stroke="#F2B33D" stroke-width="2.6" stroke-linecap="round"/>`
+    <rect x="8" y="5" width="12" height="20" rx="3" fill="#B97A47" ${K} transform="rotate(-45 14 15)"/><path d="M24 8h10M29 3v10" stroke="#F2B33D" stroke-width="2.6" stroke-linecap="round"/>`,
+  // 착공: 안전모 + 줄무늬 바리케이드
+  build: `<path d="M8 32v5M32 32v5" stroke="#22201D" stroke-width="3" stroke-linecap="round"/><rect x="4" y="24" width="32" height="8" rx="2" fill="#FFFDF7" ${K}/>
+    <path d="M11 24l-4 8M19 24l-4 8M27 24l-4 8M35 24l-4 8" stroke="#F28C28" stroke-width="3.4"/><rect x="4" y="24" width="32" height="8" rx="2" fill="none" ${K}/>
+    <path d="M9 19a11 11 0 0 1 22 0z" fill="#F4BF2A" ${K}/><rect x="5" y="18" width="30" height="4" rx="2" fill="#F4BF2A" ${K}/><path d="M20 8.5v9" stroke="#22201D" stroke-width="2.4" stroke-linecap="round"/>`
 };
 
 /** 스킬 아이콘 svg 문자열 */

@@ -1,4 +1,4 @@
-// 캐릭터 여덟 — 서울 지하철에서 마주칠 법한 사람들. 넷은 처음부터, 넷은 승차권으로 연다. 하나는 내가, 나머지는 AI 가 맡는다.
+// 캐릭터 아홉 — 서울 지하철에서 마주칠 법한 사람들. 넷은 처음부터, 다섯은 승차권으로 연다. 하나는 내가, 나머지는 AI 가 맡는다.
 // 고유 능력(늘 켜짐)은 match.js 가 id 로 본다. 스킬은 주사위를 던질 때마다 1칸씩 차고(charge 칸 — 센 스킬일수록 길다),
 // 다 차면 내 차례 굴리기 전에 쓴다. 쓰면 다시 0칸부터. target 이 있으면 역을 하나 고른다.
 // loopDesc 는 순환선 판에서 달라지는 설명(목적지·통과 요금이 없는 판).
@@ -60,6 +60,13 @@ export const HEROES = [
     shiftPay: 30, rescue: 300,
     active: { id: 'transfuse', name: '수혈', desc: '자산 1등에게서 60 · 내가 꼴찌면 120', charge: 4, loopCharge: 5 },
     ai: { name: '버티기형', reserve: 120, hub: 0.3, chain: 0.6, build: 0.7 }
+  },
+  {
+    id: 'foreman', name: '박소장', job: '현장소장', color: '#E39A1E', price: 250,
+    skill: '환승센터', desc: '내 랜드마크에 서면 다른 내 랜드마크로 환승할 수 있다',
+    transfer: true,
+    active: { id: 'build', name: '착공', desc: '내 역 1곳 공사 · 2바퀴 뒤 랜드마크로 개통(공사 중엔 통행료 없음)', loopDesc: '내 역 1곳 공사 · 3바퀴 뒤 랜드마크로 개통(공사 중엔 통행료 없음)', charge: 3, loopCharge: 5, target: '공사할 내 역' },
+    ai: { name: '개발형', reserve: 220, hub: 0.3, chain: 0.6, build: 0.8 }
   },
   {
     id: 'broker', name: '오사장', job: '부동산 중개인', color: '#8A5A3B', price: 300,

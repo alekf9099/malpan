@@ -49,6 +49,8 @@ const CAST = {
   youtuber: { model: 'mini/character-female-a', height: 1.75 }, // 여행 유튜버 — 보라 옷
   rider:   { model: 'mini/character-male-f', height: 1.75 },   // 배달 라이더 — 초록 옷
   nurse:   { model: 'mini/character-female-e', height: 1.75 }, // 간호사 — 흰 옷
+  // 현장소장 — 팩의 12명 중 받아 둔 8명을 다 써서, 기관사 모델의 파란 옷을 주황 작업복으로 칠하고 노란 안전모를 씌운다
+  foreman: { model: 'mini/character-male-c', height: 1.75, recolor: { from: [195, 255], to: 26 }, hat: '#F4BF2A' },
   broker:  { model: 'mini/character-male-d', height: 1.75 }    // 부동산 중개인 — 검은 정장
 };
 // Mini Characters 에는 춤이 없어 점프로 대신한다
@@ -105,15 +107,63 @@ function outline(src) {
   return c;
 }
 
+/** 텍스처에서 색상(hue) from 범위의 칸만 to 색상으로 바꾼 새 텍스처 */
+function recolored(tex, { from, to }) {
+  const img = tex.image;
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  const col = new THREE.Color();
+  for (let i = 0; i < d.data.length; i += 4) {
+    col.setRGB(d.data[i] / 255, d.data[i + 1] / 255, d.data[i + 2] / 255);
+    const hsl = col.getHSL({});
+    const h = hsl.h * 360;
+    if (h < from[0] || h > from[1] || hsl.s < 0.25) continue;
+    col.setHSL(to / 360, Math.min(1, hsl.s * 1.25), Math.min(0.62, hsl.l * 0.95 + 0.04));
+    d.data[i] = col.r * 255; d.data[i + 1] = col.g * 255; d.data[i + 2] = col.b * 255;
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.magFilter = tex.magFilter; t.minFilter = tex.minFilter;
+  return t;
+}
+
+/** 머리 위에 안전모(반구 + 챙 + 가운데 등줄)를 얹는다 — head 노드에 붙여 동작을 따라간다 */
+function hardHat(root, color) {
+  const head = root.getObjectByName('head');
+  const mesh = root.getObjectByName('head-mesh') || head;
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(mesh);
+  const w = Math.max(box.max.x - box.min.x, box.max.z - box.min.z);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.55 });
+  const hat = new THREE.Group();
+  const r = w * 0.44;
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+  dome.scale.y = 0.72;
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.14, r * 1.14, w * 0.05, 28), mat);
+  brim.position.y = w * 0.03;
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(w * 0.12, r * 0.16, r * 1.9), mat);
+  ridge.position.y = r * 0.62;
+  hat.add(dome, brim, ridge);
+  const cx = (box.min.x + box.max.x) / 2, cz = (box.min.z + box.max.z) / 2;
+  hat.position.set(cx, box.max.y - (box.max.y - box.min.y) * 0.16, cz);
+  scene.add(hat); // 월드 좌표로 놓고 head 에 붙인다(attach 가 위치를 지킨다)
+  head.attach(hat);
+}
+
 async function renderCast(kind, spec) {
   const gltf = await load(spec.model);
   const root = gltf.scene;
+  if (spec.recolor) root.traverse((o) => { if (o.isMesh && o.material.map) { o.material = o.material.clone(); o.material.map = recolored(o.material.map, spec.recolor); } });
   if (spec.height) {
     // 팩마다 모델 크기가 달라 키를 맞춘다(발은 땅에)
     const box = new THREE.Box3().setFromObject(root);
     root.scale.setScalar(spec.height / (box.max.y - box.min.y));
     root.position.y -= box.min.y * root.scale.y;
   }
+  if (spec.hat) hardHat(root, spec.hat);
   scene.add(root);
   const mixer = new THREE.AnimationMixer(root);
   const sheets = {};

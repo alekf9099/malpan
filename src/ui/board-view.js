@@ -203,51 +203,95 @@ const CORNER_ART = {
     + `<path d="M${cx - 24} ${cy - 24} H${cx + 24} V${cy + 14} H${cx - 12} V${cy - 12} H${cx + 12} V${cy + 2}" fill="none" stroke="#8E5BC8" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${cx}" cy="${cy - 2}" r="5" fill="#E0533D" stroke="${INK}" stroke-width="2"/>`
 };
 const CORNER_FILL = { start: '#FFE3DA', festival: '#FFE2EF', express: '#DDEBFB', maze: '#EDE3F7' };
+/** 모서리 칸 바탕 햇살 · 이름 리본 색 */
+const CORNER_RAY = { start: '#FFCDBE', festival: '#FFC7DE', express: '#C2DAF7', maze: '#DCCBF0' };
+const CORNER_RIBBON = { start: '#E0533D', festival: '#E2588F', express: '#2F6BD8', maze: '#8E5BC8' };
+
+/**
+ * 칸 받침: 바닥 그림자 + 두께(옆면 색) + 윗면. lift 만큼 솟아 있으면 두께가 그만큼 길다.
+ * 윗면은 (x, y - lift) 에서 시작한다.
+ */
+function slabOf(x, y, w, h, face, side, lift = 0) {
+  return `<rect x="${x}" y="${y + 8}" width="${w}" height="${h}" rx="20" fill="${INK}"/>`
+    + `<rect x="${x}" y="${y - lift + 5}" width="${w}" height="${h + lift}" rx="20" fill="${side}" stroke="${INK}" stroke-width="4"/>`
+    + `<rect x="${x}" y="${y - lift}" width="${w}" height="${h}" rx="20" fill="${face}" stroke="${INK}" stroke-width="4"/>`;
+}
+/** 빛 받은 윗면 가장자리(안쪽 흰 테) */
+const bevel = (x, y, w, h, r = 16) => `<rect x="${x + 4.5}" y="${y + 4.5}" width="${w - 9}" height="${h - 9}" rx="${r}" fill="none" stroke="#FFFFFF" stroke-opacity=".8" stroke-width="2.5"/>`;
+/** 값 칩: 동전 + 숫자 */
+const priceChip = (cx, cy, v) => `<rect x="${cx - 25}" y="${cy - 9.5}" width="50" height="19" rx="9.5" fill="#FFF3D1" stroke="${INK}" stroke-width="2.2"/>`
+  + `<circle cx="${cx - 14.5}" cy="${cy}" r="6" fill="#F2B33D" stroke="${INK}" stroke-width="1.8"/><path d="M${cx - 17} ${cy - 1.5} H${cx - 12} M${cx - 14.5} ${cy - 1.5} V${cy + 3}" stroke="${INK}" stroke-width="1.4" stroke-linecap="round"/>`
+  + txt(cx + 5.5, cy + 4.6, v, { size: 12.5 });
+/** 이름 리본(양끝이 V 로 파인 띠) */
+const ribbon = (cx, y, w, color, text, size) => {
+  const x0 = cx - w / 2, x1 = cx + w / 2, hh = 26;
+  return `<path d="M${x0 - 6} ${y + 4} H${x0 + 6} V${y + hh + 4} H${x0 - 6} L${x0} ${y + hh / 2 + 4} Z" fill="${shade(color, 0.35)}" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>`
+    + `<path d="M${x1 + 6} ${y + 4} H${x1 - 6} V${y + hh + 4} H${x1 + 6} L${x1} ${y + hh / 2 + 4} Z" fill="${shade(color, 0.35)}" stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"/>`
+    + `<rect x="${x0}" y="${y}" width="${w}" height="${hh}" rx="5" fill="${color}" stroke="${INK}" stroke-width="3"/>`
+    + `<path d="M${x0 + 6} ${y + 5} H${x1 - 6}" stroke="#FFFFFF" stroke-opacity=".45" stroke-width="2" stroke-linecap="round"/>`
+    + txt(cx, y + hh / 2 + size * 0.36, text, { size, font: DISPLAY, weight: 400, fill: '#FFFDF7' });
+};
 
 function loopTile(n, i, owner, level) {
   const r = loopRect(i), x = r.x + 5, y = r.y + 5, w = r.w - 10, h = r.h - 10;
   const own = owner[n], lv = level[n] || 0, c = RING.corners[n];
-  const slab = (fill) => `<rect x="${x}" y="${y + 8}" width="${w}" height="${h}" rx="20" fill="${INK}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${fill}" stroke="${INK}" stroke-width="4"/>`;
   const cx = x + w / 2;
+  const clip = (id, inner) => `<clipPath id="${id}${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20"/></clipPath><g clip-path="url(#${id}${i})">${inner}</g>`;
   if (c) {
-    // 관광 맵 모서리는 제 그림(열차 · 휴게소 · 비행기 …), 순환선은 종류 그림
-    const art = c.icon && TOUR_ART[c.icon] ? `<svg x="${cx - 38}" y="${y + 12}" width="76" height="76" viewBox="0 0 40 40" overflow="visible">${TOUR_ART[c.icon]}</svg>` : CORNER_ART[c.kind](cx, y + h / 2 - 2);
-    return slab(CORNER_FILL[c.kind]) + `<rect x="${x + 8}" y="${y + 8}" width="${w - 16}" height="${h - 16}" rx="14" fill="none" stroke="#FFFDF7" stroke-width="3" opacity=".9"/>`
-      + art + txt(cx, y + h - 14, c.name, { size: c.name.length > 5 ? 17 : 22, font: DISPLAY, weight: 400 });
+    // 모서리: 햇살 바탕 + 큰 그림(그림자) + 이름 리본. 관광 맵은 제 그림(열차 · 휴게소 · 비행기 …), 순환선은 종류 그림
+    const k = c.kind, cy0 = y + h / 2 - 12;
+    const rays = Array.from({ length: 12 }, (_, j) => {
+      const a0 = (j * 30 * Math.PI) / 180, a1 = ((j * 30 + 15) * Math.PI) / 180, R = 130;
+      return `<path d="M${cx} ${cy0} L${(cx + R * Math.cos(a0)).toFixed(1)} ${(cy0 + R * Math.sin(a0)).toFixed(1)} L${(cx + R * Math.cos(a1)).toFixed(1)} ${(cy0 + R * Math.sin(a1)).toFixed(1)} Z" fill="${CORNER_RAY[k]}"/>`;
+    }).join('');
+    const art = c.icon && TOUR_ART[c.icon] ? `<svg x="${cx - 36}" y="${cy0 - 40}" width="72" height="72" viewBox="0 0 40 40" overflow="visible">${TOUR_ART[c.icon]}</svg>` : CORNER_ART[c.kind](cx, cy0 + 2);
+    return slabOf(x, y, w, h, CORNER_FILL[k], shade(CORNER_RIBBON[k], 0.05)) + clip('lc', rays) + bevel(x, y, w, h)
+      + `<ellipse cx="${cx}" cy="${cy0 + 36}" rx="34" ry="7" fill="${INK}" opacity=".14"/>` + art
+      + ribbon(cx, y + h - 38, w - 30, CORNER_RIBBON[k], c.name, c.name.length > 5 ? 14 : c.name.length > 3 ? 17 : 20);
   }
   if (isChance(n)) {
-    return slab('#F7C94A') + `<rect x="${x + 7}" y="${y + 7}" width="${w - 14}" height="${h - 14}" rx="14" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="8 7"/>`
-      + (w > h ? txt(cx - 26, y + h / 2 + 20, '?', { size: 54, font: DISPLAY, weight: 400 }) + txt(cx + 20, y + h / 2 + 7, RING.chanceName, { size: RING.chanceName.length > 2 ? 15 : 18, fill: '#8A6A1F' })
-        : txt(cx, y + h / 2 + 14, '?', { size: 62, font: DISPLAY, weight: 400 }) + txt(cx, y + h - 14, RING.chanceName, { size: RING.chanceName.length > 2 ? 15 : 18, fill: '#8A6A1F' }));
+    // 찬스: 사선 줄무늬 노란 표 + 양쪽 표 구멍 + 물음표 배지
+    const wide = w > h;
+    const stripes = Array.from({ length: 14 }, (_, j) => `<path d="M${x - 140 + j * 22} ${y + h + 10} L${x + j * 22} ${y - 10}" stroke="#FFFFFF" stroke-opacity=".28" stroke-width="7"/>`).join('');
+    const holes = (wide ? [[cx, y], [cx, y + h]] : [[x, y + h / 2], [x + w, y + h / 2]]).map(([a, b]) => `<circle cx="${a}" cy="${b}" r="8" fill="#F1E3C6" stroke="${INK}" stroke-width="3"/>`).join('');
+    const [bx, by] = wide ? [x + 40, y + h / 2] : [cx, y + h / 2 - 12];
+    const lbl = RING.chanceName;
+    return slabOf(x, y, w, h, '#F7C94A', '#D39A1E') + clip('lq', stripes) + bevel(x, y, w, h)
+      + `<rect x="${x + 9}" y="${y + 9}" width="${w - 18}" height="${h - 18}" rx="12" fill="none" stroke="#FFFDF7" stroke-width="2.5" stroke-dasharray="7 6"/>` + holes
+      + `<circle cx="${bx}" cy="${by + 3}" r="23" fill="${INK}"/><circle cx="${bx}" cy="${by}" r="23" fill="#FFFDF7" stroke="${INK}" stroke-width="3.5"/>`
+      + txt(bx, by + 13, '?', { size: 36, font: DISPLAY, weight: 400, fill: '#E0533D' })
+      + (wide ? txt(x + w - 40, y + h / 2 + 6, lbl, { size: lbl.length > 2 ? 14 : 17, fill: '#6B4E0E' })
+        : txt(cx, y + h - 16, lbl, { size: lbl.length > 2 ? 14 : 17, fill: '#6B4E0E' }));
   }
   // 그림: 명소역은 명소 그림, 관광 맵 칸은 여행지 그림
   const hot = isHot(n), side = RING.colorOf(n) || '#8A8173';
   const pic = hot ? HOT_ART[n] : TOUR_ART[RING.icons?.[n]] || null;
-  // 산 칸은 판에서 솟는다(단계마다 더 높이) — 솟은 만큼 옆면이 주인 색 그늘로 보인다
+  // 산 칸은 판에서 솟는다(단계마다 더 높이) — 솟은 만큼 옆면이 주인 색 그늘로 보인다. 빈 칸 옆면은 구역 색
   const lift = own ? 3 + 2 * lv : 0;
-  let out = own
-    ? `<rect x="${x}" y="${y + 8}" width="${w}" height="${h}" rx="20" fill="${INK}"/><rect x="${x}" y="${y - lift + 6}" width="${w}" height="${h + lift}" rx="20" fill="${shade(own)}" stroke="${INK}" stroke-width="4"/>`
-      + `<g transform="translate(0 ${-lift})"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="${tint(own)}" stroke="${INK}" stroke-width="4"/>`
-    : slab(hot ? '#FFF4D6' : '#FFFDF7');
-  out += `<clipPath id="lt${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20"/></clipPath>`;
+  let out = slabOf(x, y, w, h, own ? tint(own) : hot ? '#FFF4D6' : '#FFFDF7', own ? shade(own) : shade(side, 0.12), lift);
+  out += `<g transform="translate(0 ${-lift})"><clipPath id="lt${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20"/></clipPath>`;
   const b = r.inner === 'top' ? [x, y, w, BAND] : r.inner === 'bottom' ? [x, y + h - BAND, w, BAND] : r.inner === 'right' ? [x + w - BAND, y, BAND, h] : [x, y, BAND, h];
-  out += `<rect x="${b[0]}" y="${b[1]}" width="${b[2]}" height="${b[3]}" fill="${own || side}" clip-path="url(#lt${i})"/>`
-    + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="none" stroke="${INK}" stroke-width="4"/>`;
+  // 구역 띠: 색 띠 + 가는 흰 줄(띠와 몸통 사이)
+  const seam = r.inner === 'top' ? `M${x} ${y + BAND} H${x + w}` : r.inner === 'bottom' ? `M${x} ${y + h - BAND} H${x + w}` : r.inner === 'right' ? `M${x + w - BAND} ${y} V${y + h}` : `M${x + BAND} ${y} V${y + h}`;
+  out += `<g clip-path="url(#lt${i})"><rect x="${b[0]}" y="${b[1]}" width="${b[2]}" height="${b[3]}" fill="${own || side}"/><path d="${seam}" stroke="${INK}" stroke-width="3"/></g>`
+    + `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="20" fill="none" stroke="${INK}" stroke-width="4"/>` + bevel(x, y, w, h);
   // 몸통(띠를 뺀 곳): 아래에 역명판, 그 위에 건물. 넓은 칸(옆줄)은 건물을 왼쪽에, 값은 오른쪽에
   const body = r.inner === 'top' ? [x, y + BAND, w, h - BAND] : r.inner === 'bottom' ? [x, y, w, h - BAND] : r.inner === 'right' ? [x, y, w - BAND, h] : [x + BAND, y, w - BAND, h];
   const wide = body[2] > body[3];
   const plate = { x: body[0] + 5, y: body[1] + body[3] - 30, w: body[2] - 10, h: 24 };
   const name = RING.nameOf(n);
-  out += `<rect x="${plate.x}" y="${plate.y}" width="${plate.w}" height="${plate.h}" rx="12" fill="${RING.lineColor || LINE2}" stroke="${INK}" stroke-width="3"/>`
+  out += `<rect x="${plate.x}" y="${plate.y + 3}" width="${plate.w}" height="${plate.h}" rx="12" fill="${INK}"/><rect x="${plate.x}" y="${plate.y}" width="${plate.w}" height="${plate.h}" rx="12" fill="${RING.lineColor || LINE2}" stroke="${INK}" stroke-width="3"/>`
+    + `<path d="M${plate.x + 9} ${plate.y + 5} H${plate.x + plate.w - 9}" stroke="#FFFFFF" stroke-opacity=".35" stroke-width="2" stroke-linecap="round"/>`
     + txt(plate.x + plate.w / 2, plate.y + 17.5, name, { size: Math.min(15, ((plate.w - 8) / name.length) * 1.05), fill: '#FFFDF7' });
   const g = groundOf(n, own ? lv || 1 : 0) || [body[0] + body[2] / 2, plate.y - 22, ISO_K];
-  if (!own) out += txt(wide ? body[0] + body[2] - 26 : g[0], wide ? plate.y - 10 : plate.y - 5, stationPrice(n), { size: 13, fill: '#8A8173', weight: 800 });
-  if (pic && own) out += `<svg x="${body[0] + body[2] - 30}" y="${body[1] + 4}" width="24" height="24" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`;
-  if (own) out += '</g>';
+  if (!own) out += wide ? priceChip(body[0] + body[2] - 30, plate.y - 16, stationPrice(n)) : priceChip(g[0], plate.y - 13, stationPrice(n));
+  if (pic && own) out += `<circle cx="${body[0] + body[2] - 18}" cy="${body[1] + 16}" r="14" fill="#FFFDF7" stroke="${INK}" stroke-width="2.5"/><svg x="${body[0] + body[2] - 29}" y="${body[1] + 5}" width="22" height="22" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`;
+  out += '</g>';
   // 건물은 칸을 다 깐 뒤 따로(뒤에서 앞으로) 세운다 — 높은 탑이 옆 칸 위로 솟아도 가려지지 않게
   const by = g[1] - lift;
-  const bld = pic && !own ? `<svg x="${g[0] - 24}" y="${by - 46}" width="48" height="48" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
-    : `<g transform="translate(${g[0]} ${by}) scale(${g[2]})">${isoBuilding(own ? lv || 1 : 0, own)}</g>`;
+  const up = wide ? 0 : 10; // 빈 칸 그림은 값 칩 위로
+  const bld = pic && !own ? `<ellipse cx="${g[0]}" cy="${by - up - 3}" rx="19" ry="5" fill="${INK}" opacity=".16"/><svg x="${g[0] - 25}" y="${by - up - 50}" width="50" height="50" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
+    : `<g transform="translate(${g[0]} ${by - (own ? 0 : up)}) scale(${g[2]})">${isoBuilding(own ? lv || 1 : 0, own)}</g>`;
   return { tile: out, bld: `<g class="lb" data-n="${n}">${bld}</g>`, y: by };
 }
 
@@ -333,6 +377,7 @@ function ambient(river, railPaths, I0, I1) {
   const trains = railPaths.map(({ d, c }, k) => {
     const dur = 12, t = since(dur, k * 6);
     const body = RING.flights ? `<g transform="rotate(90) translate(-22 -22) scale(1.1)">${TOUR_ART.plane}</g>` : railTrain(c);
+    // 고속선 호는 늘 보이게(점선 위를 KTX 가 달린다) — 레일과 같은 깜박임은 순환선만
     return `<g opacity="0"><g>${body}</g><animateMotion dur="${dur}s" begin="${t}" repeatCount="indefinite" rotate="auto" keyPoints="0;0;1;1" keyTimes="0;.45;.8;1" calcMode="linear" path="${d}"/>`
       + `<animate attributeName="opacity" dur="${dur}s" begin="${t}" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;.44;.48;.77;.81;1"/></g>`;
   }).join('');
@@ -359,18 +404,20 @@ function loopSvg(state = {}) {
   const I0 = LM + LC, I1 = LM + LS - LC; // 가운데 마당
   // 지름길 레일: 살짝 휜 곡선(먹선 · 호선 색 · 가운데 흰 침목)
   const railPaths = [];
-  // 세계 일주는 레일 대신 하늘길(점선 호 · 비행기), 나머지는 레일
+  // 관광 맵은 레일 대신 휜 점선(하늘길 · 고속선) — 가운데 지도를 가리지 않게. 순환선은 레일
+  const arcs = RING.flights || RING.arcs;
   const rails = RING.shortcuts.map(([a, b, col, label, line], k) => {
     const p = innerPoint(RING.tiles.indexOf(a)), q = innerPoint(RING.tiles.indexOf(b));
-    const bend = RING.flights ? 0 : k === 0 ? -70 : 70;
-    const mx = (p[0] + q[0]) / 2 + bend, my = (p[1] + q[1]) / 2 - (RING.flights ? 150 + 60 * k : 0);
+    let mx = (p[0] + q[0]) / 2, my = (p[1] + q[1]) / 2;
+    if (arcs) { const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, off = k === 0 ? 120 : -120; mx += (-dy / L) * off; my += (dx / L) * off; }
+    else mx += k === 0 ? -70 : 70;
     const d = `M${p[0]} ${p[1]} Q${mx} ${my} ${q[0]} ${q[1]}`;
     railPaths.push({ d, c: col });
     const mark = line ?? (RING.flights ? '' : 'KTX');
     const badge = ([x, y]) => `<circle cx="${x}" cy="${y}" r="17" fill="${col}" stroke="${INK}" stroke-width="3.5"/>`
       + (mark !== '' ? txt(x, y + (String(mark).length > 1 ? 5 : 7), mark, { size: String(mark).length > 1 ? 11 : 20, fill: '#FFFDF7' }) : `<svg x="${x - 11}" y="${y - 11}" width="22" height="22" viewBox="0 0 40 40">${TOUR_ART.plane}</svg>`);
-    if (RING.flights) {
-      return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="12" stroke-linecap="round" opacity=".18"/><path d="${d}" fill="none" stroke="${col}" stroke-width="6" stroke-dasharray="14 12" stroke-linecap="round"/>` + badge(p) + badge(q);
+    if (arcs) {
+      return `<path d="${d}" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" opacity=".55"/><path d="${d}" fill="none" stroke="${INK}" stroke-width="9" stroke-linecap="round" stroke-dasharray="16 11"/><path d="${d}" fill="none" stroke="${col}" stroke-width="5" stroke-linecap="round" stroke-dasharray="16 11"/>` + badge(p) + badge(q);
     }
     // 관광 맵은 가운데 지도가 보이게 레일을 조금 가늘게
     const [wo, wi] = RING.id === 'loop' ? [30, 20] : [20, 12];
@@ -392,14 +439,14 @@ function loopSvg(state = {}) {
   const amb = ambient(sc.river, railPaths, I0, I1);
   const [lx, ly, rot] = sc.logo;
   return `<svg class="mat loop-mat" viewBox="0 0 ${LGEO.w} ${LGEO.h}" width="${LGEO.w}" height="${LGEO.h}" aria-hidden="true">
-    <rect x="${LM - 22}" y="${LM - 6}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#B59E78" stroke="${INK}" stroke-width="6"/>
-    <rect x="${LM - 22}" y="${LM - 22}" width="${LS + 44}" height="${LS + 44}" rx="60" fill="#F1E3C6" stroke="${INK}" stroke-width="6"/>
+    ${frameSvg()}
     <clipPath id="parkClip"><rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36"/></clipPath>
     ${sc.back}
     ${amb.back}
     <g>${rails}</g>
     ${amb.mid}
     ${amb.front}
+    ${sc.top || ''}
     <g transform="translate(${lx} ${ly}) rotate(${rot})">
       <rect x="-118" y="-46" width="236" height="92" rx="24" fill="${INK}"/><rect x="-118" y="-52" width="236" height="92" rx="24" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>
       ${txt(0, 6, '역전', { size: 52, font: DISPLAY, weight: 400 })}${txt(0, 32, sc.sub, { size: 17, fill: sc.subColor })}
@@ -408,79 +455,207 @@ function loopSvg(state = {}) {
   </svg>`;
 }
 
-// ── 판 가운데 그림 ────────────────────────────────────────────
-// 판마다 { back(레일 아래 그림), river(유람선 길), logo:[x, y, 기울기], sub(로고 아래 글자), subColor }
+// ── 판 테두리 ────────────────────────────────────────────
+/** 나무 틀(두께 · 결 · 징) + 점무늬 바탕. 순환선 · 관광 맵 같이 쓴다 */
+function frameSvg() {
+  const o = LM - 34, W = LS + 68, inr = LM - 16, IW = LS + 32;
+  const studs = [[o + 30, o + 30], [o + W - 30, o + 30], [o + 30, o + W - 30], [o + W - 30, o + W - 30], [o + W / 2, o + 13], [o + W / 2, o + W - 13], [o + 13, o + W / 2], [o + W - 13, o + W / 2]]
+    .map(([x, y]) => `<circle cx="${x}" cy="${y + 1.5}" r="6.5" fill="${INK}"/><circle cx="${x}" cy="${y}" r="6.5" fill="#F2D398" stroke="${INK}" stroke-width="2.5"/><circle cx="${x - 2}" cy="${y - 2}" r="2" fill="#FFFFFF" opacity=".8"/>`).join('');
+  const grain = Array.from({ length: 9 }, (_, j) => `<path d="M${o + 60 + j * 100} ${o + 6} q 30 4 60 0" stroke="#A97A45" stroke-width="2" fill="none" opacity=".55"/><path d="M${o + 40 + j * 100} ${o + W - 7} q 30 -4 60 0" stroke="#A97A45" stroke-width="2" fill="none" opacity=".55"/>`).join('');
+  return `<defs><pattern id="bvDots" width="26" height="26" patternUnits="userSpaceOnUse"><circle cx="6" cy="6" r="1.7" fill="#D8C29A"/><circle cx="19" cy="19" r="1.2" fill="#E2CFAA"/></pattern></defs>
+    <rect x="${o}" y="${o + 16}" width="${W}" height="${W}" rx="70" fill="${INK}"/>
+    <rect x="${o}" y="${o + 9}" width="${W}" height="${W}" rx="70" fill="#7A4F2E" stroke="${INK}" stroke-width="6"/>
+    <rect x="${o}" y="${o}" width="${W}" height="${W}" rx="70" fill="#C2915C" stroke="${INK}" stroke-width="6"/>
+    <rect x="${o + 9}" y="${o + 7}" width="${W - 18}" height="${W - 18}" rx="62" fill="none" stroke="#E2B47C" stroke-width="4"/>
+    ${grain}${studs}
+    <rect x="${inr}" y="${inr}" width="${IW}" height="${IW}" rx="52" fill="#F1E3C6" stroke="${INK}" stroke-width="5"/>
+    <rect x="${inr}" y="${inr}" width="${IW}" height="${IW}" rx="52" fill="url(#bvDots)"/>
+    <rect x="${inr + 6}" y="${inr + 6}" width="${IW - 12}" height="${IW - 12}" rx="47" fill="none" stroke="#FFFFFF" stroke-opacity=".6" stroke-width="3"/>`;
+}
 
-/** 부드러운 닫힌 곡선(점 목록 → 베지어) */
-function blob(pts, k, ox, oy) {
-  const P = pts.map(([x, y]) => [ox + x * k, oy + y * k]), n = P.length;
+// ── 판 가운데 그림 ────────────────────────────────────────────
+// 판마다 { back(지름길 아래 그림), river(유람선 길), logo:[x, y, 기울기], sub(로고 아래 글자), subColor }
+
+/** 부드러운 곡선(점 목록 → 베지어). closed 면 닫는다 */
+function smoothPath(P, closed = true) {
+  const n = P.length;
+  if (n < 2) return '';
+  const at = (i) => (closed ? P[(i + n) % n] : P[Math.max(0, Math.min(n - 1, i))]);
   let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
-  for (let i = 0; i < n; i++) {
-    const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
     d += ` C${(p1[0] + (p2[0] - p0[0]) / 6).toFixed(1)} ${(p1[1] + (p2[1] - p0[1]) / 6).toFixed(1)} ${(p2[0] - (p3[0] - p1[0]) / 6).toFixed(1)} ${(p2[1] - (p3[1] - p1[1]) / 6).toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
   }
-  return d + 'Z';
+  return closed ? d + 'Z' : d;
 }
-const sea = (I0, I1) => `<rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="#BFE3F5" stroke="${INK}" stroke-width="4"/>`;
-const waves = (I0, I1, n = 3) => Array.from({ length: n * n }, (_, j) => `<path d="M${I0 + 40 + (j % n) * ((I1 - I0 - 80) / n)} ${I0 + 60 + Math.floor(j / n) * ((I1 - I0 - 80) / n)} q12 -10 24 0 t24 0" stroke="#FFFDF7" stroke-width="4" fill="none" stroke-linecap="round" opacity=".8"/>`).join('');
+/** 지도 이름표: 흰 알약 + 먹선 */
+function pill(x, y, s, { size = 15, fill = '#FFFDF7', ink = INK, anchor = 'middle' } = {}) {
+  const w = s.length * size * 0.98 + 14, h = size + 9;
+  const x0 = anchor === 'start' ? x : anchor === 'end' ? x - w : x - w / 2;
+  return `<rect x="${x0.toFixed(1)}" y="${(y - h / 2 + 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h}" rx="${h / 2}" fill="${INK}"/><rect x="${x0.toFixed(1)}" y="${(y - h / 2).toFixed(1)}" width="${w.toFixed(1)}" height="${h}" rx="${h / 2}" fill="${fill}" stroke="${INK}" stroke-width="2.5"/>`
+    + txt(x0 + w / 2, y + size * 0.36, s, { size, fill: ink });
+}
+/** 지도 위 도시: 핀 + 이름표(왼쪽 · 오른쪽 · 위 · 아래) */
+function cityPin(x, y, name, side = 'right', big = false, color = '#FFFDF7') {
+  const r = big ? 10 : 7.5;
+  const pin = `<circle cx="${x}" cy="${y + 2}" r="${r}" fill="${INK}"/><circle cx="${x}" cy="${y}" r="${r}" fill="${color}" stroke="${INK}" stroke-width="3"/>${big ? `<circle cx="${x}" cy="${y}" r="3.5" fill="#FFFDF7"/>` : ''}`;
+  const g = r + 8;
+  const lbl = side === 'left' ? pill(x - g, y, name, { anchor: 'end', size: big ? 16 : 14 }) : side === 'up' ? pill(x, y - g - 4, name, { size: big ? 16 : 14 }) : side === 'down' ? pill(x, y + g + 6, name, { size: big ? 16 : 14 }) : pill(x + g, y, name, { anchor: 'start', size: big ? 16 : 14 });
+  return pin + lbl;
+}
+/** 산 하나(양쪽 면 밝기 + 눈 덮인 꼭대기) */
+function peak(x, y, s = 1, [l, r] = ['#A5D18A', '#7DB063']) {
+  const P = (a, b) => `${(x + a * s).toFixed(1)} ${(y + b * s).toFixed(1)}`;
+  return `<path d="M${P(-22, 12)} L${P(0, -16)} L${P(0, 12)} Z" fill="${l}"/><path d="M${P(0, -16)} L${P(22, 12)} L${P(0, 12)} Z" fill="${r}"/>`
+    + `<path d="M${P(-7, -7)} L${P(0, -16)} L${P(7, -7)} L${P(3, -5)} L${P(0, -8)} L${P(-3, -5)} Z" fill="#FFFDF7"/>`
+    + `<path d="M${P(-22, 12)} L${P(0, -16)} L${P(22, 12)} Z" fill="none" stroke="${INK}" stroke-width="2.6" stroke-linejoin="round"/>`;
+}
+/** 나침반(북쪽 빨강) */
+function compass(x, y, R = 34) {
+  const star = (a, len, w, fill) => { const c = Math.cos(a), s2 = Math.sin(a), px = -s2, py = c; return `<path d="M${x + c * len} ${y + s2 * len} L${x + px * w} ${y + py * w} L${x - px * w} ${y - py * w} Z" fill="${fill}" stroke="${INK}" stroke-width="2" stroke-linejoin="round"/>`; };
+  return `<circle cx="${x}" cy="${y + 3}" r="${R}" fill="${INK}" opacity=".85"/><circle cx="${x}" cy="${y}" r="${R}" fill="#FFFDF7" stroke="${INK}" stroke-width="3"/><circle cx="${x}" cy="${y}" r="${R - 7}" fill="none" stroke="${INK}" stroke-width="1.5" stroke-dasharray="3 4"/>`
+    + star(Math.PI / 4, R * 0.55, 5, '#D9D0BE') + star(-Math.PI / 4, R * 0.55, 5, '#D9D0BE') + star(3 * Math.PI / 4, R * 0.55, 5, '#D9D0BE') + star(-3 * Math.PI / 4, R * 0.55, 5, '#D9D0BE')
+    + star(-Math.PI / 2, R * 0.85, 7, '#E0533D') + star(Math.PI / 2, R * 0.85, 7, '#FFFDF7') + star(0, R * 0.85, 7, '#FFFDF7') + star(Math.PI, R * 0.85, 7, '#FFFDF7')
+    + `<circle cx="${x}" cy="${y}" r="4" fill="${INK}"/>` + txt(x, y - R - 7, 'N', { size: 15, font: DISPLAY, weight: 400 });
+}
+/** 갈매기 */
+const gull = (x, y, s = 1) => `<path d="M${x - 9 * s} ${y} q ${4.5 * s} ${-6 * s} ${9 * s} 0 q ${4.5 * s} ${-6 * s} ${9 * s} 0" fill="none" stroke="${INK}" stroke-width="2.4" stroke-linecap="round"/>`;
+/** 고래 한 마리(바다 장식) */
+const whale = (x, y, s = 1) => `<g transform="translate(${x} ${y}) scale(${s})"><path d="M-30 4 Q-28 -16 0 -16 Q26 -16 30 2 Q32 10 22 12 L-22 12 Q-30 12 -30 4 Z" fill="#5C8FC9" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`
+  + `<path d="M28 0 L44 -10 L40 4 L46 14 L28 8 Z" fill="#5C8FC9" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/><path d="M-22 6 Q0 14 22 6" fill="none" stroke="#BFE3F5" stroke-width="3" stroke-linecap="round"/>`
+  + `<circle cx="-16" cy="-4" r="2.6" fill="${INK}"/><path d="M-6 -16 Q-10 -28 -16 -30 M-6 -16 Q-4 -28 2 -32" fill="none" stroke="#BFE3F5" stroke-width="3" stroke-linecap="round"/></g>`;
+/** 작은 배(정지 장식) */
+const ship = (x, y, s = 1, flip = false) => `<g transform="translate(${x} ${y}) scale(${flip ? -s : s} ${s})">${BOAT}</g>`;
+/** 바다 물결 무늬 */
+const ripples = (pts) => pts.map(([x, y]) => `<path d="M${x} ${y} q 9 -7 18 0 t 18 0" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round" opacity=".75"/>`).join('');
+/** 지도 위 작은 명소 그림(그림자) */
+const mini = (id, x, y, s = 34) => (TOUR_ART[id] ? `<ellipse cx="${x}" cy="${y + s * 0.46}" rx="${s * 0.36}" ry="${s * 0.1}" fill="${INK}" opacity=".18"/><svg x="${x - s / 2}" y="${y - s / 2}" width="${s}" height="${s}" viewBox="0 0 40 40" overflow="visible">${TOUR_ART[id]}</svg>` : '');
+/** 바다 + 연안 띠(땅 둘레가 옅게) */
+function seaWith(I0, I1, fill, landPaths) {
+  const halo = (w, c) => landPaths.map((d) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linejoin="round"/>`).join('');
+  return `<rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="${fill}" stroke="${INK}" stroke-width="4"/>`
+    + `<g clip-path="url(#parkClip)">${halo(46, '#C5E7F7')}${halo(24, '#DDF2FB')}</g>`;
+}
 
-/** 남한 + 제주(0~100 좌표) · 지도 위 도시 */
-const KOREA = [[30, 6], [42, 3], [52, 8], [61, 5], [70, 11], [76, 22], [80, 34], [84, 48], [82, 62], [78, 72], [70, 80], [60, 84], [50, 86], [40, 84], [31, 88], [23, 83], [19, 75], [22, 66], [15, 58], [20, 48], [13, 40], [20, 32], [17, 22], [24, 14]];
-const KCITY = { 서울: [32, 20], 강릉: [70, 22], 대전: [40, 46], 경주: [74, 62], 부산: [72, 76], 전주: [32, 60], 여수: [46, 80] };
-/** 세계 대륙(0~200 × 0~100) · 도시 */
-const CONT = [
-  [[10, 22], [22, 12], [40, 9], [54, 15], [50, 28], [42, 34], [36, 44], [30, 50], [26, 44], [18, 36], [12, 30]],
-  [[34, 54], [44, 56], [51, 64], [47, 78], [41, 92], [36, 87], [34, 73], [30, 62]],
-  [[60, 5], [70, 3], [73, 10], [64, 14]],
-  [[88, 18], [98, 13], [108, 15], [111, 24], [103, 30], [94, 32], [87, 27]],
-  [[90, 38], [104, 36], [116, 42], [119, 56], [111, 70], [102, 81], [96, 72], [92, 58], [86, 48]],
-  [[112, 13], [140, 7], [170, 11], [187, 21], [181, 34], [168, 40], [157, 48], [146, 44], [137, 50], [126, 44], [116, 36], [110, 26]],
-  [[160, 66], [176, 63], [187, 72], [183, 82], [168, 85], [160, 76]]
+// 남한(경도 · 위도) — 서해 → 남해 → 동해 → 휴전선
+const SK = [[126.15, 37.75], [126.6, 37.47], [126.66, 37.2], [126.86, 36.96], [126.5, 36.95], [126.14, 36.76], [126.36, 36.55], [126.52, 36.3], [126.62, 36.1], [126.76, 35.98], [126.56, 35.73], [126.45, 35.58], [126.5, 35.4], [126.3, 35.12], [126.42, 34.86], [126.25, 34.6], [126.42, 34.38], [126.62, 34.3],
+  [126.92, 34.45], [127.25, 34.56], [127.6, 34.7], [127.82, 34.83], [128.06, 34.88], [128.4, 34.85], [128.66, 34.73], [128.77, 34.96], [129.05, 35.08],
+  [129.3, 35.35], [129.46, 35.66], [129.57, 36.05], [129.43, 36.36], [129.45, 36.8], [129.4, 37.06], [129.2, 37.42], [128.95, 37.73], [128.75, 37.97], [128.55, 38.26], [128.36, 38.6],
+  [127.9, 38.31], [127.4, 38.33], [126.9, 37.96], [126.6, 37.82]];
+const NK = [[124.6, 39.6], [130.9, 39.6], [129.9, 39.2], [128.36, 38.6], [127.9, 38.31], [127.4, 38.33], [126.9, 37.96], [126.6, 37.82], [126.15, 37.75], [125.6, 37.95], [124.9, 38.4], [124.6, 38.9]];
+const JEJU = [[126.15, 33.33], [126.3, 33.23], [126.6, 33.22], [126.9, 33.36], [126.96, 33.49], [126.7, 33.56], [126.35, 33.5], [126.18, 33.42]];
+const ISLE = [[[128.6, 34.95], [128.72, 34.86], [128.68, 34.72], [128.56, 34.8]], [[127.92, 34.86], [128.05, 34.8], [127.98, 34.72], [127.86, 34.76]], [[126.18, 34.5], [126.32, 34.45], [126.28, 34.36], [126.14, 34.4]]];
+const RIDGE = [[128.45, 38.1], [128.75, 37.62], [128.95, 37.18], [128.48, 36.92], [127.88, 36.56], [127.75, 35.86], [127.62, 35.32]];
+const RIVERS = [
+  [[128.1, 37.45], [127.68, 37.52], [127.3, 37.55], [127.0, 37.53], [126.76, 37.6], [126.6, 37.7]],
+  [[128.72, 36.62], [128.45, 36.2], [128.4, 35.86], [128.52, 35.5], [128.95, 35.1]],
+  [[127.6, 35.96], [127.45, 36.36], [127.15, 36.42], [126.95, 36.16], [126.72, 36.02]],
+  [[126.98, 35.24], [126.62, 35.0], [126.42, 34.82]]
 ];
-const WCITY = { 서울: [160, 28, -8, -18], 도쿄: [171, 30, 18, 30], 파리: [97, 22, 10, 30], 런던: [93, 17, -6, -16], 뉴욕: [44, 26, 0, 30], 시드니: [181, 78, 0, 30], 카이로: [107, 38, 0, 30], 리우: [46, 70, 0, 30], 두바이: [124, 38, 0, 30] };
-const mapLabel = (x, y, s, size = 17) => `<text x="${x}" y="${y}" font-size="${size}" font-weight="900" text-anchor="middle" fill="${INK}" font-family="Pretendard Variable, Pretendard, sans-serif" paint-order="stroke" stroke="#FFFDF7" stroke-width="5">${s}</text>`;
+const KC = { 서울: [126.98, 37.57], 인천: [126.66, 37.46], 강릉: [128.9, 37.75], 대전: [127.38, 36.35], 대구: [128.6, 35.87], 광주: [126.85, 35.16], 부산: [129.07, 35.18], 경주: [129.22, 35.85], 전주: [127.15, 35.82], 여수: [127.66, 34.76], 제주: [126.53, 33.5] };
+
+// 세계(경도 · 위도)
+const WORLD = [
+  [[-165, 65], [-160, 71], [-140, 70], [-120, 72], [-96, 70], [-80, 73], [-64, 62], [-56, 52], [-66, 45], [-75, 40], [-81, 31], [-80, 25.5], [-90, 29.5], [-97, 26], [-97, 20], [-90, 16], [-83, 9], [-78, 8], [-87, 13], [-105, 20], [-110, 24], [-115, 30], [-118, 34], [-124, 40], [-124, 48], [-131, 55], [-140, 60], [-152, 59], [-165, 60]],
+  [[-50, 60], [-42, 61], [-22, 70], [-20, 79], [-35, 80], [-58, 79], [-68, 76], [-58, 70], [-53, 65]],
+  [[-78, 8], [-72, 12], [-62, 10], [-50, 2], [-35, -6], [-38, -14], [-40, -22], [-48, -28], [-58, -38], [-65, -42], [-68, -52], [-73, -50], [-74, -40], [-71, -30], [-70, -18], [-76, -12], [-81, -5], [-80, 0], [-77, 6]],
+  [[-9, 37], [-9, 43], [-2, 44], [-5, 48], [2, 51], [8, 54], [10, 58], [5, 62], [15, 69], [25, 71], [40, 68], [60, 70], [80, 73], [100, 76], [115, 74], [140, 72], [160, 70], [180, 68], [178, 64], [163, 60], [156, 51], [150, 59], [140, 54], [135, 44], [130, 42], [129, 36], [126, 35], [124, 39], [121, 40], [122, 37], [120, 35], [121, 30], [117, 24], [110, 21], [109, 12], [105, 9], [100, 13], [103, 1.5], [101, 3], [98, 8], [98, 16], [94, 18], [91, 22], [87, 21], [80, 15], [77, 8], [73, 18], [70, 22], [66, 25], [57, 25], [59, 22], [52, 16], [44, 12], [43, 15], [39, 22], [35, 28], [34, 31], [36, 36], [30, 36], [27, 37], [26, 40], [23, 37], [20, 40], [18, 40], [16, 38], [12, 42], [9, 44], [3, 43], [-1, 37], [-6, 36]],
+  [[-17, 21], [-17, 15], [-12, 6], [-8, 4], [2, 6], [9, 4], [9, -1], [13, -6], [12, -15], [15, -27], [18, -34], [26, -34], [32, -28], [35, -20], [40, -15], [40, -5], [43, 0], [51, 11], [43, 12], [37, 22], [33, 31], [25, 32], [20, 31], [10, 33], [10, 37], [0, 36], [-6, 35], [-10, 30], [-13, 27]],
+  [[114, -22], [114, -34], [118, -35], [125, -33], [130, -32], [135, -35], [140, -38], [147, -39], [150, -36], [153, -28], [153, -25], [146, -19], [142, -11], [136, -12], [130, -12], [125, -15], [122, -18]],
+  [[130, 31], [133, 33.5], [136, 34], [140, 35], [141.5, 38], [142, 41], [141, 45], [139.5, 42], [138, 37], [134, 35.5], [131, 34.5]],
+  [[-5.5, 50], [1.5, 51.2], [0, 53], [-1.5, 55], [-3, 58.5], [-6, 57.5], [-5, 54.5], [-3.2, 53.4], [-4.8, 52]],
+  [[95, 5.5], [100, 1], [106, -6], [104, -5], [98, 2]], [[109, 1.5], [116, 6], [119, 1], [116, -3.5], [110, -2.5]], [[131, -1], [141, -2.5], [150, -10], [141, -9], [133, -4]],
+  [[44, -12.5], [50, -15], [47.5, -25], [44, -22]], [[172.5, -34.5], [178.5, -37.5], [175, -41.5], [171, -46], [167, -45.5]], [[-24, 65.5], [-18, 66.5], [-13.5, 65], [-18, 63.5], [-22.5, 64]], [[120, 18.5], [122.5, 18], [125.5, 9], [123, 7], [121, 12]]
+];
+const WC = { 서울: [127, 37.5], 도쿄: [139.7, 35.7], 파리: [2.3, 48.9], 런던: [-0.1, 51.5], 뉴욕: [-74, 40.7], 시드니: [151.2, -33.9], 카이로: [31.2, 30], 리우: [-43.2, -22.9], 두바이: [55.3, 25.2], 싱가포르: [103.8, 1.3] };
 
 const SCENES = {
   seoul(I0, I1) {
     const midY = (I0 + I1) / 2;
     const river = `M${I0} ${midY + 40} C ${I0 + 150} ${midY - 30}, ${I0 + 260} ${midY + 120}, ${I0 + 420} ${midY + 50} S ${I1 - 60} ${midY - 10}, ${I1} ${midY + 30}`;
-    const trees = [[I0 + 70, I0 + 90], [I1 - 80, I0 + 70], [I0 + 110, I1 - 70], [I1 - 60, I1 - 110], [I0 + 300, I0 + 60]].map(([x, y], k) =>
-      `<g class="amb-tree" style="transform-origin:${x}px ${y + 18}px;animation-delay:${since(3.4, k * 0.7)}"><rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/></g>`).join('');
+    const trees = [[I0 + 70, I0 + 90], [I1 - 80, I0 + 70], [I0 + 110, I1 - 70], [I1 - 60, I1 - 110], [I0 + 300, I0 + 60], [I0 + 60, I1 - 150], [I1 - 150, I1 - 60]].map(([x, y], k) =>
+      `<g class="amb-tree" style="transform-origin:${x}px ${y + 18}px;animation-delay:${since(3.4, k * 0.7)}"><ellipse cx="${x}" cy="${y + 18}" rx="16" ry="4.5" fill="${INK}" opacity=".15"/><rect x="${x - 4}" y="${y}" width="8" height="18" rx="3" fill="#8A5A3B" stroke="${INK}" stroke-width="2.5"/><circle cx="${x}" cy="${y - 8}" r="20" fill="#6CBF5A" stroke="${INK}" stroke-width="3.5"/><circle cx="${x - 7}" cy="${y - 15}" r="6" fill="#9CD983"/></g>`).join('');
+    // 한강 다리 셋 · 남산과 타워 · 길
+    const bridge = (x, y, w2 = 26, rot = 0) => `<g transform="rotate(${rot} ${x} ${y})"><rect x="${x - 12}" y="${y - w2 * 1.7}" width="24" height="${w2 * 3.4}" rx="4" fill="#E8E1D2" stroke="${INK}" stroke-width="3"/><path d="M${x - 8} ${y - w2 * 1.5} V${y + w2 * 1.5} M${x + 8} ${y - w2 * 1.5} V${y + w2 * 1.5}" stroke="#B9AF9A" stroke-width="2"/><path d="M${x} ${y - w2 * 1.5} V${y + w2 * 1.5}" stroke="#F2B33D" stroke-width="2" stroke-dasharray="6 5"/></g>`;
+    const roads = `<path d="M${I0 + 8} ${I0 + 200} C ${I0 + 200} ${I0 + 170}, ${I0 + 320} ${I0 + 240}, ${I1 - 8} ${I0 + 190}" stroke="#E9E0CA" stroke-width="18" fill="none"/><path d="M${I0 + 8} ${I0 + 200} C ${I0 + 200} ${I0 + 170}, ${I0 + 320} ${I0 + 240}, ${I1 - 8} ${I0 + 190}" stroke="#FFFDF7" stroke-width="2" stroke-dasharray="10 10" fill="none"/>`
+      + `<path d="M${I0 + 8} ${I1 - 150} C ${I0 + 200} ${I1 - 120}, ${I1 - 260} ${I1 - 200}, ${I1 - 8} ${I1 - 160}" stroke="#E9E0CA" stroke-width="18" fill="none"/><path d="M${I0 + 8} ${I1 - 150} C ${I0 + 200} ${I1 - 120}, ${I1 - 260} ${I1 - 200}, ${I1 - 8} ${I1 - 160}" stroke="#FFFDF7" stroke-width="2" stroke-dasharray="10 10" fill="none"/>`;
+    const hill = `<path d="M${I0 + 360} ${I0 + 150} Q${I0 + 440} ${I0 + 60} ${I0 + 520} ${I0 + 150} Z" fill="#9CCB7F" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/><path d="M${I0 + 410} ${I0 + 112} Q${I0 + 440} ${I0 + 86} ${I0 + 470} ${I0 + 112}" fill="none" stroke="#C3E3A8" stroke-width="5" stroke-linecap="round"/>` + mini('tower', I0 + 440, I0 + 68, 56);
+    const blocks = [[I0 + 70, I1 - 220], [I0 + 120, I1 - 236], [I1 - 120, I0 + 250], [I1 - 70, I0 + 236]].map(([x, y], k) => `<g transform="translate(${x} ${y}) scale(.42)">${isoBuilding(2, ['#E0533D', '#2F6BD8', '#8E5BC8', '#F08A2E'][k])}</g>`).join('');
     return {
       back: `<rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="#D8EDC4" stroke="${INK}" stroke-width="4"/>
-        <path d="${river}" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#BFE3F5" stroke-width="56" stroke-linecap="round"/>
-        <path class="amb-flow" style="animation-delay:${since(2.4)}" d="${river}" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="18 30" opacity=".8"/>${trees}`,
-      river, logo: [(I0 + I1) / 2, midY - 120, -4], sub: '2호선 순환선', subColor: '#2FA84F'
+        <g clip-path="url(#parkClip)">${roads}
+        <path d="${river}" fill="none" stroke="${INK}" stroke-width="64" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#BFE3F5" stroke-width="56" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#D9F0FB" stroke-width="22" stroke-linecap="round" opacity=".8"/>
+        <path class="amb-flow" style="animation-delay:${since(2.4)}" d="${river}" fill="none" stroke="#FFFDF7" stroke-width="3" stroke-dasharray="18 30" opacity=".8"/>
+        ${bridge(I0 + 120, midY + 30, 26, 8)}${bridge(I0 + 330, midY + 75, 26, -10)}${bridge(I1 - 120, midY + 18, 26, 6)}</g>${hill}${blocks}${trees}`,
+      river, logo: [(I0 + I1) / 2, midY - 130, -4], sub: '2호선 순환선', subColor: '#2FA84F'
     };
   },
   korea(I0, I1) {
-    const f = (I1 - I0) / 672, k = 4.6 * f, ox = I0 + 150 * f, oy = I0 + 64 * f;
-    const P = (n) => [ox + KCITY[n][0] * k, oy + KCITY[n][1] * k];
-    const land = `<path d="${blob(KOREA, k, ox + 6, oy + 8)}" fill="${INK}" opacity=".22"/><path d="${blob(KOREA, k, ox, oy)}" fill="#D8EDC4" stroke="${INK}" stroke-width="5"/>`;
-    const jx = ox + 34 * k, jy = oy + 101 * k;
-    const jeju = `<ellipse cx="${jx + 4}" cy="${jy + 6}" rx="${11 * k}" ry="${4.4 * k}" fill="${INK}" opacity=".22"/><ellipse cx="${jx}" cy="${jy}" rx="${11 * k}" ry="${4.4 * k}" fill="#D8EDC4" stroke="${INK}" stroke-width="5"/>`
-      + `<path d="M${jx - 14} ${jy + 6} L${jx} ${jy - 14} L${jx + 14} ${jy + 6} Z" fill="#9CCB7F" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>${mapLabel(jx + 70, jy + 8, '제주')}`;
-    const hills = [[56, 30], [62, 40], [50, 54], [64, 50], [30, 72]].map(([a, b]) => { const x = ox + a * k, y = oy + b * k; return `<path d="M${x - 22} ${y + 12} L${x - 6} ${y - 14} L${x + 4} ${y} L${x + 12} ${y - 8} L${x + 24} ${y + 12} Z" fill="#9CCB7F" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`; }).join('');
-    const line = (a, b, c) => { const [x1, y1] = P(a), [x2, y2] = P(b); return `<path d="M${x1} ${y1} L${x2} ${y2}" stroke="${INK}" stroke-width="10" stroke-linecap="round"/><path d="M${x1} ${y1} L${x2} ${y2}" stroke="${c}" stroke-width="5" stroke-linecap="round"/>`; };
-    const lines = line('서울', '대전', '#2F6FD0') + line('대전', '부산', '#2F6FD0') + line('대전', '전주', '#E0533D') + line('전주', '여수', '#E0533D') + line('서울', '강릉', '#3E9B6A') + line('부산', '경주', '#2F6FD0');
-    const dots = Object.keys(KCITY).map((n) => { const [x, y] = P(n); return `<circle cx="${x}" cy="${y}" r="9" fill="#FFFDF7" stroke="${INK}" stroke-width="3.5"/>${mapLabel(x + (n === '전주' || n === '서울' ? -38 : 38), y + 6, n)}`; }).join('');
-    const [sx, sy] = P('서울');
-    const flight = `<path d="M${sx - 40} ${sy + 50} Q${I0 + 60} ${jy - 150} ${jx - 50} ${jy - 8}" stroke="${INK}" stroke-width="3" stroke-dasharray="10 9" fill="none"/>`;
-    const river = `M${I0 + 30} ${I1 - 40} Q${(I0 + I1) / 2 + 60} ${I1 - 20} ${I1 - 30} ${I1 - 90}`;
-    return { back: sea(I0, I1) + waves(I0, I1) + land + jeju + hills + lines + dots + flight, river, logo: [I1 - 140, I0 + 80, 4], sub: '한반도 KTX 일주', subColor: '#2F6FD0' };
+    const K = 82, cx0 = I0 + 300;
+    const X = (lon) => cx0 + (lon - 127.8) * K, Y = (lat) => I0 + 14 + (39.4 - lat) * K * 1.18;
+    const P = ([lon, lat]) => [X(lon), Y(lat)];
+    const land = smoothPath(SK.map(P)), jeju = smoothPath(JEJU.map(P)), isles = ISLE.map((pts) => smoothPath(pts.map(P)));
+    const north = smoothPath(NK.map(P));
+    const ul = [X(130.87), Y(37.5)], dokdo = [X(131.6), Y(37.24)];
+    const ridgeZone = smoothPath([[128.3, 38.45], [128.95, 37.7], [129.3, 36.9], [129.05, 36.1], [128.2, 35.45], [127.55, 35.15], [127.35, 35.6], [127.8, 36.3], [128.3, 37.0], [127.95, 37.6], [128.0, 38.25]].map(P));
+    const rivers = RIVERS.map((pts) => { const d = smoothPath(pts.map(P), false); return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#8FD0F0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>`; }).join('');
+    const ktx = (names, c) => { const d = smoothPath(names.map((n) => P(KC[n])), false); return `<path d="${d}" fill="none" stroke="${INK}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="${c}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#FFFFFF" stroke-width="1.6" stroke-dasharray="5 6" stroke-linecap="round"/>`; };
+    const lines = ktx(['서울', '대전', '대구', '부산'], '#2F6FD0') + ktx(['대전', '전주', '광주'], '#E0533D') + ktx(['전주', '여수'], '#E0533D') + ktx(['서울', '강릉'], '#3E9B6A') + ktx(['인천', '서울'], '#2F6FD0');
+    const ridge = RIDGE.map((p, k) => peak(...P(p), k % 2 ? 0.95 : 1.15)).join('') + peak(X(126.55), Y(33.4) - 4, 1.05);
+    const SIDE = { 서울: 'up', 인천: 'left', 강릉: 'right', 대전: 'left', 대구: 'left', 광주: 'left', 부산: 'right', 경주: 'right', 전주: 'left', 여수: 'down', 제주: 'right' };
+    const pins = Object.keys(KC).map((n) => cityPin(...P(KC[n]), n, SIDE[n], n === '서울', n === '서울' ? '#E0533D' : '#FFFDF7')).join('');
+    const minis = mini('palace', X(126.98) - 46, Y(37.57) + 8, 34) + mini('pavilion', X(128.9) + 4, Y(37.75) + 40, 30) + mini('pagoda', X(129.22) + 36, Y(35.85) + 34, 30)
+      + mini('wave', X(129.07) + 44, Y(35.18) + 32, 30) + mini('hanok', X(127.15) - 44, Y(35.82) + 30, 30) + mini('moonbridge', X(127.66) + 44, Y(34.76) + 12, 30) + mini('stone', X(126.53) - 52, Y(33.5) + 4, 30);
+    const seaName = (x, y, s) => txt(x, y, s, { size: 22, font: DISPLAY, weight: 400, fill: '#6FAED3' });
+    const deco = seaName(I0 + 70, Y(36.3), '서해') + seaName(I1 - 92, Y(36.6), '동해') + seaName(X(128.4), Y(33.9), '남해')
+      + compass(I0 + 70, I1 - 74, 32) + whale(I1 - 96, Y(35.4), 0.9) + ship(I0 + 74, Y(35.0), 0.9) + ship(X(129.6), Y(34.6), 0.8, true)
+      + gull(I0 + 120, I0 + 140) + gull(I0 + 140, I0 + 128, 0.8) + gull(I1 - 170, I1 - 120, 0.9)
+      + ripples([[I0 + 40, I0 + 230], [I0 + 90, I1 - 220], [I1 - 120, I0 + 330], [I1 - 80, I1 - 230], [X(127.2), Y(33.9)], [I0 + 150, Y(34.2)]]);
+    const islands = [jeju, ...isles].map((d) => `<path d="${d}" fill="${INK}" opacity=".22" transform="translate(4 6)"/><path d="${d}" fill="#D6EBBE" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>`).join('')
+      + [ul, dokdo].map(([x, y], k) => `<circle cx="${x}" cy="${y}" r="${k ? 4 : 7}" fill="#D6EBBE" stroke="${INK}" stroke-width="3"/>`).join('') + pill(ul[0] - 4, ul[1] - 22, '울릉도', { size: 11 }) + pill(dokdo[0] - 6, dokdo[1] + 20, '독도', { size: 11 });
+    return {
+      back: seaWith(I0, I1, '#A9DBF2', [land, jeju, north]) + `<g clip-path="url(#parkClip)">${deco}
+        <path d="${north}" fill="#E9E1CC" stroke="${INK}" stroke-width="4" stroke-linejoin="round" opacity=".9"/>
+        <path d="${land}" fill="${INK}" opacity=".22" transform="translate(5 7)"/><path d="${land}" fill="#D6EBBE" stroke="${INK}" stroke-width="5" stroke-linejoin="round"/>
+        <clipPath id="bvLand"><path d="${land}"/></clipPath><g clip-path="url(#bvLand)"><path d="${ridgeZone}" fill="#BEDC9E"/></g>
+        <path d="M${X(126.15)} ${Y(37.75)} L${X(126.6)} ${Y(37.82)} L${X(126.9)} ${Y(37.96)} L${X(127.4)} ${Y(38.33)} L${X(127.9)} ${Y(38.31)} L${X(128.36)} ${Y(38.6)}" fill="none" stroke="#E0533D" stroke-width="3" stroke-dasharray="7 6" stroke-linecap="round"/>
+        ${islands}${rivers}${ridge}${lines}</g>`,
+      top: `<g clip-path="url(#parkClip)">${minis}${pins}</g>`,
+      river: `M${I0 + 20} ${Y(34.2)} Q${X(127.5)} ${Y(33.95)} ${I1 - 20} ${Y(34.5)}`,
+      logo: [I1 - 150, I0 + 96, 4], sub: '한반도 KTX 일주', subColor: '#2F6FD0'
+    };
   },
   world(I0, I1) {
-    const f = (I1 - I0) / 672, k = 3.05 * f, ox = I0 + 22 * f, oy = I0 + 205 * f;
-    const P = (n) => [ox + WCITY[n][0] * k, oy + WCITY[n][1] * k];
-    const grid = Array.from({ length: 7 }, (_, j) => `<path d="M${I0 + 16} ${I0 + 40 + j * 92 * f} H${I1 - 16}" stroke="#FFFDF7" stroke-width="2" stroke-dasharray="3 12" opacity=".7"/>`).join('');
-    const land = CONT.map((pts) => `<path d="${blob(pts, k, ox + 5, oy + 6)}" fill="${INK}" opacity=".2"/><path d="${blob(pts, k, ox, oy)}" fill="#F3E3B8" stroke="${INK}" stroke-width="4"/>`).join('');
-    const arcs = [['서울', '시드니'], ['파리', '카이로'], ['카이로', '두바이'], ['두바이', '서울'], ['뉴욕', '리우']].map(([a, b]) => {
-      const [x1, y1] = P(a), [x2, y2] = P(b), mx = (x1 + x2) / 2, my = Math.min(y1, y2) - Math.abs(x2 - x1) * 0.28 - 20;
-      return `<path d="M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}" stroke="${INK}" stroke-width="2.5" stroke-dasharray="8 8" fill="none" opacity=".6"/>`;
+    const K = (I1 - I0 - 40) / 360, x0 = I0 + 20;
+    const X = (lon) => x0 + (lon + 168) * K, Y = (lat) => I0 + 190 + (78 - lat) * K * 1.42;
+    const P = ([lon, lat]) => [X(lon), Y(lat)];
+    const lands = WORLD.map((pts) => smoothPath(pts.map(P)));
+    const grid = [-120, -60, 0, 60, 120].map((lon) => `<path d="M${X(lon)} ${I0 + 12} V${I1 - 12}" stroke="#FFFFFF" stroke-width="2" stroke-dasharray="4 9" opacity=".55"/>`).join('')
+      + [[0, 0.75], [23.4, 0.45], [-23.4, 0.45], [60, 0.4], [-50, 0.4]].map(([lat, o]) => `<path d="M${I0 + 12} ${Y(lat)} H${I1 - 12}" stroke="#FFFFFF" stroke-width="${lat ? 2 : 3}" stroke-dasharray="${lat ? '4 9' : '12 8'}" opacity="${o}"/>`).join('');
+    const desert = (pts) => { const d = smoothPath(pts.map(P)); return `<path d="${d}" fill="#EED7A0"/>`; };
+    const patches = desert([[-12, 26], [5, 30], [30, 28], [36, 20], [20, 15], [0, 16]]) + desert([[45, 26], [55, 24], [56, 18], [47, 17]]) + desert([[122, -22], [135, -20], [140, -26], [128, -30]])
+      + `<path d="${smoothPath([[-75, 0], [-55, -2], [-50, -10], [-62, -14], [-74, -9]].map(P))}" fill="#BFDDA0"/>` + `<path d="${smoothPath([[12, 3], [28, 4], [30, -6], [18, -8]].map(P))}" fill="#BFDDA0"/>`;
+    const peaks = [[-112, 44], [-120, 38], [-70, -22], [-71, -36], [10, 46], [84, 30], [92, 31], [100, 33]].map(([a, b2], k) => peak(...P([a, b2]), 0.62, ['#D9C79C', '#BFA97A'])).join('');
+    const SIDE = { 서울: 'left', 도쿄: 'right', 파리: 'right', 런던: 'left', 뉴욕: 'right', 시드니: 'down', 카이로: 'left', 리우: 'right', 두바이: 'down', 싱가포르: 'down' };
+    const arcsD = [['서울', '시드니'], ['파리', '카이로'], ['카이로', '두바이'], ['두바이', '서울'], ['뉴욕', '리우'], ['런던', '뉴욕']].map(([a, b2]) => {
+      const [x1, y1] = P(WC[a]), [x2, y2] = P(WC[b2]), mx = (x1 + x2) / 2, my = Math.min(y1, y2) - Math.abs(x2 - x1) * 0.25 - 18;
+      return `<path d="M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}" stroke="${INK}" stroke-width="2.4" stroke-dasharray="7 7" fill="none" opacity=".55"/>`;
     }).join('');
-    const dots = Object.keys(WCITY).map((n) => { const [x, y] = P(n), [, , dx, dy] = WCITY[n]; return `<circle cx="${x}" cy="${y}" r="${n === '서울' ? 11 : 7}" fill="${n === '서울' ? '#E0533D' : '#FFFDF7'}" stroke="${INK}" stroke-width="3.5"/>${mapLabel(x + dx, y + dy, n, 15)}`; }).join('');
-    const river = `M${I0 + 40} ${I1 - 60} Q${(I0 + I1) / 2} ${I1 - 10} ${I1 - 40} ${I1 - 70}`;
-    return { back: `<rect x="${I0 + 8}" y="${I0 + 8}" width="${I1 - I0 - 16}" height="${I1 - I0 - 16}" rx="36" fill="#9FD3EE" stroke="${INK}" stroke-width="4"/>` + grid + land + arcs + dots, river, logo: [(I0 + I1) / 2, I0 + 92, -3], sub: '세계 일주 항공로', subColor: '#2F6BD8' };
+    const pins = Object.keys(WC).map((n) => cityPin(...P(WC[n]), n, SIDE[n], n === '서울', n === '서울' ? '#E0533D' : '#FFFDF7')).join('');
+    const minis = mini('eiffel', X(2.3) + 2, Y(48.9) - 30, 30) + mini('liberty', X(-74) - 26, Y(40.7) - 18, 30) + mini('pyramid', X(31.2) + 26, Y(30) - 12, 28)
+      + mini('opera', X(151.2) - 30, Y(-33.9) - 12, 30) + mini('redtower', X(139.7) + 6, Y(35.7) - 30, 28) + mini('burj', X(55.3) + 22, Y(25.2) - 20, 28) + mini('christ', X(-43.2) - 26, Y(-22.9) - 14, 28);
+    const deco = compass(I1 - 74, I1 - 78, 34) + whale(X(-140), Y(-20), 0.95) + whale(X(75), Y(-38), 0.75) + ship(X(-30), Y(20), 0.9) + ship(X(165), Y(10), 0.8, true)
+      + gull(X(-20), Y(52)) + gull(X(-14), Y(55), 0.8) + gull(X(160), Y(-48), 0.9)
+      + ripples([[X(-150), Y(30)], [X(-30), Y(-40)], [X(70), Y(-15)], [X(170), Y(30)], [X(-100), Y(-45)], [X(115), Y(-50)]]);
+    const shapes = lands.map((d) => `<path d="${d}" fill="${INK}" opacity=".2" transform="translate(4 5)"/>`).join('') + `<g>${lands.map((d) => `<path d="${d}" fill="#F3E3B8" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>`).join('')}</g>`;
+    return {
+      back: seaWith(I0, I1, '#9FD3EE', lands) + `<g clip-path="url(#parkClip)">${grid}${deco}${shapes}
+        <clipPath id="bvWorld">${lands.map((d) => `<path d="${d}"/>`).join('')}</clipPath><g clip-path="url(#bvWorld)">${patches}</g>
+        ${lands.map((d) => `<path d="${d}" fill="none" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>`).join('')}${peaks}${arcsD}</g>`,
+      top: `<g clip-path="url(#parkClip)">${minis}${pins}</g>`,
+      river: `M${I0 + 30} ${I1 - 60} Q${(I0 + I1) / 2} ${I1 - 20} ${I1 - 140} ${I1 - 70}`,
+      logo: [(I0 + I1) / 2, I0 + 96, -3], sub: '세계 일주 항공로', subColor: '#2F6BD8'
+    };
   }
 };
 

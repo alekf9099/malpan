@@ -32,7 +32,7 @@ export const KOREA_RING = makeRing({
   chance: ['여행 카드 1', '여행 카드 2', '여행 카드 3', '여행 카드 4'], chanceName: '여행 카드',
   groups: { 수도권: '#2F6FD0', 강원: '#3E9B6A', 충청: '#17A2A8', 경북: '#8E5BC8', '부산·경남': '#E0533D', 전라: '#F08A2E', 제주: '#E2588F' },
   names: { '서울 경복궁': '경복궁' },
-  lineColor: '#2F6FD0', startName: '서울', payName: '여비',
+  lineColor: '#2F6FD0', startName: '서울', payName: '여비', arcs: true,
   // 모서리 · 여행 카드가 고리를 4칸씩 끊는다 — 4칸을 이어 가지면(그 구간을 통째로) 독점
   lineWin: 4,
   intro: '모두 <b>서울</b>에서 출발해 한반도를 한 바퀴 · 지날 때마다 <b>여비</b> · 모서리 칸: 휴게소·축제·제주행 · <b>KTX 경부선·호남선</b>으로 판을 가로지른다',

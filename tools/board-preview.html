@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>판 미리 보기</title>
+<!-- 개발용: 판 그림만 크게 띄운다. ?b=loop|korea|world · &vb=x,y,w,h(일부만 확대) · &own=1(산 칸 몇 개를 칠해서) -->
+<link href="https://fonts.googleapis.com/css2?family=Gasoek+One&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css" rel="stylesheet">
+<style>
+  html, body { margin: 0; height: 100%; background: #F4EADB; }
+  #out { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #out svg { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="out"></div>
+<script type="module">
+import { useBoard, boardSvg } from '../src/ui/board-view.js';
+const q = new URLSearchParams(location.search);
+const b = q.get('b') || 'korea';
+useBoard(b);
+const OWN = {
+  korea: { '해운대': ['#2F6FD0', 3], '광안대교': ['#2F6FD0', 2], '통영': ['#E39A1E', 1], '남산타워': ['#8E5BC8', 2], '설악산': ['#E0533D', 1] },
+  world: { '파리': ['#2F6FD0', 3], '런던': ['#2F6FD0', 2], '도쿄': ['#E39A1E', 1], '시드니': ['#8E5BC8', 2] },
+  loop: { '신당': ['#2F6FD0', 2], '잠실': ['#E39A1E', 3], '합정': ['#8E5BC8', 1] }
+}[b] || {};
+const own = q.has('own');
+const owner = own ? Object.fromEntries(Object.entries(OWN).map(([n, [c]]) => [n, c])) : {};
+const level = own ? Object.fromEntries(Object.entries(OWN).map(([n, [, l]]) => [n, l])) : {};
+await document.fonts.ready;
+document.getElementById('out').innerHTML = boardSvg({ owner, level, links: [] });
+const svg = document.querySelector('#out svg');
+svg.removeAttribute('width'); svg.removeAttribute('height');
+if (q.get('vb')) svg.setAttribute('viewBox', q.get('vb').split(',').join(' '));
+window.rendered = true;
+</script>
+</body>
+</html>

@@ -23,6 +23,7 @@ export function setRivals(n) { load().rivals = n; save(); }
 export function seenGuide() { return !!load().guide; }
 export function markGuide() { load().guide = true; save(); }
 
-/** 판: 'loop'(2호선 순환선, 기본) · 'map'(노선도) */
-export function getBoard() { return load().board === 'map' ? 'map' : 'loop'; }
+/** 판: 'loop'(2호선 순환선, 기본) · 'korea'(국내 여행) · 'world'(세계 일주) · 'map'(노선도) */
+const BOARDS = ['loop', 'korea', 'world', 'map'];
+export function getBoard() { const b = load().board; return BOARDS.includes(b) ? b : 'loop'; }
 export function setBoard(b) { load().board = b; save(); }

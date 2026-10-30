@@ -5,12 +5,13 @@
 
 import { dist, isTransfer } from './boards/seoul.js';
 import { links, stationPrice, isHot, baseToll, LEVEL_MULT, MAX_LEVEL } from './estate.js';
-import { forward, loopIndex, SALARY } from './boards/loop.js';
-import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, takeoverFor, cornerAt, areaOf, isLoop, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets, transferOptions, perkOf } from './match.js';
+import { SALARY } from './boards/loop.js';
+import { current, legalPaths, tollFor, priceFor, isChance, incidentAt, stationsOf, skillBlocked, passFares, investable, upgradeFor, GOAL_BONUS, alive, monopolyOf, takeoverFor, cornerAt, areaOf, isLoop, dieOptions, dieChoices, skillTargets, buyoutFor, assets, cramTargets, transferOptions, perkOf, ringIn } from './match.js';
 import { chanceById } from './events.js';
 import { heroById } from './heroes.js';
 
-const persona = (p) => heroById(p.hero).ai;
+/** 성격(고리 판이면 ai.loop 로 덮는다) */
+const persona = (p, m = null) => { const a = heroById(p.hero).ai; return m && isLoop(m) && a.loop ? { ...a, ...a.loop } : a; };
 
 /** 명소역에 서면 생기는 일의 값어치(대충) */
 function hotValue(m, p, n) {
@@ -60,7 +61,7 @@ function monoGain(m, p, n) {
 /** 이 길로 가면 얼마나 좋은가(클수록 좋다) */
 function pathValue(m, p, path, rng) {
   const end = path[path.length - 1];
-  const ai = persona(p);
+  const ai = persona(p, m);
   let v = (rng.next() - 0.5) * 20;
   if (p.goal) {
     if (path.includes(p.goal)) v += GOAL_BONUS + 100;
@@ -124,7 +125,7 @@ export function choosePath(m, rng = m.rng) {
 
 /** 거래 제안에 답하기 */
 export function decideOffer(m) {
-  const p = current(m), o = m.offer, ai = persona(p);
+  const p = current(m), o = m.offer, ai = persona(p, m);
   const left = p.money - o.price;
   // 독점이 되거나 남의 독점을 막는 거래는 돈만 되면 한다
   if (o.kind !== 'upgrade' && (monoGain(m, p, o.node) >= 2000 || threatAt(m, p, o.node))) return left >= 0;
@@ -145,8 +146,9 @@ export function decideOffer(m) {
 /** 환승센터로 갈 랜드마크의 값: 순환선은 시청 월급과 앞길 통행료, 노선도는 목적지까지 거리 */
 function spotValue(m, p, n) {
   if (!isLoop(m)) return p.goal ? (n === p.goal ? GOAL_BONUS + 60 : -areaOf(m).dist(n, p.goal) * 12) : 0;
-  let v = loopIndex(n) < loopIndex(p.node) ? SALARY + (perkOf(m, p).goalBonus || 0) : 0;
-  for (const x of forward(n, 12)) v -= tollFor(m, x, p) / 6;
+  const r = ringIn(m);
+  let v = r.index(n) < r.index(p.node) ? SALARY + (perkOf(m, p).goalBonus || 0) : 0;
+  for (const x of r.forward(n, 12)) v -= tollFor(m, x, p) / 6;
   return v;
 }
 
@@ -176,7 +178,7 @@ export function chooseOption(m) {
 
 /** 굴리기 전에 증축할 역(없으면 null). 남겨 둘 돈을 지키며 값진 역부터 */
 export function chooseInvest(m) {
-  const p = current(m), ai = persona(p);
+  const p = current(m), ai = persona(p, m);
   const can = investable(m, p).filter((n) => p.money - upgradeFor(m, n, p) >= ai.reserve + 150 - 150 * ai.build);
   if (!can.length) return null;
   return can.sort((a, b) => stationPrice(b) - stationPrice(a) || m.levels[a] - m.levels[b])[0];
@@ -189,7 +191,7 @@ export function chooseInvest(m) {
 export function wantsSkill(m) {
   const p = current(m);
   if (skillBlocked(m, p)) return null;
-  const id = heroById(p.hero).active.id, ai = persona(p);
+  const id = heroById(p.hero).active.id, ai = persona(p, m);
   const rivals = alive(m).filter((q) => q !== p);
   const best = (list, score) => {
     let target = null, value = -Infinity;
@@ -203,7 +205,8 @@ export function wantsSkill(m) {
     // 상대가 가까이 있는 비싼 내 역
     case 'gate': return pick((n) => rivals.reduce((s, q) => s + (areaOf(m).dist(q.node, n) <= 8 ? tollFor(m, n, q) : 0), 0), 40);
     case 'gather': return pick((n) => rivals.reduce((s, q) => s + Math.min(q.money, tollFor(m, n, q)), 0), 120);
-    case 'hype': return pick((n) => baseToll(m.owned, m.levels, n), 30);
+    // 고리 판의 떡상은 지나가는 상대를 끌어오는 함정 — 상대가 가까이 오는 비싼 내 역
+    case 'hype': return isLoop(m) ? pick((n) => rivals.reduce((s, q) => s + (areaOf(m).dist(q.node, n) <= 8 ? tollFor(m, n, q) : 0), 0), 40) : pick((n) => baseToll(m.owned, m.levels, n), 30);
     case 'buyout': {
       const b = best(ts.filter((n) => p.money - buyoutFor(m, n) >= ai.reserve * 0.5), (n) => baseToll(m.owned, m.levels, n) + monoGain(m, p, n) * 0.5 + stationPrice(n) * 0.3);
       return b.target ? { target: b.target } : null;

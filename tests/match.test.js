@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import {
   createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
   nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor,
-  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf, incidentAt
+  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf, incidentAt, isChance
 } from '../src/core/match.js';
-import { LOOP_START, SALARY } from '../src/core/boards/loop.js';
+import { LOOP_START, SALARY, RINGS } from '../src/core/boards/loop.js';
 import { matchPoints } from '../src/core/ranking.js';
 import { stationPrice, upgradeCost, takeoverPrice, links, chainOf, baseToll, MAX_LEVEL, isHot, HOT_LIST } from '../src/core/estate.js';
 import { STATION_LINES, ALL_STATIONS, ADJ, dist } from '../src/core/boards/seoul.js';
@@ -572,4 +572,80 @@ test('현장소장 환승센터: 내 랜드마크에 서면 다른 내 랜드마
   at(m3, '동대문역사문화공원', '을지로3가', 1);
   move(m3, ['신당']);
   assert.notEqual(m3.phase, 'choose');
+});
+
+test('관광 맵(국내 · 해외): 출발 칸에서 시작, 칸 값은 판 데이터, 모서리 · 찬스 칸은 살 수 없고 4칸 구간이면 독점', () => {
+  for (const id of ['korea', 'world']) {
+    const r = RINGS[id];
+    const m = createMatch({ seed: 3, heroes: ['driver', 'worker'], humans: 1, region: id });
+    assert.equal(m.region, id);
+    for (const p of m.players) { assert.equal(p.node, r.start); assert.equal(p.goal, null); }
+    assert.equal(m.lineWin, 4);
+    assert.equal(roundsOf(m), 18);
+    for (const n of r.tiles) {
+      if (r.corners[n] || r.chance.includes(n)) continue;
+      assert.equal(stationPrice(n), r.prices[n], n);
+    }
+    // 첫 4칸 구간(4~7)을 다 가지면 독점
+    const me = current(m);
+    const run = r.tiles.slice(4, 8);
+    for (const n of run.slice(0, 3)) { m.owned[n] = me.id; m.levels[n] = 1; }
+    me.node = r.tiles[6]; me.prev = r.tiles[5];
+    m.pending = { roll: { value: 1 }, steps: 1 }; m.phase = 'move';
+    move(m, [run[3]]);
+    assert.equal(m.offer.kind, 'buy');
+    me.money = 5000;
+    decide(m, true);
+    assert.equal(m.phase, 'over');
+    assert.equal(m.reason, 'monopoly');
+  }
+});
+
+test('관광 맵 지름길: 국내 KTX 경부선 남산타워 ↔ 해운대, 해외 직항 도쿄 ↔ 파리 · 지나면 여비', () => {
+  const k = createMatch({ seed: 3, heroes: ['driver', 'worker'], humans: 1, region: 'korea' });
+  const p = current(k);
+  p.node = '서울 경복궁'; p.prev = '서울 출발';
+  k.pending = { roll: { value: 2 }, steps: 2 }; k.phase = 'move';
+  const ends = legalPaths(k).map((x) => x[x.length - 1]);
+  assert.ok(ends.includes('해운대') || legalPaths(k).some((x) => x.includes('해운대')), ends.join(','));
+  const w = createMatch({ seed: 3, heroes: ['worker', 'driver'], humans: 1, region: 'world' });
+  const q = current(w);
+  q.node = '칸쿤'; q.prev = '밴쿠버';
+  w.pending = { roll: { value: 2 }, steps: 2 }; w.phase = 'move';
+  move(w, ['인천공항', '도쿄']);
+  assert.equal(q.money, START_MONEY + SALARY);
+  assert.ok(isChance('여행 카드 1') && isChance('면세점 3'));
+});
+
+test('AI 만으로 관광 맵 60판씩: 늘 끝나고, 돈이 음수가 되지 않는다', () => {
+  const ids = ['driver', 'staff', 'worker', 'student', 'youtuber', 'rider', 'nurse', 'foreman', 'broker'];
+  for (const region of ['korea', 'world']) for (let k = 0; k < 60; k++) {
+    const m = createMatch({ seed: 700 + k, heroes: ids.slice(k % 6, (k % 6) + 4), humans: 0, region });
+    let guard = 0;
+    while (m.phase !== 'over' && guard++ < 6000) {
+      if (m.phase === 'roll') { const sk = wantsSkill(m); if (sk) useSkill(m, sk.target); for (let n = chooseInvest(m); n; n = chooseInvest(m)) invest(m, n); if (m.phase === 'roll') roll(m); }
+      else if (m.phase === 'pick') pickDie(m, chooseDie(m));
+      else if (m.phase === 'move') move(m, choosePath(m));
+      else if (m.phase === 'choose') choose(m, chooseOption(m));
+      else decide(m, decideOffer(m));
+      for (const p of m.players) assert.ok(p.money >= 0, `${region} ${k}: ${p.money}`);
+    }
+    assert.equal(m.phase, 'over', `${region} seed ${700 + k}`);
+  }
+});
+
+test('고리 판의 떡상: 지나가는 상대 하나를 끌어와 통행료를 받고 걷힌다', () => {
+  const m = loopGame(2, ['youtuber', 'worker']);
+  const me = current(m), rival = m.players[1];
+  m.owned['신당'] = me.id; m.levels['신당'] = 1;
+  me.charge = 9;
+  useSkill(m, '신당');
+  assert.ok(m.incidents.some((i) => i.node === '신당' && i.kind === 'hype' && i.stop && i.once));
+  m.turn = 1; m.phase = 'move'; rival.node = '동대문역사문화공원'; rival.prev = '을지로3가';
+  m.pending = { roll: { value: 3 }, steps: 3 };
+  for (const path of legalPaths(m)) if (path.includes('신당')) assert.equal(path[path.length - 1], '신당');
+  const before = rival.money;
+  move(m, ['신당']);
+  assert.ok(rival.money < before);
+  assert.ok(!m.incidents.some((i) => i.node === '신당'));
 });

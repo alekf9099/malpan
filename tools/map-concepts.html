@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>관광 맵 시안</title>
+<!-- 관광 맵(국내 · 해외) 디자인 시안. 개발용 — 게임은 쓰지 않는다. 판은 모두 순환선과 같은 32칸 고리 -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gasoek+One&display=swap" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css" rel="stylesheet">
+<style>
+  :root { --ink: #22201D; --ink-2: #5A5248; --bg: #F4EADB; --card: #FFFDF7; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: 'Pretendard Variable', Pretendard, sans-serif; }
+  header { max-width: 1240px; margin: 0 auto; padding: 36px 24px 8px; }
+  header h1 { margin: 0; font-family: 'Gasoek One', sans-serif; font-weight: 400; font-size: 44px; letter-spacing: -1px; }
+  header p { margin: 8px 0 0; font-size: 16px; font-weight: 600; color: var(--ink-2); line-height: 1.6; }
+  .jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .jump a { padding: 7px 14px; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--card); box-shadow: 0 3px 0 var(--ink); color: var(--ink); text-decoration: none; font-weight: 900; font-size: 14px; }
+  section { max-width: 1240px; margin: 28px auto 0; padding: 0 24px; }
+  .concept { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; padding: 24px; border: 3px solid var(--ink); border-radius: 28px; background: var(--card); box-shadow: 0 6px 0 var(--ink); }
+  .concept svg { width: 100%; height: auto; display: block; }
+  .tag { display: inline-block; padding: 3px 12px; border: 2px solid var(--ink); border-radius: 999px; font-weight: 900; font-size: 13px; background: var(--tc, #FFE27A); }
+  .concept h2 { margin: 12px 0 4px; font-family: 'Gasoek One', sans-serif; font-weight: 400; font-size: 34px; letter-spacing: -.5px; }
+  .concept .lead { margin: 0 0 16px; font-size: 16px; font-weight: 700; color: var(--ink-2); line-height: 1.6; }
+  .concept h3 { margin: 18px 0 6px; font-size: 15px; font-weight: 900; }
+  .concept ul { margin: 0; padding-left: 18px; font-size: 14.5px; line-height: 1.75; font-weight: 600; color: #3A342D; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips span { padding: 3px 10px 3px 8px; border: 2px solid var(--ink); border-radius: 999px; font-size: 13px; font-weight: 800; background: #fff; display: inline-flex; align-items: center; gap: 6px; }
+  .chips i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: var(--c); display: inline-block; }
+  footer { max-width: 1240px; margin: 36px auto 60px; padding: 0 24px; font-size: 14px; font-weight: 700; color: var(--ink-2); line-height: 1.7; }
+  @media (max-width: 900px) { .concept { grid-template-columns: 1fr; } header h1 { font-size: 34px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>관광 맵 시안</h1>
+  <p>지금 순환선처럼 32칸 고리를 그대로 쓰되, 칸마다 그 여행지의 건물 그림 · 지역 색 띠 · 가운데 큰 일러스트를 넣었어요.<br>국내 맵 2안 · 해외 맵 2안 — 같은 맵을 다른 분위기로 그린 것이라 맵 하나에 시안 하나씩 고르면 돼요.</p>
+  <div class="jump"><a href="#k1">국내 A · 한반도 KTX 일주</a><a href="#k2">국내 B · 사계절 여행</a><a href="#w1">해외 A · 세계 일주 항공로</a><a href="#w2">해외 B · 여권 스탬프</a></div>
+</header>
+<main id="out"></main>
+<footer>모서리 이름·특별 칸은 모두 이 게임만의 이름으로 지었어요(부루마블의 무인도 · 우주여행 같은 이름은 쓰지 않음). 칸 수 · 값 · 규칙 숫자는 고르시면 순환선처럼 시뮬레이션으로 맞춥니다.</footer>
+
+<script>
+const INK = '#22201D';
+const K = `stroke="${INK}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"`;
+const DISPLAY = "'Gasoek One', sans-serif", BODY = "'Pretendard Variable', Pretendard, sans-serif";
+
+// ── 여행지 그림(40×40, 굵은 먹선 + 납작한 색) ──────────────────────
+const ICON = {
+  palace: `<rect x="5" y="30" width="30" height="6" rx="1.5" fill="#E8E1D2" ${K}/><rect x="9" y="19" width="22" height="11" fill="#C9473A" ${K}/><path d="M13 19v11M20 19v11M27 19v11" stroke="${INK}" stroke-width="1.8"/><path d="M2 18 Q20 4 38 18 L34 21 Q20 12 6 21 Z" fill="#3F7F6E" ${K}/>`,
+  tower: `<path d="M17 37 L19 14 H21 L23 37 Z" fill="#E8E1D2" ${K}/><ellipse cx="20" cy="15" rx="7" ry="4" fill="#E0533D" ${K}/><path d="M20 11 V3" ${K}/><path d="M12 37 H28" ${K}/>`,
+  redtower: `<path d="M12 37 L18 6 H22 L28 37" fill="none" stroke="#E0533D" stroke-width="4" stroke-linejoin="round"/><path d="M12 37 L18 6 H22 L28 37" fill="none" ${K}/><path d="M15 24 H25 M16.5 16 H23.5 M13.5 31 H26.5" ${K}/><rect x="15" y="20" width="10" height="4" fill="#FFFDF7" ${K}/>`,
+  pagoda: `<rect x="12" y="32" width="16" height="5" fill="#B9AF9A" ${K}/><path d="M9 32 H31 L27 27 H13 Z M11 25 H29 L26 20 H14 Z M13 18 H27 L24 13 H16 Z" fill="#D9D0BE" ${K}/><rect x="15" y="27" width="10" height="5" fill="#E8E1D2" ${K}/><rect x="16" y="20" width="8" height="5" fill="#E8E1D2" ${K}/><path d="M20 13 V5" ${K}/>`,
+  crater: `<path d="M3 36 L11 18 H29 L37 36 Z" fill="#6CBF5A" ${K}/><path d="M11 18 H29" stroke="#3E9B6A" stroke-width="3"/><path d="M14 22 L12 34 M22 22 V34 M30 24 L32 34" stroke="#3E9B6A" stroke-width="2"/><circle cx="31" cy="8" r="5" fill="#F7C94A" ${K}/>`,
+  stone: `<ellipse cx="20" cy="10" rx="8" ry="5" fill="#8A8173" ${K}/><path d="M12 12 Q11 26 13 36 H27 Q29 26 28 12 Z" fill="#A49A8A" ${K}/><circle cx="16.5" cy="17" r="2" fill="${INK}"/><circle cx="23.5" cy="17" r="2" fill="${INK}"/><path d="M18 23 Q20 25 22 23" ${K} fill="none"/><path d="M14 29 H26" ${K}/>`,
+  hanok: `<rect x="8" y="22" width="24" height="14" fill="#FFFDF7" ${K}/><rect x="17" y="27" width="6" height="9" fill="#8A5A3B" ${K}/><path d="M2 22 Q20 8 38 22 L35 24 Q20 15 5 24 Z" fill="#5A5248" ${K}/><path d="M11 27 H14 M26 27 H29" ${K}/>`,
+  mountain: `<path d="M2 36 L15 12 L22 22 L27 15 L38 36 Z" fill="#6E9F5E" ${K}/><path d="M11 19 L15 12 L19 18 L17 17 L15 20 L13 18 Z" fill="#FFFDF7" ${K}/><path d="M24 19 L27 15 L30 20 L27 19 Z" fill="#FFFDF7" ${K}/>`,
+  autumn: `<path d="M2 36 L15 12 L22 22 L27 15 L38 36 Z" fill="#E0533D" ${K}/><path d="M8 32 L15 20 L20 28 M24 34 L28 24 L33 33" stroke="#F2B33D" stroke-width="3" fill="none"/><path d="M11 19 L15 12 L19 18 Z" fill="#F2B33D" ${K}/>`,
+  snowpeak: `<path d="M2 36 L20 8 L38 36 Z" fill="#7FA6C9" ${K}/><path d="M13 19 L20 8 L27 19 L24 17 L20 21 L16 17 Z" fill="#FFFDF7" ${K}/>`,
+  fuji: `<path d="M1 36 L15 13 H25 L39 36 Z" fill="#5C7FB8" ${K}/><path d="M10 21 L15 13 H25 L30 21 L26 19 L22 22 L18 19 L14 22 Z" fill="#FFFDF7" ${K}/><circle cx="33" cy="8" r="5" fill="#E0533D" ${K}/>`,
+  wave: `<path d="M2 30 Q8 24 14 30 T26 30 T38 30 V37 H2 Z" fill="#2EA6DA" ${K}/><path d="M24 26 V8" ${K}/><path d="M12 13 Q24 1 36 13 Z" fill="#E0533D" ${K}/><path d="M18 13 Q24 5 30 13" fill="#FFFDF7" ${K}/>`,
+  bridge: `<path d="M2 34 H38" ${K}/><path d="M10 34 V8 M30 34 V8" stroke="${INK}" stroke-width="3"/><path d="M2 26 Q10 6 10 8 Q20 30 30 8 Q30 6 38 26" fill="none" stroke="#E0533D" stroke-width="2.4"/><path d="M14 34 V20 M20 34 V25 M26 34 V20" stroke="${INK}" stroke-width="1.6"/><path d="M2 37 Q20 33 38 37" stroke="#2EA6DA" stroke-width="2.4" fill="none"/>`,
+  moonbridge: `<circle cx="30" cy="9" r="6" fill="#F7C94A" ${K}/><path d="M2 32 Q20 14 38 32" fill="none" stroke="#8E5BC8" stroke-width="4"/><path d="M2 32 Q20 14 38 32" fill="none" ${K}/><path d="M2 35 H38" stroke="#2F6BD8" stroke-width="3"/><circle cx="10" cy="26" r="1.6" fill="#F7C94A"/><circle cx="20" cy="21" r="1.6" fill="#F7C94A"/><circle cx="30" cy="26" r="1.6" fill="#F7C94A"/>`,
+  mask: `<path d="M8 10 Q20 2 32 10 Q36 24 28 34 Q20 38 12 34 Q4 24 8 10 Z" fill="#F2D3A4" ${K}/><path d="M12 17 Q15 14 18 17 M22 17 Q25 14 28 17" ${K} fill="none"/><path d="M12 25 Q20 33 28 25" ${K} fill="none"/><path d="M8 18 Q5 19 6 22 M32 18 Q35 19 34 22" ${K} fill="none"/>`,
+  blossom: `<path d="M20 37 V22 M20 26 L13 20 M20 24 L27 18" stroke="#8A5A3B" stroke-width="3" stroke-linecap="round"/><circle cx="12" cy="16" r="7" fill="#F4A7C3" ${K}/><circle cx="28" cy="14" r="7" fill="#F4A7C3" ${K}/><circle cx="20" cy="10" r="7.5" fill="#F7BCD2" ${K}/><circle cx="16" cy="12" r="1.5" fill="#FFFDF7"/><circle cx="25" cy="11" r="1.5" fill="#FFFDF7"/>`,
+  tea: `<path d="M2 36 Q20 6 38 36 Z" fill="#6CBF5A" ${K}/><path d="M8 32 Q20 14 32 32 M12 27 Q20 16 28 27 M15 22 Q20 17 25 22" stroke="#3E9B6A" stroke-width="2.4" fill="none"/>`,
+  bamboo: `<path d="M12 37 V4 M20 37 V8 M28 37 V3" stroke="#6CBF5A" stroke-width="5" stroke-linecap="round"/><path d="M12 37 V4 M20 37 V8 M28 37 V3" stroke="${INK}" stroke-width="1.4" stroke-dasharray="7 2"/><path d="M28 12 Q34 10 36 6 M12 16 Q6 14 4 10" stroke="#3E9B6A" stroke-width="2.4" fill="none"/>`,
+  gate: `<rect x="5" y="20" width="30" height="16" fill="#D9D0BE" ${K}/><path d="M15 36 V28 Q20 22 25 28 V36" fill="${INK}"/><rect x="10" y="13" width="20" height="7" fill="#C9473A" ${K}/><path d="M6 13 Q20 3 34 13 Z" fill="#3F7F6E" ${K}/><path d="M5 20 V17 H9 V20 M31 20 V17 H35 V20" ${K}/>`,
+  boat: `<path d="M3 26 H37 L31 34 H9 Z" fill="#E0533D" ${K}/><rect x="14" y="17" width="12" height="9" fill="#FFFDF7" ${K}/><path d="M20 17 V6 L29 13 H20" fill="#F7C94A" ${K}/><path d="M2 37 Q10 34 20 37 T38 37" stroke="#2EA6DA" stroke-width="2.4" fill="none"/>`,
+  trees: `<rect x="6" y="28" width="28" height="7" rx="3" fill="#E8E1D2" ${K}/><path d="M12 28 V20 M20 28 V16 M28 28 V20" ${K}/><ellipse cx="12" cy="16" rx="5" ry="8" fill="#6CBF5A" ${K}/><ellipse cx="20" cy="12" rx="5.5" ry="9" fill="#3E9B6A" ${K}/><ellipse cx="28" cy="16" rx="5" ry="8" fill="#6CBF5A" ${K}/>`,
+  pavilion: `<rect x="6" y="31" width="28" height="5" fill="#B9AF9A" ${K}/><path d="M10 31 V18 M17 31 V18 M23 31 V18 M30 31 V18" stroke="#C9473A" stroke-width="3"/><path d="M3 18 Q20 6 37 18 L34 20 Q20 12 6 20 Z" fill="#3F7F6E" ${K}/><path d="M2 38 H38" stroke="#2EA6DA" stroke-width="3"/>`,
+  ski: `<path d="M2 36 L38 14 V36 Z" fill="#FFFDF7" ${K}/><path d="M10 31 L30 19" stroke="#2EA6DA" stroke-width="2.4"/><circle cx="27" cy="10" r="3.5" fill="#E0533D" ${K}/><path d="M27 14 L23 21 L28 24 M23 21 L18 22" ${K} fill="none"/><path d="M14 26 L32 16" ${K}/>`,
+  snowflake: `<circle cx="20" cy="20" r="16" fill="#DDEBFB" ${K}/><path d="M20 8 V32 M9.6 14 L30.4 26 M9.6 26 L30.4 14" stroke="#2F6BD8" stroke-width="3" stroke-linecap="round"/><path d="M16 10 L20 13 L24 10 M16 30 L20 27 L24 30" stroke="#2F6BD8" stroke-width="2" fill="none"/>`,
+  fish: `<path d="M3 36 H37" stroke="#7FA6C9" stroke-width="4"/><path d="M8 20 Q18 9 30 20 Q18 31 8 20 Z" fill="#F2B33D" ${K}/><path d="M30 20 L37 14 V26 Z" fill="#F2B33D" ${K}/><circle cx="13" cy="18" r="1.6" fill="${INK}"/><path d="M20 4 V12 M18 6 L20 4 L22 6" ${K} fill="none"/>`,
+  // ── 해외 ──
+  eiffel: `<path d="M8 37 Q14 26 16 16 L19 4 H21 L24 16 Q26 26 32 37" fill="#8A6A4A" ${K}/><path d="M13 30 H27 M15 21 H25" ${K}/><path d="M15 37 Q20 30 25 37" fill="#FFFDF7" ${K}/>`,
+  bigben: `<rect x="13" y="12" width="14" height="25" fill="#C9A35A" ${K}/><circle cx="20" cy="18" r="4.5" fill="#FFFDF7" ${K}/><path d="M20 18 V15.5 M20 18 H22" ${K}/><path d="M12 12 L20 2 L28 12 Z" fill="#5A5248" ${K}/><path d="M16 26 V33 M20 26 V33 M24 26 V33" stroke="${INK}" stroke-width="1.6"/>`,
+  colosseum: `<path d="M3 36 V16 Q20 8 37 16 V36 Z" fill="#D9B98A" ${K}/><path d="M3 22 Q20 15 37 22 M3 29 Q20 23 37 29" ${K} fill="none"/><path d="M9 21 V26 M15 19 V24 M21 18 V23 M27 19 V24 M33 21 V26 M9 28 V34 M15 26 V34 M21 25 V34 M27 26 V34 M33 28 V34" stroke="${INK}" stroke-width="2.2"/>`,
+  sagrada: `<path d="M6 37 V18 L9 6 L12 18 V37 M14 37 V14 L17 3 L20 14 V37 M22 37 V14 L25 3 L28 14 V37 M30 37 V18 L33 6 L36 18 V37" fill="#D9B98A" ${K}/><path d="M6 37 H36" ${K}/><circle cx="17" cy="20" r="1.4" fill="${INK}"/><circle cx="25" cy="20" r="1.4" fill="${INK}"/>`,
+  liberty: `<rect x="12" y="31" width="16" height="6" fill="#B9AF9A" ${K}/><path d="M15 31 Q14 20 17 14 H23 Q26 20 25 31 Z" fill="#6FB7A0" ${K}/><circle cx="20" cy="11" r="3.5" fill="#6FB7A0" ${K}/><path d="M17 8 L16 5 M20 7 V4 M23 8 L24 5" ${K}/><path d="M23 16 L28 6" stroke="${INK}" stroke-width="3"/><path d="M26 6 Q28 1 30 6 Z" fill="#F7C94A" ${K}/>`,
+  goldengate: `<path d="M2 32 H38" stroke="#E0533D" stroke-width="3.4"/><path d="M11 37 V6 M29 37 V6" stroke="#E0533D" stroke-width="4"/><path d="M11 37 V6 M29 37 V6" stroke="${INK}" stroke-width="1.2"/><path d="M2 22 Q11 4 11 6 Q20 26 29 6 Q29 4 38 22" fill="none" stroke="#C0392B" stroke-width="2.2"/><path d="M2 37 Q20 34 38 37" stroke="#2EA6DA" stroke-width="2.4" fill="none"/>`,
+  pyramid: `<path d="M3 36 L18 8 L33 36 Z" fill="#E3B866" ${K}/><path d="M18 8 L25 36" ${K}/><path d="M26 36 L33 23 L38 36 Z" fill="#D1A24E" ${K}/><circle cx="32" cy="8" r="4" fill="#F2733D" ${K}/>`,
+  taj: `<rect x="9" y="22" width="22" height="15" fill="#FFFDF7" ${K}/><path d="M12 22 Q12 10 20 8 Q28 10 28 22 Z" fill="#FFFDF7" ${K}/><path d="M20 8 V4" ${K}/><path d="M17 37 V30 Q20 26 23 30 V37" fill="#9FC9E6" ${K}/><path d="M4 37 V16 M36 37 V16" stroke="${INK}" stroke-width="3"/><circle cx="4" cy="14" r="2" fill="#FFFDF7" ${K}/><circle cx="36" cy="14" r="2" fill="#FFFDF7" ${K}/>`,
+  opera: `<path d="M2 34 H38 V37 H2 Z" fill="#B9AF9A" ${K}/><path d="M4 34 Q8 14 18 10 Q14 22 16 34 Z" fill="#FFFDF7" ${K}/><path d="M14 34 Q18 16 28 12 Q24 24 26 34 Z" fill="#FFFDF7" ${K}/><path d="M24 34 Q28 22 36 20 Q33 27 35 34 Z" fill="#FFFDF7" ${K}/>`,
+  burj: `<path d="M17 37 L18 18 L19.5 3 L21 18 L23 37 Z" fill="#9FC9E6" ${K}/><path d="M12 37 L15 26 L17 37 M23 37 L25 26 L28 37" fill="#BFE3F5" ${K}/><path d="M18 24 H22 M18.5 30 H21.5" stroke="${INK}" stroke-width="1.4"/>`,
+  wall: `<path d="M2 32 L10 22 L18 26 L26 16 L38 20 V28 L26 24 L18 34 L10 30 L2 38 Z" fill="#C9A35A" ${K}/><path d="M8 24 V21 M12 22.5 V19.5 M24 18 V15 M28 17 V14 M34 19 V16" stroke="${INK}" stroke-width="2.6"/><path d="M2 12 L10 6 L16 10" stroke="#6CBF5A" stroke-width="3" fill="none"/>`,
+  santorini: `<rect x="6" y="20" width="28" height="17" fill="#FFFDF7" ${K}/><path d="M12 20 Q12 8 20 8 Q28 8 28 20 Z" fill="#2F6BD8" ${K}/><path d="M20 8 V3 M18 5 H22" ${K}/><rect x="16" y="27" width="8" height="10" rx="4" fill="#2F6BD8" ${K}/><path d="M2 38 H38" stroke="#2EA6DA" stroke-width="3"/>`,
+  pisa: `<g transform="rotate(10 20 37)"><rect x="13" y="8" width="14" height="29" fill="#F2EDE0" ${K}/><path d="M13 14 H27 M13 20 H27 M13 26 H27 M13 32 H27" ${K}/><rect x="14.5" y="3" width="11" height="5" fill="#F2EDE0" ${K}/></g>`,
+  gondola: `<path d="M2 26 Q20 34 38 22 Q34 30 20 32 Q8 32 2 26 Z" fill="${INK}"/><path d="M36 22 L39 18" ${K}/><path d="M24 26 V8" ${K}/><path d="M20 10 H28" stroke="#E0533D" stroke-width="3"/><path d="M2 36 Q10 33 20 36 T38 36" stroke="#2EA6DA" stroke-width="2.4" fill="none"/>`,
+  christ: `<path d="M3 37 Q20 22 37 37 Z" fill="#6E9F5E" ${K}/><rect x="18.5" y="11" width="3" height="16" fill="#FFFDF7" ${K}/><path d="M7 14 H33" stroke="#FFFDF7" stroke-width="4" stroke-linecap="round"/><path d="M7 14 H33" stroke="${INK}" stroke-width="1.2"/><circle cx="20" cy="8" r="3" fill="#FFFDF7" ${K}/>`,
+  machu: `<path d="M2 37 L12 18 L18 24 L26 6 L38 37 Z" fill="#6E9F5E" ${K}/><path d="M6 33 H34 M8 29 H33 M11 25 H32" stroke="#C9A35A" stroke-width="2.4"/><path d="M22 14 L26 6 L29 14" fill="#3E7F4E" ${K}/>`,
+  mosque: `<path d="M8 37 V24 Q20 12 32 24 V37 Z" fill="#9FC9E6" ${K}/><path d="M13 24 Q20 16 27 24" ${K} fill="none"/><path d="M20 15 V10" ${K}/><path d="M4 37 V12 L5 6 L6 12 V37 M34 37 V12 L35 6 L36 12 V37" fill="#FFFDF7" ${K}/><path d="M17 37 V31 Q20 28 23 31 V37" fill="${INK}"/>`,
+  marina: `<rect x="7" y="14" width="6" height="23" fill="#BFE3F5" ${K}/><rect x="17" y="11" width="6" height="26" fill="#BFE3F5" ${K}/><rect x="27" y="14" width="6" height="23" fill="#BFE3F5" ${K}/><path d="M4 12 Q20 6 36 12 L36 14 H4 Z" fill="#5A5248" ${K}/><path d="M2 37 H38" stroke="#2EA6DA" stroke-width="3"/>`,
+  temple: `<rect x="8" y="30" width="24" height="7" fill="#E3B866" ${K}/><path d="M11 30 L14 20 H26 L29 30 Z" fill="#E0533D" ${K}/><path d="M14 20 L17 12 H23 L26 20 Z" fill="#E0533D" ${K}/><path d="M17 12 L20 2 L23 12 Z" fill="#F2B33D" ${K}/><path d="M9 30 L6 26 M31 30 L34 26" ${K}/>`,
+  skyline: `<rect x="4" y="18" width="8" height="19" fill="#9FC9E6" ${K}/><rect x="13" y="8" width="7" height="29" fill="#BFE3F5" ${K}/><path d="M16.5 8 V3" ${K}/><rect x="21" y="14" width="8" height="23" fill="#9FC9E6" ${K}/><rect x="30" y="22" width="7" height="15" fill="#BFE3F5" ${K}/><path d="M6 22 H10 M6 27 H10 M23 18 H27 M23 23 H27" stroke="${INK}" stroke-width="1.4"/>`,
+  // ── 모서리 · 특별 ──
+  train: `<rect x="6" y="6" width="28" height="26" rx="9" fill="#E0533D" ${K}/><rect x="10" y="10" width="20" height="9" rx="3" fill="#BFE3F5" ${K}/><circle cx="13" cy="25" r="2.4" fill="#F7C94A" ${K}/><circle cx="27" cy="25" r="2.4" fill="#F7C94A" ${K}/><path d="M11 32 L8 37 M29 32 L32 37" ${K}/><path d="M6 15 H3 M34 15 H37" stroke="#FFFDF7" stroke-width="2"/>`,
+  plane: `<path d="M20 3 Q23 3 23 9 V16 L37 24 V28 L23 23 V31 L28 35 V38 L20 35.5 L12 38 V35 L17 31 V23 L3 28 V24 L17 16 V9 Q17 3 20 3 Z" fill="#FFFDF7" ${K}/><path d="M18.5 9 H21.5" stroke="#2F6BD8" stroke-width="2"/>`,
+  rest: `<rect x="5" y="16" width="30" height="20" rx="4" fill="#F2B33D" ${K}/><path d="M3 18 L20 6 L37 18" fill="#E0533D" ${K}/><rect x="10" y="22" width="8" height="8" fill="#BFE3F5" ${K}/><path d="M24 36 V24 H31 V36" fill="#8A5A3B" ${K}/><path d="M29 8 Q31 4 29 1 M33 10 Q35 6 33 3" stroke="${INK}" stroke-width="1.8" fill="none"/>`,
+  balloons: `<path d="M13 22 Q15 30 20 37 M27 20 Q25 30 20 37 M20 24 V37" stroke="${INK}" stroke-width="1.6" fill="none"/><ellipse cx="12" cy="13" rx="7" ry="9" fill="#E2588F" ${K}/><ellipse cx="28" cy="11" rx="7" ry="9" fill="#F2B33D" ${K}/><ellipse cx="20" cy="17" rx="7" ry="9" fill="#2F6BD8" ${K}/>`,
+  ship: `<path d="M2 24 H38 L33 34 H7 Z" fill="#FFFDF7" ${K}/><rect x="9" y="15" width="22" height="9" fill="#2F6BD8" ${K}/><rect x="14" y="8" width="12" height="7" fill="#FFFDF7" ${K}/><rect x="22" y="3" width="4" height="5" fill="#E0533D" ${K}/><circle cx="14" cy="19.5" r="1.6" fill="#FFFDF7"/><circle cx="20" cy="19.5" r="1.6" fill="#FFFDF7"/><circle cx="26" cy="19.5" r="1.6" fill="#FFFDF7"/><path d="M2 37 Q10 34 20 37 T38 37" stroke="#2EA6DA" stroke-width="2.4" fill="none"/>`,
+  lounge: `<rect x="4" y="22" width="32" height="10" rx="4" fill="#8E5BC8" ${K}/><rect x="7" y="14" width="26" height="10" rx="4" fill="#A97BD9" ${K}/><path d="M9 32 V37 M31 32 V37" ${K}/><path d="M26 8 Q28 4 26 1 M30 9 Q32 5 30 2" stroke="${INK}" stroke-width="1.8" fill="none"/><rect x="2" y="20" width="5" height="12" rx="2" fill="#A97BD9" ${K}/><rect x="33" y="20" width="5" height="12" rx="2" fill="#A97BD9" ${K}/>`,
+  globe: `<circle cx="20" cy="20" r="16" fill="#2EA6DA" ${K}/><path d="M9 12 Q14 10 17 14 Q15 19 18 22 Q14 27 10 24 Q7 19 9 12 Z M23 8 Q30 9 32 15 Q28 17 26 22 Q22 20 23 15 Q21 11 23 8 Z M24 26 Q29 25 30 30 Q26 33 24 30 Z" fill="#6CBF5A" ${K}/>`,
+  rain: `<path d="M8 20 Q8 10 18 10 Q22 4 28 8 Q36 8 34 18 Q36 22 30 22 H10 Q6 22 8 20 Z" fill="#9FB3C8" ${K}/><path d="M12 27 L10 33 M20 27 L18 35 M28 27 L26 33" stroke="#2F6BD8" stroke-width="2.6" stroke-linecap="round"/>`,
+  sled: `<path d="M2 34 L38 18 V36 H2 Z" fill="#FFFDF7" ${K}/><path d="M10 26 H26 Q30 26 31 22" stroke="#E0533D" stroke-width="3" fill="none"/><path d="M8 30 H28 Q32 30 33 26" ${K} fill="none"/><circle cx="18" cy="18" r="3.5" fill="#F2B33D" ${K}/>`,
+  maple: `<path d="M20 3 L23 11 L30 8 L28 16 L36 18 L29 23 L32 30 L24 28 L21 37 H19 L16 28 L8 30 L11 23 L4 18 L12 16 L10 8 L17 11 Z" fill="#E0533D" ${K}/><path d="M20 37 V16" ${K}/>`,
+  sun: `<circle cx="20" cy="20" r="9" fill="#F7C94A" ${K}/><path d="M20 3 V7 M20 33 V37 M3 20 H7 M33 20 H37 M8 8 L11 11 M29 29 L32 32 M8 32 L11 29 M29 11 L32 8" stroke="#F2B33D" stroke-width="3" stroke-linecap="round"/>`,
+  chance: '',
+  passport: `<rect x="8" y="4" width="24" height="32" rx="3" fill="#1F3A6B" ${K}/><circle cx="20" cy="17" r="6" fill="none" stroke="#E3B866" stroke-width="2"/><path d="M14 17 H26 M20 11 Q23 17 20 23 Q17 17 20 11" stroke="#E3B866" stroke-width="1.4" fill="none"/><path d="M13 29 H27" stroke="#E3B866" stroke-width="2"/>`
+};
+const icon = (id, x, y, s) => `<svg x="${x}" y="${y}" width="${s}" height="${s}" viewBox="0 0 40 40" overflow="visible">${ICON[id] || ''}</svg>`;
+const txt = (x, y, s, { size = 15, fill = INK, weight = 900, font = BODY, anchor = 'middle', ls = 0 } = {}) =>
+  `<text x="${x}" y="${y}" font-size="${size}" font-weight="${weight}" text-anchor="${anchor}" fill="${fill}" font-family="${font}" letter-spacing="${ls}">${s}</text>`;
+
+/** 부드러운 닫힌 곡선(점 목록 → 베지어) */
+function blob(pts, sx = 1, sy = 1, ox = 0, oy = 0) {
+  const P = pts.map(([x, y]) => [ox + x * sx, oy + y * sy]), n = P.length;
+  let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = P[(i - 1 + n) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+    const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6], c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6];
+    d += ` C${c1[0].toFixed(1)} ${c1[1].toFixed(1)} ${c2[0].toFixed(1)} ${c2[1].toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
+  }
+  return d + 'Z';
+}
+
+// ── 판 모양: 1000 정사각, 모서리 140 · 칸 96 ────────────────────────
+const S = 1000, M = 24, LC = 140, LT = (S - 2 * M - 2 * LC) / 7, R = S - M - LC, I0 = M + LC, I1 = R;
+function rectOf(i) {
+  if (i === 0) return { x: R, y: R, w: LC, h: LC };
+  if (i < 8) return { x: R - i * LT, y: R, w: LT, h: LC, inner: 'top' };
+  if (i === 8) return { x: M, y: R, w: LC, h: LC };
+  if (i < 16) return { x: M, y: R - (i - 8) * LT, w: LC, h: LT, inner: 'right' };
+  if (i === 16) return { x: M, y: M, w: LC, h: LC };
+  if (i < 24) return { x: M + LC + (i - 17) * LT, y: M, w: LT, h: LC, inner: 'bottom' };
+  if (i === 24) return { x: R, y: M, w: LC, h: LC };
+  return { x: R, y: M + LC + (i - 25) * LT, w: LC, h: LT, inner: 'left' };
+}
+const innerPt = (i) => { const r = rectOf(i); return r.inner === 'top' ? [r.x + r.w / 2, r.y] : r.inner === 'bottom' ? [r.x + r.w / 2, r.y + r.h] : r.inner === 'right' ? [r.x + r.w, r.y + r.h / 2] : [r.x, r.y + r.h / 2]; };
+
+/**
+ * 칸 하나. t = { n 이름, i 그림, g 구역, p 값 } 또는 { chance: '이름' } · 모서리 { corner, i, n, sub, fill }
+ * style: 'slab'(두께 있는 블록) · 'stamp'(우표 · 톱니 가장자리)
+ */
+function tile(t, idx, cfg) {
+  const r = rectOf(idx), x = r.x + 4, y = r.y + 4, w = r.w - 8, h = r.h - 8, cx = x + w / 2;
+  const st = cfg.style;
+  let face = cfg.tileFill || '#FFFDF7', out = '';
+  if (t.corner) face = t.fill;
+  else if (t.chance) face = cfg.chanceFill || '#F7C94A';
+  if (st === 'stamp') {
+    out += `<rect x="${x + 3}" y="${y + 5}" width="${w}" height="${h}" fill="rgba(0,0,0,.28)"/>`
+      + `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${face}"/>`;
+    // 톱니: 가장자리를 판 색 동그라미로 파낸다
+    const holes = [];
+    const step = 9.6;
+    for (let k = step / 2; k < w; k += step) holes.push([x + k, y], [x + k, y + h]);
+    for (let k = step / 2; k < h; k += step) holes.push([x, y + k], [x + w, y + k]);
+    out += holes.map(([a, b]) => `<circle cx="${a.toFixed(1)}" cy="${b.toFixed(1)}" r="3" fill="${cfg.boardFill}"/>`).join('');
+    out += `<rect x="${x + 7}" y="${y + 7}" width="${w - 14}" height="${h - 14}" fill="none" stroke="${t.corner ? '#E3B866' : 'rgba(31,58,107,.35)'}" stroke-width="1.6"/>`;
+  } else {
+    out += `<rect x="${x}" y="${y + 7}" width="${w}" height="${h}" rx="18" fill="${INK}"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="${face}" stroke="${INK}" stroke-width="3.6"/>`;
+  }
+  if (t.corner) {
+    out += icon(t.i, cx - 34, y + 14, 68);
+    out += txt(cx, y + h - 34, t.n, { size: 21, font: DISPLAY, weight: 400, fill: st === 'stamp' ? '#1F3A6B' : INK });
+    out += txt(cx, y + h - 14, t.sub, { size: 12.5, fill: st === 'stamp' ? '#5A6B8A' : '#5A5248', weight: 800 });
+    return out;
+  }
+  // 띠(판 가운데 쪽): 구역 색
+  const B = 20, col = t.chance ? null : cfg.groups[t.g].c;
+  if (col) {
+    const band = r.inner === 'top' ? [x, y, w, B] : r.inner === 'bottom' ? [x, y + h - B, w, B] : r.inner === 'right' ? [x + w - B, y, B, h] : [x, y, B, h];
+    out += `<clipPath id="c${cfg.id}${idx}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${st === 'stamp' ? 0 : 18}"/></clipPath>`
+      + `<rect x="${band[0]}" y="${band[1]}" width="${band[2]}" height="${band[3]}" fill="${col}" clip-path="url(#c${cfg.id}${idx})"/>`;
+    if (st !== 'stamp') out += `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="18" fill="none" stroke="${INK}" stroke-width="3.6"/>`;
+  }
+  const body = r.inner === 'top' ? [x, y + B, w, h - B] : r.inner === 'bottom' ? [x, y, w, h - B] : r.inner === 'right' ? [x, y, w - B, h] : [x + B, y, w - B, h];
+  const bx = body[0] + body[2] / 2, wide = body[2] > body[3];
+  if (t.chance) {
+    out += txt(bx, body[1] + body[3] / 2 + (wide ? 14 : 8), '?', { size: wide ? 46 : 56, font: DISPLAY, weight: 400, fill: st === 'stamp' ? '#1F3A6B' : INK });
+    out += txt(bx, body[1] + body[3] - 12, t.chance, { size: 12.5, fill: st === 'stamp' ? '#1F3A6B' : '#7A5B12', weight: 900 });
+    return out;
+  }
+  const long = t.n.length > 4, fs = long ? 13 : 15.5;
+  if (wide) {
+    out += icon(t.i, body[0] + 8, body[1] + (body[3] - 48) / 2 - 4, 48);
+    const tx = body[0] + 58 + (body[2] - 58) / 2;
+    out += txt(tx, body[1] + body[3] / 2 - 2, t.n, { size: long ? 12 : 14 });
+    out += txt(tx, body[1] + body[3] / 2 + 17, t.p, { size: 12, fill: cfg.priceInk || '#8A8173', weight: 800 });
+  } else {
+    out += icon(t.i, bx - 26, body[1] + 8, 52);
+    out += txt(bx, body[1] + body[3] - 30, t.n, { size: fs });
+    out += txt(bx, body[1] + body[3] - 12, t.p, { size: 12, fill: cfg.priceInk || '#8A8173', weight: 800 });
+  }
+  return out;
+}
+
+function board(cfg) {
+  const tiles = cfg.tiles.map((t, i) => tile(t, i, cfg)).join('');
+  const frame = cfg.style === 'stamp'
+    ? `<rect x="4" y="10" width="${S - 8}" height="${S - 8}" rx="40" fill="#0E1E3A"/><rect x="4" y="4" width="${S - 8}" height="${S - 8}" rx="40" fill="${cfg.boardFill}" stroke="#E3B866" stroke-width="5"/>`
+    : `<rect x="4" y="12" width="${S - 8}" height="${S - 8}" rx="48" fill="${cfg.frameShade || '#B59E78'}" stroke="${INK}" stroke-width="6"/><rect x="4" y="4" width="${S - 8}" height="${S - 8}" rx="48" fill="${cfg.boardFill}" stroke="${INK}" stroke-width="6"/>`;
+  return `<svg viewBox="0 0 ${S} ${S + 12}" role="img" aria-label="${cfg.title}">${frame}${cfg.center()}${tiles}${cfg.over ? cfg.over() : ''}</svg>`;
+}
+
+// ── 가운데 그림들 ───────────────────────────────────────────────
+const CW = I1 - I0;
+/** 남한 + 제주(0~100 좌표) */
+const KOREA = [[30, 6], [42, 3], [52, 8], [61, 5], [70, 11], [76, 22], [80, 34], [84, 48], [82, 62], [78, 72], [70, 80], [60, 84], [50, 86], [40, 84], [31, 88], [23, 83], [19, 75], [22, 66], [15, 58], [20, 48], [13, 40], [20, 32], [17, 22], [24, 14]];
+/** 지도 위 도시(0~100): 서울 · 강릉 · 대전 · 경주 · 부산 · 전주 · 여수 */
+const KCITY = { 서울: [32, 20], 강릉: [70, 22], 대전: [40, 46], 경주: [74, 62], 부산: [72, 76], 전주: [32, 60], 여수: [46, 80], 제주: [34, 101] };
+
+function koreaCenter() {
+  const ox = I0 + 150, oy = I0 + 58, k = 4.6;
+  const P = (n) => [ox + KCITY[n][0] * k, oy + KCITY[n][1] * k];
+  const sea = `<rect x="${I0 + 8}" y="${I0 + 8}" width="${CW - 16}" height="${CW - 16}" rx="40" fill="#BFE3F5" stroke="${INK}" stroke-width="4"/>`
+    + Array.from({ length: 9 }, (_, j) => `<path d="M${I0 + 40 + (j % 3) * 210} ${I0 + 70 + Math.floor(j / 3) * 210} q12 -10 24 0 t24 0" stroke="#FFFDF7" stroke-width="4" fill="none" stroke-linecap="round" opacity=".8"/>`).join('');
+  const land = `<path d="${blob(KOREA, k, k, ox + 6, oy + 8)}" fill="${INK}" opacity=".25"/><path d="${blob(KOREA, k, k, ox, oy)}" fill="#D8EDC4" stroke="${INK}" stroke-width="5"/>`
+    + `<ellipse cx="${ox + 34 * k}" cy="${oy + 101 * k}" rx="${11 * k}" ry="${4.4 * k}" fill="#D8EDC4" stroke="${INK}" stroke-width="5"/>`;
+  const hills = [[56, 30], [62, 40], [50, 54], [64, 50], [30, 70]].map(([a, b]) => { const x = ox + a * k, y = oy + b * k; return `<path d="M${x - 22} ${y + 12} L${x - 6} ${y - 14} L${x + 4} ${y} L${x + 12} ${y - 8} L${x + 24} ${y + 12} Z" fill="#9CCB7F" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`; }).join('');
+  // KTX 고속선(경부 · 호남 · 강릉)
+  const line = (a, b, c) => { const [x1, y1] = P(a), [x2, y2] = P(b); return `<path d="M${x1} ${y1} L${x2} ${y2}" stroke="${INK}" stroke-width="13" stroke-linecap="round"/><path d="M${x1} ${y1} L${x2} ${y2}" stroke="${c}" stroke-width="7" stroke-linecap="round"/>`; };
+  const lines = line('서울', '대전', '#2F6FD0') + line('대전', '부산', '#2F6FD0') + line('대전', '전주', '#E0533D') + line('전주', '여수', '#E0533D') + line('서울', '강릉', '#3E9B6A') + line('부산', '경주', '#2F6FD0');
+  const dots = Object.keys(KCITY).filter((n) => n !== '제주').map((n) => { const [x, y] = P(n); return `<circle cx="${x}" cy="${y}" r="10" fill="#FFFDF7" stroke="${INK}" stroke-width="4"/>${txt(x + (n === '전주' || n === '서울' ? -40 : 40), y + 6, n, { size: 18 })}`; }).join('');
+  const [jx, jy] = P('제주');
+  const jeju = icon('crater', jx - 30, jy - 52, 40) + txt(jx + 40, jy + 6, '제주', { size: 18 });
+  const flight = `<path d="M${P('서울')[0] - 60} ${P('서울')[1] + 60} Q${I0 + 70} ${jy - 160} ${jx - 40} ${jy - 10}" stroke="${INK}" stroke-width="3" stroke-dasharray="10 9" fill="none"/>` + icon('plane', I0 + 52, jy - 230, 40);
+  const [tx, ty] = P('대전');
+  const ktx = `<g transform="translate(${tx + 18} ${ty + 60}) rotate(38)"><rect x="-38" y="-12" width="76" height="24" rx="12" fill="#FFFDF7" stroke="${INK}" stroke-width="3.5"/><rect x="-38" y="2" width="76" height="5" fill="#2F6FD0"/><path d="M26 -12 Q38 -12 38 0" fill="#BFE3F5" stroke="${INK}" stroke-width="3"/></g>`;
+  const logo = `<g transform="translate(${I1 - 150} ${I0 + 74}) rotate(4)"><rect x="-112" y="-40" width="224" height="88" rx="22" fill="${INK}"/><rect x="-112" y="-46" width="224" height="88" rx="22" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>${txt(0, 8, '역전', { size: 46, font: DISPLAY, weight: 400 })}${txt(0, 31, '한반도 KTX 일주', { size: 16, fill: '#2F6FD0' })}</g>`;
+  return sea + land + hills + lines + dots + jeju + flight + ktx + logo;
+}
+
+function seasonCenter() {
+  // 칸이 도는 차례대로: 오른쪽 아래 봄 → 왼쪽 아래 여름 → 왼쪽 위 가을 → 오른쪽 위 겨울
+  const h = CW / 2, q = [[I0 + h, I0 + h, '#FFE2EF', '봄', 'blossom'], [I0, I0 + h, '#DDF3FF', '여름', 'sun'], [I0, I0, '#FFE7CC', '가을', 'maple'], [I0 + h, I0, '#E8F0FA', '겨울', 'snowflake']];
+  const quads = q.map(([x, y, f, n, ic], k) => {
+    const ix = k % 2 ? x + 16 : x + h - 16 - 0, iy = k < 2 ? y + 16 : y + h - 16;
+    return `<rect x="${x + 12}" y="${y + 12}" width="${h - 24}" height="${h - 24}" rx="30" fill="${f}" stroke="${INK}" stroke-width="4"/>`
+      + icon(ic, x + h / 2 - 70, y + h / 2 - 80, 140) + txt(x + h / 2, y + h / 2 + 108, n, { size: 44, font: DISPLAY, weight: 400 });
+  }).join('');
+  const petals = Array.from({ length: 14 }, (_, j) => { const a = (j * 137) % 360, x = I0 + 30 + ((j * 97) % (CW - 60)), y = I0 + 30 + ((j * 53) % (CW - 60)); return `<ellipse cx="${x}" cy="${y}" rx="6" ry="3.5" fill="${['#F4A7C3', '#F2B33D', '#E0533D', '#FFFDF7'][j % 4]}" stroke="${INK}" stroke-width="1.5" transform="rotate(${a} ${x} ${y})"/>`; }).join('');
+  const c = I0 + h;
+  const compass = `<circle cx="${c}" cy="${c}" r="92" fill="${INK}" transform="translate(0 7)"/><circle cx="${c}" cy="${c}" r="92" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>`
+    + `<path d="M${c} ${c - 76} L${c + 12} ${c} L${c} ${c + 76} L${c - 12} ${c} Z" fill="#E0533D" stroke="${INK}" stroke-width="3"/><path d="M${c - 76} ${c} L${c} ${c - 12} L${c + 76} ${c} L${c} ${c + 12} Z" fill="#2F6BD8" stroke="${INK}" stroke-width="3" opacity=".9"/>`
+    + `<circle cx="${c}" cy="${c}" r="50" fill="#FFFDF7" stroke="${INK}" stroke-width="4"/>${txt(c, c + 4, '역전', { size: 34, font: DISPLAY, weight: 400 })}${txt(c, c + 26, '사계절 여행', { size: 14, fill: '#3E9B6A' })}`;
+  return `<rect x="${I0 + 6}" y="${I0 + 6}" width="${CW - 12}" height="${CW - 12}" rx="40" fill="#F7F1E4" stroke="${INK}" stroke-width="4"/>` + quads + petals + compass;
+}
+
+/** 세계 대륙(0~200 × 0~100) */
+const CONT = {
+  na: [[10, 22], [22, 12], [40, 9], [54, 15], [50, 28], [42, 34], [36, 44], [30, 50], [26, 44], [18, 36], [12, 30]],
+  sa: [[34, 54], [44, 56], [51, 64], [47, 78], [41, 92], [36, 87], [34, 73], [30, 62]],
+  gl: [[60, 5], [70, 3], [73, 10], [64, 14]],
+  eu: [[88, 18], [98, 13], [108, 15], [111, 24], [103, 30], [94, 32], [87, 27]],
+  af: [[90, 38], [104, 36], [116, 42], [119, 56], [111, 70], [102, 81], [96, 72], [92, 58], [86, 48]],
+  as: [[112, 13], [140, 7], [170, 11], [187, 21], [181, 34], [168, 40], [157, 48], [146, 44], [137, 50], [126, 44], [116, 36], [110, 26]],
+  au: [[160, 66], [176, 63], [187, 72], [183, 82], [168, 85], [160, 76]]
+};
+const WCITY = { 서울: [160, 28], 도쿄: [171, 30], 파리: [97, 22], 런던: [93, 17], 뉴욕: [44, 26], 시드니: [181, 78], 카이로: [107, 38], 리우: [46, 70], 두바이: [124, 38] };
+
+function worldCenter(dark = false) {
+  const ox = I0 + 22, oy = I0 + 205, k = 3.1;
+  const P = (n) => [ox + WCITY[n][0] * k, oy + WCITY[n][1] * k];
+  const sea = `<rect x="${I0 + 8}" y="${I0 + 8}" width="${CW - 16}" height="${CW - 16}" rx="40" fill="#9FD3EE" stroke="${INK}" stroke-width="4"/>`
+    + Array.from({ length: 7 }, (_, j) => `<path d="M${I0 + 16} ${I0 + 40 + j * 96} H${I1 - 16}" stroke="#FFFDF7" stroke-width="2" stroke-dasharray="3 12" opacity=".7"/>`).join('');
+  const land = Object.values(CONT).map((pts) => `<path d="${blob(pts, k, k, ox + 5, oy + 6)}" fill="${INK}" opacity=".22"/><path d="${blob(pts, k, k, ox, oy)}" fill="#F3E3B8" stroke="${INK}" stroke-width="4"/>`).join('');
+  const arcs = [['서울', '파리'], ['서울', '뉴욕'], ['서울', '시드니'], ['파리', '뉴욕'], ['뉴욕', '리우'], ['파리', '카이로'], ['카이로', '두바이'], ['두바이', '서울']].map(([a, b]) => {
+    const [x1, y1] = P(a), [x2, y2] = P(b), mx = (x1 + x2) / 2, my = Math.min(y1, y2) - Math.abs(x2 - x1) * 0.28 - 20;
+    return `<path d="M${x1} ${y1} Q${mx} ${my} ${x2} ${y2}" stroke="${INK}" stroke-width="3" stroke-dasharray="9 8" fill="none"/>`;
+  }).join('');
+  // 이름표 자리: 붙어 있는 도시(파리·런던)는 위아래로 나눈다
+  const LBL = { 런던: [-6, -16], 파리: [10, 30], 서울: [-8, -18], 도쿄: [18, 30] };
+  const dots = Object.keys(WCITY).map((n) => { const [x, y] = P(n), [dx, dy] = LBL[n] || [0, 30]; return `<circle cx="${x}" cy="${y}" r="${n === '서울' ? 12 : 8}" fill="${n === '서울' ? '#E0533D' : '#FFFDF7'}" stroke="${INK}" stroke-width="3.5"/><text x="${x + dx}" y="${y + dy}" font-size="15" font-weight="900" text-anchor="middle" fill="${INK}" font-family="${BODY}" paint-order="stroke" stroke="#FFFDF7" stroke-width="5">${n}</text>`; }).join('');
+  const planes = icon('plane', P('서울')[0] - 210, P('서울')[1] - 150, 44) + `<g transform="rotate(-70 ${P('파리')[0] - 120} ${P('파리')[1] + 140})">${icon('plane', P('파리')[0] - 140, P('파리')[1] + 120, 40)}</g>`;
+  const logo = `<g transform="translate(${I0 + CW / 2} ${I0 + 92}) rotate(-3)"><rect x="-120" y="-40" width="240" height="88" rx="22" fill="${INK}"/><rect x="-120" y="-46" width="240" height="88" rx="22" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>${txt(0, 8, '역전', { size: 46, font: DISPLAY, weight: 400 })}${txt(0, 31, '세계 일주 항공로', { size: 16, fill: '#2F6BD8' })}</g>`;
+  const ship = icon('ship', I0 + 70, I1 - 150, 70);
+  return sea + land + arcs + dots + planes + ship + logo;
+}
+
+function passportCenter() {
+  const cx = I0 + CW / 2, cy = I0 + CW / 2;
+  const page = (x, rot, content) => `<g transform="rotate(${rot} ${cx} ${cy})"><rect x="${x}" y="${cy - 210}" width="250" height="400" rx="14" fill="#F6EFDD" stroke="#0E1E3A" stroke-width="5"/>`
+    + Array.from({ length: 11 }, (_, j) => `<path d="M${x + 24} ${cy - 160 + j * 32} H${x + 226}" stroke="#D9CDB0" stroke-width="2"/>`).join('') + content + '</g>';
+  const stamp = (x, y, r, c, code, city, rot) => `<g transform="rotate(${rot} ${x} ${y})"><circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${c}" stroke-width="4"/><circle cx="${x}" cy="${y}" r="${r - 9}" fill="none" stroke="${c}" stroke-width="2" stroke-dasharray="4 4"/>${txt(x, y + 9, code, { size: r * 0.62, font: DISPLAY, weight: 400, fill: c })}${txt(x, y + r * 0.62, city, { size: 11, fill: c })}</g>`;
+  const rect = (x, y, c, a, b, rot) => `<g transform="rotate(${rot} ${x} ${y})"><rect x="${x - 70}" y="${y - 34}" width="140" height="68" rx="6" fill="none" stroke="${c}" stroke-width="4"/>${txt(x, y - 4, a, { size: 22, font: DISPLAY, weight: 400, fill: c })}${txt(x, y + 20, b, { size: 12, fill: c })}</g>`;
+  const left = page(cx - 262, -4, stamp(cx - 190, cy - 120, 52, '#C0392B', 'CDG', 'PARIS', -12) + rect(cx - 130, cy + 10, '#2F6BD8', 'ARRIVED', '2026.10.30 · JFK', 8) + stamp(cx - 175, cy + 120, 46, '#3E9B6A', 'SYD', 'SYDNEY', 14));
+  const right = page(cx + 12, 4, stamp(cx + 90, cy - 130, 50, '#8E5BC8', 'NRT', 'TOKYO', 10) + stamp(cx + 180, cy - 30, 44, '#E39A1E', 'CAI', 'CAIRO', -16) + rect(cx + 120, cy + 100, '#C0392B', 'VISA', '세계 일주 · 무제한', -6));
+  const spine = `<rect x="${cx - 14}" y="${cy - 218}" width="28" height="416" rx="8" fill="#1F3A6B" stroke="#0E1E3A" stroke-width="4"/>`;
+  const pass = `<g transform="rotate(-8 ${cx} ${cy + 250})"><rect x="${cx - 190}" y="${cy + 196}" width="380" height="96" rx="12" fill="#FFFDF7" stroke="#0E1E3A" stroke-width="4"/><rect x="${cx - 190}" y="${cy + 196}" width="380" height="26" rx="12" fill="#E3B866" stroke="#0E1E3A" stroke-width="4"/>${txt(cx - 176, cy + 215, 'BOARDING PASS · 역전 항공', { size: 13, anchor: 'start', fill: '#0E1E3A' })}`
+    + `${txt(cx - 120, cy + 266, 'ICN', { size: 34, font: DISPLAY, weight: 400, fill: '#0E1E3A' })}${txt(cx + 20, cy + 266, '→ WORLD', { size: 26, font: DISPLAY, weight: 400, fill: '#C0392B' })}`
+    + Array.from({ length: 16 }, (_, j) => `<rect x="${cx + 120 + j * 4}" y="${cy + 232}" width="${j % 3 ? 2 : 3}" height="48" fill="#0E1E3A"/>`).join('') + '</g>';
+  const title = `${txt(cx, I0 + 62, '역전', { size: 50, font: DISPLAY, weight: 400, fill: '#E3B866' })}${txt(cx, I0 + 90, 'PASSPORT · 세계 일주', { size: 15, fill: '#E3B866', ls: 2 })}`;
+  return `<rect x="${I0 + 8}" y="${I0 + 8}" width="${CW - 16}" height="${CW - 16}" rx="40" fill="#16305A"/>`
+    + Array.from({ length: 30 }, (_, j) => `<circle cx="${I0 + 40 + ((j * 131) % (CW - 80))}" cy="${I0 + 40 + ((j * 71) % (CW - 80))}" r="${1.5 + (j % 3)}" fill="#E3B866" opacity=".5"/>`).join('')
+    + title + left + right + spine + pass;
+}
+
+// ── 맵 데이터 ────────────────────────────────────────────────
+const KG = { 수도권: { c: '#2F6FD0' }, 강원: { c: '#3E9B6A' }, 충청: { c: '#17A2A8' }, 경북: { c: '#8E5BC8' }, 경남: { c: '#E0533D' }, 전라: { c: '#F08A2E' }, 제주: { c: '#E2588F' } };
+const T = (n, i, g, p) => ({ n, i, g, p });
+const KOREA_TILES = [
+  { corner: 1, n: '서울역', sub: '출발 · 지나면 여비', i: 'train', fill: '#FFE3DA' },
+  T('경복궁', 'palace', '수도권', 260), T('남산타워', 'tower', '수도권', 240), { chance: '여행 카드' }, T('수원 화성', 'gate', '수도권', 180), T('인천대교', 'bridge', '수도권', 160), T('남이섬', 'trees', '강원', 120), T('설악산', 'mountain', '강원', 140),
+  { corner: 1, n: '휴게소', sub: '한 턴 쉬고 간식', i: 'rest', fill: '#FFF2CC' },
+  T('경포대', 'pavilion', '강원', 140), T('평창', 'ski', '강원', 120), { chance: '여행 카드' }, T('단양', 'mountain', '충청', 100), T('부여 정림사', 'pagoda', '충청', 100), T('안동 하회', 'mask', '경북', 140), T('경주 불국사', 'pagoda', '경북', 180),
+  { corner: 1, n: '지역 축제', sub: '내 칸 하나 통행료 2배', i: 'balloons', fill: '#FFE2EF' },
+  T('해운대', 'wave', '경남', 240), T('광안대교', 'bridge', '경남', 220), { chance: '여행 카드' }, T('통영', 'boat', '경남', 140), T('진해 벚꽃', 'blossom', '경남', 120), T('여수 밤바다', 'moonbridge', '전라', 180), T('보성 녹차밭', 'tea', '전라', 100),
+  { corner: 1, n: '제주행', sub: '원하는 칸으로 비행', i: 'plane', fill: '#DDEBFB' },
+  T('담양 죽녹원', 'bamboo', '전라', 100), T('전주 한옥', 'hanok', '전라', 160), { chance: '여행 카드' }, T('성산일출봉', 'crater', '제주', 200), T('돌하르방', 'stone', '제주', 160), T('한라산', 'snowpeak', '제주', 220), T('우도', 'wave', '제주', 140)
+];
+const SG = { 봄: { c: '#F4A7C3' }, 여름: { c: '#2EA6DA' }, 가을: { c: '#E0533D' }, 겨울: { c: '#7FA6C9' } };
+const SEASON_TILES = [
+  { corner: 1, n: '서울 출발', sub: '지나면 여비', i: 'train', fill: '#FFE3DA' },
+  T('진해 군항제', 'blossom', '봄', 140), T('경주 벚꽃', 'pagoda', '봄', 160), { chance: '계절 카드' }, T('여의도 윤중로', 'blossom', '봄', 180), T('보성 녹차', 'tea', '봄', 100), T('담양 대숲', 'bamboo', '봄', 100), T('남이섬', 'trees', '봄', 120),
+  { corner: 1, n: '장마', sub: '한 턴 쉬기', i: 'rain', fill: '#E3ECF5' },
+  T('해운대', 'wave', '여름', 240), T('제주 협재', 'wave', '여름', 200), { chance: '계절 카드' }, T('경포대', 'pavilion', '여름', 160), T('여수 밤바다', 'moonbridge', '여름', 180), T('통영', 'boat', '여름', 140), T('성산일출봉', 'crater', '여름', 200),
+  { corner: 1, n: '단풍 축제', sub: '내 칸 통행료 2배', i: 'maple', fill: '#FFE7CC' },
+  T('설악산 단풍', 'autumn', '가을', 160), T('내장산', 'autumn', '가을', 120), { chance: '계절 카드' }, T('안동 하회', 'mask', '가을', 140), T('전주 한옥', 'hanok', '가을', 160), T('경복궁', 'palace', '가을', 260), T('수원 화성', 'gate', '가을', 180),
+  { corner: 1, n: '눈썰매', sub: '앞 칸으로 미끄럼', i: 'sled', fill: '#E8F0FA' },
+  T('평창 스키', 'ski', '겨울', 160), T('화천 산천어', 'fish', '겨울', 100), { chance: '계절 카드' }, T('한라산 설경', 'snowpeak', '겨울', 220), T('태백 눈꽃', 'snowflake', '겨울', 100), T('남산타워', 'tower', '겨울', 240), T('광안대교', 'bridge', '겨울', 220)
+];
+const WG = { 아시아: { c: '#E0533D' }, 중동아프리카: { c: '#E39A1E' }, 유럽: { c: '#2F6BD8' }, 아메리카: { c: '#3E9B6A' }, 오세아니아: { c: '#8E5BC8' } };
+const WORLD_TILES = [
+  { corner: 1, n: '인천공항', sub: '출국 · 지나면 여비', i: 'plane', fill: '#DDEBFB' },
+  T('도쿄', 'redtower', '아시아', 240), T('후지산', 'fuji', '아시아', 180), { chance: '면세점' }, T('베이징', 'wall', '아시아', 200), T('방콕', 'temple', '아시아', 140), T('싱가포르', 'marina', '아시아', 220), T('홍콩', 'skyline', '아시아', 200),
+  { corner: 1, n: '환승 라운지', sub: '한 턴 쉬기', i: 'lounge', fill: '#EDE3F7' },
+  T('시드니', 'opera', '오세아니아', 220), T('두바이', 'burj', '중동아프리카', 260), { chance: '면세점' }, T('카이로', 'pyramid', '중동아프리카', 160), T('아그라', 'taj', '중동아프리카', 160), T('이스탄불', 'mosque', '중동아프리카', 180), T('산토리니', 'santorini', '유럽', 200),
+  { corner: 1, n: '지중해 크루즈', sub: '원하는 칸으로 항해', i: 'ship', fill: '#DDF3FF' },
+  T('로마', 'colosseum', '유럽', 240), T('피사', 'pisa', '유럽', 140), { chance: '면세점' }, T('베네치아', 'gondola', '유럽', 180), T('파리', 'eiffel', '유럽', 300), T('런던', 'bigben', '유럽', 280), T('바르셀로나', 'sagrada', '유럽', 220),
+  { corner: 1, n: '월드 페스티벌', sub: '내 칸 통행료 2배', i: 'balloons', fill: '#FFE2EF' },
+  T('뉴욕', 'liberty', '아메리카', 320), T('샌프란시스코', 'goldengate', '아메리카', 240), { chance: '면세점' }, T('리우', 'christ', '아메리카', 180), T('마추픽추', 'machu', '아메리카', 160), T('밴쿠버', 'snowpeak', '아메리카', 180), T('칸쿤', 'wave', '아메리카', 160)
+];
+const WORLD_STAMP_TILES = WORLD_TILES.map((t) => (t.corner ? { ...t, fill: '#F6EFDD' } : t));
+
+const CONCEPTS = [
+  { id: 'k1', tag: '국내 A', tc: '#BFE3F5', title: '한반도 KTX 일주', lead: '가운데 큰 남한 지도 위로 KTX 고속선이 달리고, 칸은 권역 색으로 묶었어요. 서울에서 출발해 강원 → 충청 → 경북 → 부산 → 전라 → 제주로 한 바퀴.',
+    cfg: { id: 'a', title: '한반도 KTX 일주', style: 'slab', boardFill: '#F1E3C6', groups: KG, tiles: KOREA_TILES, center: koreaCenter },
+    groups: KG,
+    corners: ['서울역 — 출발, 지나면 여비', '휴게소 — 한 턴 쉬기(간식 먹고 가기)', '지역 축제 — 내 칸 하나 통행료 2배', '제주행 — 원하는 칸으로 비행'],
+    rules: ['KTX 지름길: 서울 ↔ 부산 직통 레일(지금 순환선의 3·4호선 지름길 자리)', '권역 독점: 같은 권역 칸을 다 가지면 그 권역 통행료 ×1.5', '여행 카드: 특산물(+돈) · 기차 지연(한 턴 쉼) · 렌터카(+3칸)'] },
+  { id: 'k2', tag: '국내 B', tc: '#FFE2EF', title: '사계절 여행', lead: '판 네 변이 봄 · 여름 · 가을 · 겨울. 같은 국내 여행을 계절로 나눠, 변마다 색 · 칸 그림 · 모서리 날씨가 바뀌어요. 가운데는 네 계절 마당과 나침반 로고.',
+    cfg: { id: 'b', title: '사계절 여행', style: 'slab', boardFill: '#F6EAD7', groups: SG, tiles: SEASON_TILES, center: seasonCenter },
+    groups: SG,
+    corners: ['서울 출발 — 지나면 여비', '장마 — 한 턴 쉬기', '단풍 축제 — 내 칸 통행료 2배', '눈썰매 — 앞 칸으로 미끄럼'],
+    rules: ['계절 바뀜: 시계가 한 계절(4~5바퀴)씩 흐르면 그 계절 변 통행료 ×1.5 — 노릴 변이 바뀐다', '계절 카드: 벚꽃 인파 · 태풍(그 변 통행료 0) · 첫눈(한 번 더)', '한 변(계절) 4칸 독점 = 계절 독점 승리'] },
+  { id: 'w1', tag: '해외 A', tc: '#DDEBFB', title: '세계 일주 항공로', lead: '하늘색 바다 위 대륙들을 점선 항공로가 잇고, 칸은 대륙 색으로. 인천공항에서 출국해 아시아 → 중동·아프리카 → 유럽 → 아메리카를 돌아 귀국.',
+    cfg: { id: 'c', title: '세계 일주 항공로', style: 'slab', boardFill: '#EFE5CF', groups: WG, tiles: WORLD_TILES, center: () => worldCenter() },
+    groups: WG,
+    corners: ['인천공항 — 출국, 지나면 여비', '환승 라운지 — 한 턴 쉬기', '지중해 크루즈 — 원하는 칸으로 항해', '월드 페스티벌 — 내 칸 통행료 2배'],
+    rules: ['직항: 인천 ↔ 파리 · 인천 ↔ 뉴욕 직항 지름길(항공권 값을 내고 탄다)', '환율: 바퀴마다 대륙 하나 환율 변동 — 그 대륙 통행료 ×0.7 ~ ×1.5', '면세점 카드: 쇼핑(−돈 · 다음 통행료 면제) · 마일리지(+2칸) · 수하물 분실(한 턴 쉼)'] },
+  { id: 'w2', tag: '해외 B', tc: '#E3B866', title: '여권 스탬프', lead: '같은 세계 일주를 여권 감성으로. 짙은 남색 판에 칸은 톱니 가장자리 우표, 모서리는 금색 테두리, 가운데는 펼친 여권 · 입국 도장 · 탑승권. 내 칸이 되면 그 우표에 내 색 도장이 찍히는 식.',
+    cfg: { id: 'd', title: '여권 스탬프', style: 'stamp', boardFill: '#1F3A6B', priceInk: '#5A6B8A', tileFill: '#FFFDF7', chanceFill: '#E3B866', groups: WG, tiles: WORLD_STAMP_TILES, center: passportCenter },
+    groups: WG,
+    corners: ['인천공항 — 출국', '환승 라운지 — 한 턴 쉬기', '지중해 크루즈 — 원하는 칸으로', '월드 페스티벌 — 통행료 2배'],
+    rules: ['도장 모으기: 대륙마다 칸 하나씩(5대륙) 도장을 모으면 "세계 일주 완주" 독점 승리', '사면 우표에 내 색 입국 도장이 쾅 — 증축할수록 도장이 겹쳐 찍힘', '해외 A 와 같은 칸 · 규칙, 그림만 다르게 — 둘 중 하나만 써도 된다'] }
+];
+
+document.getElementById('out').innerHTML = CONCEPTS.map((c) => `
+  <section id="${c.id}"><div class="concept">
+    <div>${board(c.cfg)}</div>
+    <div>
+      <span class="tag" style="--tc:${c.tc}">${c.tag}</span>
+      <h2>${c.title}</h2>
+      <p class="lead">${c.lead}</p>
+      <h3>칸 구역 색</h3>
+      <div class="chips">${Object.entries(c.groups).map(([k, v]) => `<span><i style="--c:${v.c}"></i>${k}</span>`).join('')}</div>
+      <h3>모서리 네 칸</h3>
+      <ul>${c.corners.map((x) => `<li>${x}</li>`).join('')}</ul>
+      <h3>이 맵만의 규칙 아이디어</h3>
+      <ul>${c.rules.map((x) => `<li>${x}</li>`).join('')}</ul>
+    </div>
+  </div></section>`).join('');
+</script>
+</body>
+</html>

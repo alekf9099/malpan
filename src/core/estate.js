@@ -4,6 +4,7 @@
 //   남의 역에 서면 통행료를 내고, 돈이 되면 그 역을 1.5배 값에 인수할 수 있다.
 
 import { LINE_STATIONS, STATION_LINES } from './boards/seoul.js';
+import { KOREA_RING, WORLD_RING } from './boards/tour.js';
 
 /** 지나는 호선 수로 값을 매긴다: 일반역 · 환승역 · 세 호선 이상 환승역 */
 export const PRICE = { 1: 100, 2: 180, 3: 260 };
@@ -27,7 +28,10 @@ export const HOTSPOTS = {
 export const HOT_LIST = Object.keys(HOTSPOTS);
 export const HOT_MULT = 1.5;
 export const isHot = (n) => !!HOTSPOTS[n];
+/** 관광 맵 칸 값(판 데이터에 적힌 값) */
+const TOUR_PRICE = { ...KOREA_RING.prices, ...WORLD_RING.prices };
 export const stationPrice = (n) => {
+  if (TOUR_PRICE[n]) return TOUR_PRICE[n];
   const base = PRICE[Math.min(3, STATION_LINES[n]?.length || 1)];
   return isHot(n) ? Math.round(base * HOT_MULT / 10) * 10 : base;
 };

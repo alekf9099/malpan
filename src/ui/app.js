@@ -9,12 +9,13 @@ import {
   createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
   invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
-  monopolyOf, HOT_WIN, LINE_WIN, isLoop, roundsOf
+  monopolyOf, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeOf } from '../core/heroes.js';
-import { LOOP_START, SALARY, CORNERS, ahead, forward, loopIndex } from '../core/boards/loop.js';
+import { SALARY, ringOf } from '../core/boards/loop.js';
+import { tourArt } from './tour-art.js';
 import { skillArt } from './skill-art.js';
 import * as SFX from './skill-fx.js';
 import * as EFX from './estate-fx.js';
@@ -92,7 +93,10 @@ function splash() {
 
 const isOpen = (id) => Records.unlocked().includes(id);
 /** 지금 보여 줄 판이 순환선인가: 게임 중이면 그 판, 로비·도감이면 고른 판 */
-const loopy = () => (G.m ? isLoop(G.m) : Prefs.getBoard() === 'loop');
+/** 지금(대결 중이 아니면 로비에서 고른) 판: 'loop' · 'korea' · 'world'(고리 판) · false(노선도) — 캐릭터 설명·충전이 판마다 달라서 */
+const loopy = () => (G.m ? (isLoop(G.m) ? G.m.region : false) : Prefs.getBoard() === 'map' ? false : Prefs.getBoard());
+/** 판에 쓰는 칸 이름(관광 맵은 짧은 이름이 따로 있다) */
+const tileName = (n) => (G.m && ringIn(G.m) ? ringIn(G.m).nameOf(n) : n);
 const myIndex = () => ids.indexOf(Prefs.getLeader(Records.unlocked()));
 const ticketPill = (n = Records.tickets()) => `<span class="tickets" title="승차권 — 캐릭터를 여는 데 쓴다"><i>승차권</i><b>${n.toLocaleString()}</b>장</span>`;
 /** 잠긴 캐릭터는 그림자로 */
@@ -210,10 +214,10 @@ function title(fromSplash = false) {
       </div>
       <div class="lb-play">
         <div class="lb-opts">
-          <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${[['loop', '순환선'], ['map', '노선도']].map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === Prefs.getBoard() ? 'on' : ''}" aria-checked="${k === Prefs.getBoard()}">${n}</button>`).join('')}</div>
+          <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${[['loop', '순환선'], ['korea', '국내'], ['world', '해외'], ['map', '노선도']].map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === Prefs.getBoard() ? 'on' : ''}" aria-checked="${k === Prefs.getBoard()}">${n}</button>`).join('')}</div>
           <div class="lb-seg" role="radiogroup" aria-label="상대 수"><span>상대</span>${[1, 2, 3].map((n) => `<button role="radio" data-n="${n}" class="${n === rivals ? 'on' : ''}" aria-checked="${n === rivals}">${n}</button>`).join('')}<span>명</span></div>
         </div>
-        <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>${Prefs.getBoard() === 'loop' ? '2호선 순환선 · 시청 출발' : '노선도 · 06:00 첫차 → 24:00 막차'}</small></span></button>
+        <button class="lb-start" id="start"><span class="lb-go">${ICON.play}</span><span class="lb-st"><b>대결 시작</b><small>${ringOf(Prefs.getBoard()) ? `${ringOf(Prefs.getBoard()).name} · ${ringOf(Prefs.getBoard()).startName} 출발` : '노선도 · 06:00 첫차 → 24:00 막차'}</small></span></button>
       </div>
       ${gnbHTML('lobby')}
     </div>
@@ -530,8 +534,26 @@ const LOOP_GUIDE = [
   ['승리 조건', '최후의 1인, 독점, 또는 막차 시 자산 1위']
 ];
 
+/** 관광 맵 도움말(판 데이터로) — 순환선은 LOOP_GUIDE */
+function ringGuide(r) {
+  if (r.id === 'loop') return LOOP_GUIDE;
+  const corner = (k) => Object.values(r.corners).find((c) => c.kind === k)?.name;
+  return [
+    [r.name, `32칸 고리를 시계 방향으로 · 모두 ${r.startName}에서 출발 · 18바퀴`],
+    LOOP_GUIDE[1],
+    [r.payName, `${r.startName}을 지날 때마다 +${SALARY} · ${r.startName}에 서면 1.5배`],
+    ['지름길', `${r.shortcuts.map(([a, b, , l]) => `${l} ${r.nameOf(a)}↔${r.nameOf(b)}`).join(' · ')} — 지나거나 출발할 때 판을 가로지를 수 있음`],
+    ['모서리 칸', `${corner('festival')}(내 칸 통행료 2배) · ${corner('express')}(앞 12칸 중 원하는 칸) · ${corner('maze')}(한 턴 쉬기)`],
+    LOOP_GUIDE[5], LOOP_GUIDE[6], LOOP_GUIDE[7], LOOP_GUIDE[8],
+    [r.chanceName, `? 칸은 ${r.chanceName} — 찬스 카드를 뽑는다`],
+    ['독점 승리', `모서리·${r.chanceName} 칸 사이 ${r.lineWin}칸 구간을 통째로 가지면 즉시 승리`],
+    LOOP_GUIDE[11]
+  ];
+}
+
 function guide(then = null) {
-  const steps = loopy() ? LOOP_GUIDE : [
+  const ring = ringOf(loopy());
+  const steps = ring ? ringGuide(ring) : [
     ['지역', '판마다 서울의 한 지역(도심 · 강남 · 서남 · 동부, 72역)에서 대결 · 12바퀴'],
     ['이동', '주사위 2개 중 하나를 골라 이동(1~5역 · 급행 7역+한 번 더) · 눈마다 도착할 곳이 미리 보임'],
     ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
@@ -678,7 +700,7 @@ async function startGame(daily) {
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
   // 상대는 아홉 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
   const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
-  const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: Prefs.getBoard() === 'loop' ? 'loop' : null });
+  const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: ringOf(Prefs.getBoard()) ? Prefs.getBoard() : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
   G.m = m;
@@ -709,7 +731,7 @@ function enterGame() {
     </div>
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
-  useBoard(isLoop(M()) ? 'loop' : 'map');
+  useBoard(isLoop(M()) ? M().region : 'map');
   Camera.setFollowZoom(isLoop(M()) ? 0.6 : undefined, isLoop(M()));
   Camera.attach($('#board'), $('#cam'), canvasSize());
   $('#throw').onclick = () => onThrow();
@@ -734,8 +756,8 @@ function intro() {
   const s = sheet(`
     <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
-    <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${p.node}</span></div>`).join('<i>VS</i>')}</div>
-    <p>${isLoop(m) ? `모두 <b>시청</b>에서 출발 · 한 바퀴 돌 때마다 <b>월급 ${SALARY}</b> · 모서리 칸: 축제·급행·미로 · <b>3·4호선 지름길</b>로 판을 가로지른다<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>명소역 ${m.hotWin}곳 · ${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
+    <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
+    <p>${isLoop(m) ? `${ringIn(m).intro}<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -893,7 +915,7 @@ function targetRow(m, p, id, n) {
   let info, note = '';
   if (id === 'direct') {
     info = n === p.goal ? '<i class="good">목적지</i>' : !owner ? (isChance(n) ? '찬스 역' : `빈 역 · ${priceFor(m, n)}`) : owner === p ? '내 역' : `<i class="bad">${nameOf(owner)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
-    info += ` · ${dist(p.node, n)}역`;
+    info += isLoop(m) ? ` · ${ringIn(m).ahead(p.node, n)}칸` : ` · ${dist(p.node, n)}역`;
     if (n === p.goal) note = `<em class="goal">+${GOAL_BONUS + (heroById(p.hero).goalBonus || 0)}</em>`;
     else if (HOTSPOTS[n]) note = '<em class="hot">명소</em>';
   } else if (id === 'buyout') {
@@ -908,13 +930,13 @@ function targetRow(m, p, id, n) {
   }
   const lines = (STATION_LINES[n] || []).map((l) => `<i style="--lc:${LINES[l].color}"></i>`).join('');
   return `<button class="sk-row" data-v="${n}" style="--pc:${owner ? colorOf(owner) : '#FFFDF7'}">
-    <span class="sk-lines">${lines}</span><div><b>${hotArt(n, 18) || ''}${n}</b><span>${info}</span></div>${note}</button>`;
+    <span class="sk-lines">${lines}</span><div><b>${hotArt(n, 18) || ''}${tileName(n)}</b><span>${info}</span></div>${note}</button>`;
 }
 
 /** 대상 순서: 쓸 만한 것부터 */
 function sortTargets(m, p, id, list) {
   const score = (n) => {
-    if (id === 'direct') return (n === p.goal ? 1e6 : 0) + (HOTSPOTS[n] ? 1e4 : 0) + (!m.owned[n] ? 1e3 : 0) - dist(p.node, n);
+    if (id === 'direct') return (n === p.goal ? 1e6 : 0) + (HOTSPOTS[n] ? 1e4 : 0) + (!m.owned[n] ? 1e3 : 0) - (isLoop(m) ? ringIn(m).ahead(p.node, n) : dist(p.node, n));
     return baseToll(m.owned, m.levels, n);
   };
   return list.slice().sort((a, b) => score(b) - score(a));
@@ -1125,11 +1147,11 @@ function choicePrompt() {
     if (c.kind === 'transfer') {
       const rows = c.options.map((n) => n === p.node
         ? `<button class="warp-row" data-v="${n}" style="--pc:#FFFDF7"><span class="wr-flag">그대로</span><div><b>${n}에 머물기</b><span>환승하지 않음</span></div></button>`
-        : `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">랜드마크</span>'}<div><b>${n}</b><span>내 랜드마크 · 통행료 ${baseToll(m.owned, m.levels, n)}${isLoop(m) ? `${loopIndex(n) < loopIndex(p.node) ? ' · 월급!' : ''}` : ` · ${dist(p.node, n)}역`}</span></div></button>`).join('');
-      s = sheet(`<span class="kind">${skillArt('build', 22)} 현장소장 · 환승센터</span><h2 style="margin-top:6px">환승할 랜드마크</h2><p>내 랜드마크로 바로 · 시청을 넘으면 월급</p><div class="warp-list">${rows}</div>`);
+        : `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">랜드마크</span>'}<div><b>${n}</b><span>내 랜드마크 · 통행료 ${baseToll(m.owned, m.levels, n)}${isLoop(m) ? `${ringIn(m).index(n) < ringIn(m).index(p.node) ? ` · ${ringIn(m).payName}!` : ''}` : ` · ${dist(p.node, n)}역`}</span></div></button>`).join('');
+      s = sheet(`<span class="kind">${skillArt('build', 22)} 현장소장 · 환승센터</span><h2 style="margin-top:6px">환승할 랜드마크</h2><p>내 랜드마크로 바로${isLoop(m) ? ` · ${ringIn(m).startName}을 넘으면 ${ringIn(m).payName}` : ''}</p><div class="warp-list">${rows}</div>`);
     } else if (c.kind === 'festival') {
       const rows = c.options.map((n) => `<button class="warp-row" data-v="${n}" style="--pc:${colorOf(p)}">${hotArt(n, 34) || '<span class="wr-flag">축제</span>'}<div><b>${n}</b><span>통행료 ${baseToll(m.owned, m.levels, n)} → <i class="good">${baseToll(m.owned, m.levels, n) * 2}</i></span></div></button>`).join('');
-      s = sheet(`<span class="kind">성수 · 팝업 축제</span><h2 style="margin-top:6px">축제를 열 내 역</h2><p>${c.options.length}곳 중 하나 · 통행료 2배(3바퀴)</p><div class="warp-list">${rows}</div>`);
+      s = sheet(`<span class="kind">${cornerAt(m, c.node)?.name || '팝업 축제'}</span><h2 style="margin-top:6px">축제를 열 내 칸</h2><p>${c.options.length}곳 중 하나 · 통행료 2배(3바퀴)</p><div class="warp-list">${rows}</div>`);
     } else if (c.kind === 'card') {
       const cards = c.options.map((id) => {
         const k = chanceById(id);
@@ -1141,9 +1163,9 @@ function choicePrompt() {
         const o = m.owned[n] ? playerById(m, m.owned[n]) : null;
         const note = n === p.goal ? `<em class="goal">내 목적지 +${GOAL_BONUS}</em>` : '';
         const own = !o ? (isChance(n) ? '찬스 역' : `빈 역 · ${priceFor(m, n)}`) : o === p ? '내 역' : `<i class="bad">${nameOf(o)} 역 · 통행료 ${p.coupon ? '면제' : tollFor(m, n, p)}</i>`;
-        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || `<span class="wr-flag">${isLoop(m) ? `${ahead(p.node, n)}칸` : '목적지'}</span>`}<div><b>${n}</b><span>${own}${isLoop(m) ? (n === LOOP_START ? ' · 월급!' : '') : ` · ${dist(p.node, n)}역`}</span></div>${note}</button>`;
+        return `<button class="warp-row" data-v="${n}" style="--pc:${o ? colorOf(o) : '#FFFDF7'}">${hotArt(n, 34) || `<span class="wr-flag">${isLoop(m) ? `${ringIn(m).ahead(p.node, n)}칸` : '목적지'}</span>`}<div><b>${tileName(n)}</b><span>${own}${isLoop(m) ? (n === ringIn(m).start ? ` · ${ringIn(m).payName}!` : '') : ` · ${dist(p.node, n)}역`}</span></div>${note}</button>`;
       }).join('');
-      s = sheet(isLoop(m) ? `<span class="kind">강남 · 급행 환승</span><h2 style="margin-top:6px">내릴 칸 선택</h2><p>앞 ${c.options.length}칸 중 하나 · 시청을 넘으면 월급</p><div class="warp-list">${rows}</div>`
+      s = sheet(isLoop(m) ? `<span class="kind">${cornerAt(m, c.node)?.name || '급행 환승'}</span><h2 style="margin-top:6px">내릴 칸 선택</h2><p>앞 ${c.options.length}칸 중 하나 · ${ringIn(m).startName}을 넘으면 ${ringIn(m).payName}</p><div class="warp-list">${rows}</div>`
         : `<span class="kind">${hotArt('서울역', 22)} 서울역 · KTX 순간이동</span><h2 style="margin-top:6px">도착역 선택</h2><div class="warp-list">${rows}</div>`);
     }
     s.querySelectorAll('[data-v]').forEach((b) => { b.onclick = () => { Sound.click(); closeSheet(); resolve(b.dataset.v); }; });
@@ -1154,7 +1176,8 @@ function choicePrompt() {
 
 function offerPrompt() {
   const m = M(), p = current(m), o = m.offer;
-  const lines = STATION_LINES[o.node].map((l) => `<i style="--lc:${LINES[l].color}"></i>`).join('');
+  const lines = (STATION_LINES[o.node] || []).map((l) => `<i style="--lc:${LINES[l].color}"></i>`).join('');
+  const tour = ringIn(m)?.icons?.[o.node];
   const nextOwned = { ...m.owned, [o.node]: p.id };
   const chain = Math.min(4, links(nextOwned, p.id).at[o.node]?.len || 1);
   const lvAfter = o.kind === 'upgrade' ? o.level : m.levels[o.node] || 1;
@@ -1166,7 +1189,7 @@ function offerPrompt() {
     const card = document.createElement('div');
     card.className = 'offer-card kind-' + o.kind;
     card.innerHTML = `
-      <div class="oc-sign">${lines}<b>${o.node}</b>${HOTSPOTS[o.node] ? `<em class="oc-hot">${hotArt(o.node, 18)} 명소역 · ${HOTSPOTS[o.node].tag}</em>` : ''}</div>
+      <div class="oc-sign">${lines}<b>${tileName(o.node)}</b>${HOTSPOTS[o.node] ? `<em class="oc-hot">${hotArt(o.node, 18)} 명소역 · ${HOTSPOTS[o.node].tag}</em>` : tour ? `<em class="oc-hot">${tourArt(tour, 18)} ${ringIn(m).groupOf[o.node]}</em>` : ''}</div>
       <div class="oc-body"><span>${title}</span>
         <em>가격 <b>${o.price.toLocaleString()}</b> · 잔액 ${(p.money - o.price).toLocaleString()} · 예상 통행료 <b>${toll}</b>${chain > 1 ? ` · <strong>${chain}역 연결 ×${chain}</strong>` : ''}</em></div>
       <div class="oc-btns"><button class="btn small white" data-a="no">패스</button><button class="btn small yellow" data-a="yes">${btn} · ${o.price.toLocaleString()}</button></div>`;
@@ -1368,9 +1391,9 @@ function drawControls() {
   ib.disabled = !can;
   ib.innerHTML = `노선 투자${can ? ` <b>${can}</b>` : ''}`;
   if (isLoop(m)) {
-    const left = ahead(me.node, LOOP_START) || 32;
+    const r = ringIn(m), left = r.ahead(me.node, r.start) || 32;
     $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
-      <div class="me-goal"><span>다음 월급</span><b>시청까지 ${left}칸</b><em>+${SALARY + (h.loop?.goalBonus ?? 0)}</em></div>`;
+      <div class="me-goal"><span>다음 ${r.payName}</span><b>${r.startName}까지 ${left}칸</b><em>+${SALARY + (h.loop?.goalBonus ?? 0)}</em></div>`;
   } else {
     $('#meRow').innerHTML = `<span class="pa" style="--pc:${h.color}">${character(me.hero, 30)}</span>
       <div class="me-goal"><span>내 목적지</span><b>${me.goal}</b><em>${dist(me.node, me.goal)}역 · +${GOAL_BONUS + (h.goalBonus || 0)}</em></div>
@@ -1412,13 +1435,16 @@ function onMapTap(ev) {
   let best = null, bd = isLoop(m) ? 70 : 40;
   for (const n of isLoop(m) ? areaOf(m).stations : Object.keys(STATION_LINES)) { const [sx, sy] = nodeXY(n); const d = Math.hypot(sx - x, sy - y); if (d < bd) { bd = d; best = n; } }
   if (!best) return;
-  if (isLoop(m) && CORNERS[best]) { toast(`${best} · ${CORNERS[best].name}: ${CORNERS[best].short}`); return; }
+  const cn = cornerAt(m, best);
+  if (cn) { toast(`${cn.name === best ? cn.name : `${best} · ${cn.name}`}: ${cn.short}`); return; }
   const me = ME(), o = m.owned[best] ? playerById(m, m.owned[best]) : null;
-  const lines = STATION_LINES[best].map((l) => LINES[l].name).join('·');
+  // 노선도 역은 호선, 관광 맵 칸은 구역
+  const lines = (STATION_LINES[best] || []).map((l) => LINES[l].name).join('·') || ringIn(m)?.groupOf?.[best] || '';
   const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag}: ${HOTSPOTS[best].desc}` : '';
-  const text = isChance(best) ? `${best} · 찬스 역`
-    : o ? `${best}(${lines}) · ${o.human ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
-      : `${best}(${lines}) · 빈 역 · ${stationPrice(best)}`;
+  const name = tileName(best);
+  const text = isChance(best) ? `${ringIn(m)?.chanceName || '찬스'} 칸 · 찬스 카드`
+    : o ? `${name}(${lines}) · ${o.human ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
+      : `${name}(${lines}) · 빈 칸 · ${stationPrice(best)}`;
   toast(text + hot);
 }
 
@@ -1915,9 +1941,10 @@ async function travel(pid, from, path) {
 
 /** 두 역을 잇는 같은 호선의 길(직통 열차가 지나갈 역들) */
 function linePath(from, to) {
-  if (M() && isLoop(M())) {
-    const k = ahead(from, to);
-    return { path: [from, ...forward(from, k || 1)], line: 2 };
+  const r = M() && ringIn(M());
+  if (r) {
+    const k = r.ahead(from, to);
+    return { path: [from, ...r.forward(from, k || 1)], line: 2, color: r.lineColor };
   }
   let best = null;
   for (const l of STATION_LINES[from] || []) {
@@ -2074,7 +2101,8 @@ const HANDLERS = {
     if (e.why === 'salary') {
       Sound.home();
       FX.confetti(at[0], at[1] - 30, p.human ? 24 : 10);
-      FX.pow(at[0], at[1] - 70, `${e.landed ? '시청 도착! ' : ''}월급 +${e.amount}`, '#E0533D', '#FFFDF7', -5);
+      const r = ringIn(M());
+      FX.pow(at[0], at[1] - 70, `${e.landed ? `${r.startName} 도착! ` : ''}${r.payName} +${e.amount}`, '#E0533D', '#FFFDF7', -5);
       if (p.human) buzz(25);
     } else Sound.coin();
     if (e.node && e.why !== 'salary') FX.pow(at[0], at[1] - 60, `+${e.amount}`, '#2EA6DA', '#FFFDF7', 4);
@@ -2135,7 +2163,12 @@ const HANDLERS = {
   async incidentEnd(e) {
     const el = $('#layer').querySelector(`.incident[data-node="${e.node}"]`);
     if (e.cancelled) { const [x, y] = nodeApp(e.node); FX.pow(x, y - 60, '공사 중단!', '#6E6A5E', '#FFFDF7', -5); Sound.penalty(); }
-    if (e.used) { const [x, y] = nodeApp(e.node); const gate = e.kind === 'gate'; FX.pow(x, y - 60, gate ? '강제 정차!' : '한 번 더!', gate ? '#E0533D' : '#E2337A', '#FFFDF7', -5); if (gate) Sound.clank(); else Sound.coin(); }
+    if (e.used) {
+      // 한 번 쓰는 함정이 걸렸을 때: 출입 통제 · 떡상(끌어온 손님) · 버스킹(한 번 더)
+      const [x, y] = nodeApp(e.node), stop = e.kind === 'gate' || e.kind === 'hype';
+      FX.pow(x, y - 60, e.kind === 'gate' ? '강제 정차!' : e.kind === 'hype' ? '떡상 손님!' : '한 번 더!', e.kind === 'gate' ? '#E0533D' : '#E2337A', '#FFFDF7', -5);
+      if (stop) Sound.clank(); else Sound.coin();
+    }
     if (el) { await tween(el, [{ opacity: 1 }, { opacity: 0, transform: 'scale(1.3)' }], { duration: 300, fill: 'forwards' }); el.remove(); }
   },
   async again(e) {
@@ -2194,8 +2227,9 @@ const HANDLERS = {
     const at = nodeApp(e.node);
     if (e.kind === 'start') return;
     FX.ring(at[0], at[1], '#FFFDF7');
-    const art = { festival: incidentArt('festival', 96), express: skillArt('direct', 96), maze: incidentArt('delay', 96) }[e.kind];
-    await drawCard({ tone: e.kind === 'maze' ? 'warn' : 'good', deck: '모서리 칸', title: `${e.node} · ${e.name}`, short: e.short, art, quick: !p.human });
+    const ic = cornerAt(M(), e.node)?.icon;
+    const art = ic ? tourArt(ic, 96) : { festival: incidentArt('festival', 96), express: skillArt('direct', 96), maze: incidentArt('delay', 96) }[e.kind];
+    await drawCard({ tone: e.kind === 'maze' ? 'warn' : 'good', deck: '모서리 칸', title: e.node === e.name ? e.name : `${e.node} · ${e.name}`, short: e.short, art, quick: !p.human });
     if (e.kind === 'maze') act(pieceEl(p.id), 'sad', 900);
   },
   async warp(e) {
@@ -2203,8 +2237,8 @@ const HANDLERS = {
     const el = pieceEl(p.id);
     if (e.by === 'direct' || e.by === 'express' || e.by === 'transfer') {
       // 직통 열차: 열차가 들어와 태우고, 같은 호선을 따라 달려 내려 준다
-      const { path, line } = linePath(e.from, e.to);
-      const pts = path.map(nodeXY), end = pts[pts.length - 1], lc = LINES[line]?.color || colorOf(p);
+      const { path, line, color } = linePath(e.from, e.to);
+      const pts = path.map(nodeXY), end = pts[pts.length - 1], lc = color || LINES[line]?.color || colorOf(p);
       const total = pts.slice(1).reduce((t, b, i) => t + Math.hypot(b[0] - pts[i][0], b[1] - pts[i][1]), 0);
       const speed = Math.max(quick(p.id) ? 1.3 : 0.85, total / 3200);
       Camera.follow(pts[0], 260);

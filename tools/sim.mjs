@@ -9,7 +9,7 @@ import { HEROES } from '../src/core/heroes.js';
 const N = Number(process.argv[2] || 500);
 const SIZE = Number(process.argv[3] || 4);
 const seed0 = Number(process.argv[4] || 1);
-const REGION = process.argv[5] === 'loop' ? 'loop' : null;
+const REGION = ['loop', 'korea', 'world'].includes(process.argv[5]) ? process.argv[5] : null;
 const ids = HEROES.map((h) => h.id);
 
 const stat = { plays: {}, bankrupt: 0, lastTrain: 0, monopoly: 0, monoHot: 0, monoLine: 0, warns: 0, hot: 0, warps: 0, hotBuys: 0, onRival: 0, rounds: 0, wins: {}, someOut: 0, outs: 0, buys: 0, ups: 0, takes: 0, tolls: 0, tollSum: 0, pass: 0, passSum: 0, maxToll: 0, endAssets: 0, endStations: 0, goals: 0, alive: 0 };
@@ -59,7 +59,7 @@ for (let k = 0; k < N; k++) {
   for (const p of m.players) if (!p.out) { stat.alive++; stat.endAssets += assets(m, p); stat.endStations += stationsOf(m, p).length; }
 }
 const pct = (a) => (100 * a / N).toFixed(1) + '%';
-console.log(`${N}판 · ${SIZE}명 · ${REGION ? '순환선' : '노선도'}`);
+console.log(`${N}판 · ${SIZE}명 · ${REGION || '노선도'}`);
 if (REGION) console.log(`월급 판당 ${((stat.salary || 0) / N).toFixed(1)}번 · 모서리 판당 ${((stat.corners || 0) / N).toFixed(1)}번`);
 console.log(`끝: 파산으로 ${pct(stat.bankrupt)} · 막차로 ${pct(stat.lastTrain)} · 독점으로 ${pct(stat.monopoly)}(명소 ${stat.monoHot} · 노선 ${stat.monoLine}) · 누군가 파산한 판 ${pct(stat.someOut)}(판당 ${(stat.outs / N).toFixed(2)}명) · 평균 ${(stat.rounds / N).toFixed(1)}바퀴`);
 // 캐릭터마다 나온 판 중 1등 한 비율(고르게 강하면 1/인원)

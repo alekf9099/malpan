@@ -27,7 +27,7 @@ import { INCIDENTS } from '../core/incidents.js';
 import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
 import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
-import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, isoSvg, ISO_BOX, liftOf } from './board-view.js';
+import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, buildingArt, preloadBuildings, liftOf } from './board-view.js';
 import { hotArt } from './hot-art.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
@@ -732,6 +732,7 @@ function enterGame() {
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   useBoard(isLoop(M()) ? M().region : 'map');
+  if (isLoop(M())) preloadBuildings();
   Camera.setFollowZoom(isLoop(M()) ? 0.68 : undefined, isLoop(M()));
   Camera.attach($('#board'), $('#cam'), canvasSize());
   $('#throw').onclick = () => onThrow();
@@ -2325,7 +2326,7 @@ async function estateFx(e, word, sound) {
   const xy = nodeXY(e.node), opt = { s: pieceSize(), z: depth(xy[1]) + 70, color: colorOf(p), quick: !p.human, onHit: () => { drawBoard(); pressTile(e.node, 1.3); } };
   // 순환선: 칸의 입체 건물이 그 자리에서 솟는다(판에 남을 건물과 같은 그림)
   const g = groundOf(e.node, e.type === 'upgrade' ? e.level : 1);
-  const iso = (lv) => g && { art: isoSvg(lv, colorOf(p)), size: [ISO_BOX.w * g[2], ISO_BOX.h * g[2]], anchor: [(-ISO_BOX.x / ISO_BOX.w) * 100, (-ISO_BOX.y / ISO_BOX.h) * 100], level: lv };
+  const iso = (lv) => { if (!g) return null; const a = buildingArt(lv, colorOf(p)); return { art: a.html, size: [a.w, a.h], anchor: a.anchor, level: lv }; };
   const spot = (lv) => (g ? [g[0], g[1] - liftOf(lv)] : xy);
   if (e.type === 'upgrade' && (e.level >= 2 || g)) await EFX.rise($('#layer'), spot(e.level), { ...opt, level: e.level, ...(iso(e.level) || {}) });
   else if (e.type === 'takeover') await EFX.plant($('#layer'), xy, { ...opt, from: e.from ? colorOf(playerById(M(), e.from)) : null });

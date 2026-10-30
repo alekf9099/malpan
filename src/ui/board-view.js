@@ -188,12 +188,20 @@ function loopRect(i) {
 }
 /** 칸 안 쓰는 자리(틈 4) */
 const tileBox = (i) => { const r = loopRect(i); return { ...r, x: r.x + 4, y: r.y + 4, w: r.w - 8, h: r.h - 8 }; };
-/** 칸에 서 있는 것(말 · 건물)의 바닥 — 평면 좌표. 머리띠 아래 몸통 가운데 */
+/**
+ * 칸에 서 있는 것(말 · 여행지 그림)의 바닥 — 평면 좌표. 이름띠(앞쪽 = 평면 아래 가장자리) 위 몸통 가운데.
+ * 눕힌 판에서 평면 아래 · 오른쪽 가장자리가 화면 앞이라, 이름띠를 앞에 두면 칸에 선 것이 이름을 가리지 않는다.
+ */
 const HB = 30;
 function standFlat(i) {
   const b = tileBox(i);
   if (!b.inner) return [b.x + b.w / 2, b.y + b.h / 2 + 4];
-  return b.w > b.h ? [b.x + b.w / 2 - 18, b.y + HB + (b.h - HB) * 0.62] : [b.x + b.w / 2, b.y + HB + (b.h - HB) * 0.5];
+  return b.w > b.h ? [b.x + b.w / 2 - 18, b.y + (b.h - HB) * 0.55] : [b.x + b.w / 2, b.y + (b.h - HB) * 0.52];
+}
+/** 산 칸 건물의 바닥(평면): 칸 뒤쪽(화면 위쪽)으로 물려 세운다 — 이름띠 · 말을 덜 가리게 */
+function buildFlat(i) {
+  const [x, y] = standFlat(i);
+  return [x - 8, y - 8];
 }
 /** 판마다 칸 자리(화면, 한 번만 센다) */
 const XY = {};
@@ -255,17 +263,19 @@ function loopTile(n, i, owner, level) {
   const hot = isHot(n), col = RING.colorOf(n) || '#8A8173';
   const pic = hot ? HOT_ART[n] : TOUR_ART[RING.icons?.[n]] || null;
   const name = RING.nameOf(n), wide = w > h;
+  // 이름띠는 앞쪽(평면 아래 가장자리), 값은 뒤쪽 위
+  const hy = y + h - HB;
   let tile = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${own ? tint(own, 0.55) : hot ? '#FFF4D6' : '#FFFDF7'}" stroke="${INK}" stroke-width="3.5"/>`
-    + clip(`<rect x="${x}" y="${y}" width="${w}" height="${HB}" fill="${col}"/><path d="M${x} ${y + HB} H${x + w}" stroke="${INK}" stroke-width="3"/>`)
-    + txt(cx, y + HB / 2 + 7, name, { size: Math.min(19, ((w - 10) / name.length) * 1.05), fill: '#FFFDF7' });
-  if (own) tile += `<rect x="${x + 4}" y="${y + HB + 3}" width="${w - 8}" height="${h - HB - 7}" rx="8" fill="none" stroke="${own}" stroke-width="5"/>`;
+    + clip(`<rect x="${x}" y="${hy}" width="${w}" height="${HB}" fill="${col}"/><path d="M${x} ${hy} H${x + w}" stroke="${INK}" stroke-width="3"/>`)
+    + txt(cx, hy + HB / 2 + 7, name, { size: Math.min(19, ((w - 10) / name.length) * 1.05), fill: '#FFFDF7' });
+  if (own) tile += `<rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - HB - 7}" rx="8" fill="none" stroke="${own}" stroke-width="5"/>`;
   else {
-    const px = wide ? x + w - 30 : cx, py = y + h - 13;
+    const px = wide ? x + w - 30 : cx, py = wide ? y + 26 : y + 22;
     tile += `<circle cx="${px - 22}" cy="${py - 5}" r="7" fill="#F2B33D" stroke="${INK}" stroke-width="2"/>` + txt(px + 6, py, stationPrice(n), { size: 17, fill: '#5A5248' });
   }
   // 세울 것: 산 칸은 단계 건물, 빈 칸은 여행지 · 명소 그림(없으면 지하철 입구)
   const shadow = `<ellipse cx="${gx}" cy="${gy}" rx="26" ry="8" fill="${INK}" opacity=".16"/>`;
-  const stand = own ? `<g transform="translate(${gx} ${gy}) scale(${ISO_K})">${isoBuilding(lv || 1, own)}</g>`
+  const stand = own ? buildingSvg(...isoPt(...buildFlat(i)), lv || 1, own)
     : pic ? `${shadow}<svg x="${gx - 30}" y="${gy - 56}" width="60" height="60" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
       : `<g transform="translate(${gx} ${gy}) scale(${ISO_K})">${isoBuilding(0)}</g>`;
   return { tile, bld: `<g class="lb" data-n="${n}">${stand}</g>`, y: gy };
@@ -302,16 +312,47 @@ export function isoBuilding(level, c = LINE2) {
     + ['-62', '-46', '-30'].map((y) => `<path d="M-10 ${y} V${+y + 6} L-3 ${+y + 9} V${+y + 3} Z" ${W}/>`).join('')
     + `<path d="M0 -122 l3 6 6.5 1 -4.7 4.5 1.1 6.4 -5.9 -3.1 -5.9 3.1 1.1 -6.4 -4.7 -4.5 6.5 -1 z" fill="#F2B33D" stroke="${INK}" stroke-width="1.8" stroke-linejoin="round"/>`;
 }
-/** isoBuilding 하나만 담은 svg(증축 연출이 판에 남을 건물과 똑같은 그림으로 솟게) */
+/** isoBuilding 하나만 담은 svg 의 틀(원점 = 바닥 가운데) */
 export const ISO_BOX = { x: -42, y: -126, w: 84, h: 148 };
 export const isoSvg = (level, c) => `<svg viewBox="${ISO_BOX.x} ${ISO_BOX.y} ${ISO_BOX.w} ${ISO_BOX.h}" aria-hidden="true">${isoBuilding(level, c)}</svg>`;
+
+// ── 산 칸 건물 그림: Kenney City Kit Commercial(CC0) 3D 건물을 판 시점으로 찍은 것(tools/render-buildings.html) ──
+// 단계마다(1 · 2 · 3) 주인 색(캐릭터 색) 한 장씩. 그림 틀 176×248, 바닥 가운데가 (50%, 86%)
+const SPRITE = { w: 176, h: 248, ax: 0.5, ay: 0.86 };
+/** 단계별 배율 — 칸보다 크지 않게(높이로 단계가 보인다) */
+const SPRITE_K = { 1: 0.5, 2: 0.56, 3: 0.6 };
+const kOf = (level) => SPRITE_K[Math.min(3, Math.max(1, level))];
+const SPRITE_COLORS = new Set(['2f6fd0', 'f08a2e', 'e0533d', '8e5bc8', 'e2588f', '4c9a3a', '17a2a8', 'e39a1e', '8a5a3b']);
+const spriteUrl = (level, color) => {
+  const hex = String(color).replace('#', '').toLowerCase();
+  return SPRITE_COLORS.has(hex) ? new URL(`../../assets/buildings/lv${Math.min(3, Math.max(1, level))}-${hex}.webp`, import.meta.url).href : null;
+};
+/** 판(화면 좌표)에 세울 건물: 그림이 있으면 그림, 없는 색이면 손그림 상자 */
+function buildingSvg(gx, gy, level, color) {
+  const src = spriteUrl(level, color);
+  if (!src) return `<g transform="translate(${gx} ${gy}) scale(${ISO_K})">${isoBuilding(level, color)}</g>`;
+  const w = SPRITE.w * kOf(level), h = SPRITE.h * kOf(level);
+  return `<ellipse cx="${gx}" cy="${gy + 2}" rx="${w * 0.3}" ry="${w * 0.1}" fill="${INK}" opacity=".16"/><image href="${src}" x="${(gx - w * SPRITE.ax).toFixed(1)}" y="${(gy - h * SPRITE.ay).toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"/>`;
+}
+/**
+ * 증축 연출용 건물(화면 px): { html, w, h, anchor:[%, %] } — 판에 남을 건물과 같은 그림·크기·바닥
+ */
+export function buildingArt(level, color) {
+  const src = spriteUrl(level, color);
+  if (!src) return { html: isoSvg(level, color), w: ISO_BOX.w * ISO_K, h: ISO_BOX.h * ISO_K, anchor: [(-ISO_BOX.x / ISO_BOX.w) * 100, (-ISO_BOX.y / ISO_BOX.h) * 100] };
+  return { html: `<img src="${src}" alt="" style="display:block;width:100%;height:100%">`, w: SPRITE.w * kOf(level), h: SPRITE.h * kOf(level), anchor: [SPRITE.ax * 100, SPRITE.ay * 100] };
+}
+/** 처음 살 때 그림이 늦게 뜨지 않게 미리 받아 둔다 */
+export function preloadBuildings() {
+  for (const hex of SPRITE_COLORS) for (const lv of [1, 2, 3]) { const im = new Image(); im.src = spriteUrl(lv, hex); }
+}
 
 /** 고리 칸 건물의 바닥(화면 좌표)과 크기. 노선도 판 · 모서리 칸이면 null */
 export function groundOf(n) {
   if (MODE !== 'loop') return null;
   const i = RING.tiles.indexOf(n);
   if (i < 0 || RING.corners[n]) return null;
-  return [...isoPt(...standFlat(i)), ISO_K];
+  return [...isoPt(...buildFlat(i)), ISO_K];
 }
 /** 칸이 솟은 높이 — 쿼터뷰 판은 칸이 솟지 않는다(건물이 단계를 보여 준다) */
 export const liftOf = () => 0;

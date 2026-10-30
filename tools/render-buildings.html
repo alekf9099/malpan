@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>건물 렌더러</title>
+<!--
+  Kenney City Kit Commercial(CC0) 건물을 판과 같은 시점(세로 눌림 0.58 = 고도 약 35.4°, 45° 회전)으로 찍어
+  주인 색마다 한 장씩 스프라이트(WebP)로 만든다. 개발용 도구 — 게임은 결과 그림만 쓴다(assets/buildings/).
+  tools/save-server.py 로 열고 ?save 를 붙이면 바로 저장한다. ?probe 면 모델 크기만 찍어 본다.
+  지붕(어두운 회색 칸)을 주인 색으로 칠한다 — 모두의 마블처럼 지붕 색이 주인.
+-->
+<style>
+  body { margin: 0; padding: 16px; background: #F4EBDD; font: 13px sans-serif; }
+  #out { display: flex; flex-wrap: wrap; gap: 10px; }
+  #out figure { margin: 0; text-align: center; }
+  #out img { background: repeating-conic-gradient(#ddd 0 25%, #fff 0 50%) 0 0 / 16px 16px; display: block; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="status">준비 중…</div>
+<pre id="log"></pre>
+<div id="out"></div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const q = new URLSearchParams(location.search);
+const SAVE = q.has('save'), PROBE = q.has('probe');
+// 단계 → 모델 (같은 화면 틀이라 높이가 그대로 단계를 보여 준다)
+const LEVELS = { 1: 'building-a', 2: 'building-i', 3: 'building-skyscraper-a' };
+const models = q.get('models') ? q.get('models').split(',') : Object.values(LEVELS);
+// 주인 색 = 캐릭터 색(heroes.js). none 은 칠하지 않은 원본
+const COLORS = q.get('colors') ? q.get('colors').split(',') : ['2F6FD0', 'F08A2E', 'E0533D', '8E5BC8', 'E2588F', '4C9A3A', '17A2A8', 'E39A1E', '8A5A3B'];
+const FW = 176, FH = 248;          // 한 장 크기(px)
+const INK = '#22201D', OUTLINE = 5;
+const ELEV = Math.asin(0.58), AZIM = Math.PI / 4;
+const VIEW_W = 2.6;                // 화면 틀 가로(월드 단위) — 모든 단계 같은 배율
+const FOOT = 0.86;                 // 바닥 가운데가 놓이는 높이(위에서 아래로 비율)
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+renderer.setSize(FW * 2, FH * 2);
+renderer.setClearColor(0x000000, 0);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene();
+scene.add(new THREE.HemisphereLight(0xfff6e8, 0x8a7a68, 1.7));
+const sun = new THREE.DirectionalLight(0xffffff, 1.7);
+sun.position.set(-2, 5, 3);
+scene.add(sun);
+const VIEW_H = VIEW_W * FH / FW;
+const cam = new THREE.OrthographicCamera(-VIEW_W / 2, VIEW_W / 2, VIEW_H / 2, -VIEW_H / 2, 0.1, 60);
+const D = 20;
+cam.position.set(D * Math.cos(ELEV) * Math.sin(AZIM), D * Math.sin(ELEV), D * Math.cos(ELEV) * Math.cos(AZIM));
+cam.lookAt(0, 0, 0);
+const shift = (FOOT - 0.5) * VIEW_H;
+cam.top += shift; cam.bottom += shift;
+cam.updateProjectionMatrix();
+
+const loader = new GLTFLoader();
+const load = (name) => new Promise((ok, no) => loader.load(`../assets/models/city/${name}.glb`, ok, undefined, no));
+
+/** 텍스처에서 어두운 무채색(지붕)만 color 로 */
+function roofTinted(tex, hex) {
+  const img = tex.image, c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  const g = c.getContext('2d');
+  g.drawImage(img, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height);
+  const to = new THREE.Color('#' + hex), col = new THREE.Color(), hs = {}, th = to.getHSL({});
+  for (let i = 0; i < d.data.length; i += 4) {
+    col.setRGB(d.data[i] / 255, d.data[i + 1] / 255, d.data[i + 2] / 255);
+    col.getHSL(hs);
+    if (hs.s > 0.22 || hs.l > 0.42 || hs.l < 0.12) continue;
+    col.setHSL(th.h, Math.min(1, th.s * 0.95), Math.min(0.62, th.l * (0.75 + hs.l)));
+    d.data[i] = col.r * 255; d.data[i + 1] = col.g * 255; d.data[i + 2] = col.b * 255;
+  }
+  g.putImageData(d, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.flipY = tex.flipY; t.colorSpace = tex.colorSpace; t.magFilter = tex.magFilter; t.minFilter = tex.minFilter;
+  return t;
+}
+
+function outline(src) {
+  const c = document.createElement('canvas');
+  c.width = FW; c.height = FH;
+  const g = c.getContext('2d');
+  const ink = document.createElement('canvas');
+  ink.width = FW; ink.height = FH;
+  const ig = ink.getContext('2d');
+  ig.drawImage(src, 0, 0, FW, FH);
+  ig.globalCompositeOperation = 'source-in';
+  ig.fillStyle = INK;
+  ig.fillRect(0, 0, FW, FH);
+  for (let a = 0; a < 16; a++) { const t = (a / 16) * Math.PI * 2; g.drawImage(ink, Math.cos(t) * OUTLINE, Math.sin(t) * OUTLINE); }
+  g.drawImage(src, 0, 0, FW, FH);
+  return c;
+}
+
+async function save(name, canvas) {
+  const blob = await new Promise((ok) => canvas.toBlob(ok, 'image/webp', 0.9));
+  const r = await fetch(`/save/buildings/${name}`, { method: 'POST', body: blob });
+  if (!r.ok) throw new Error('save failed ' + name);
+}
+
+const out = document.getElementById('out'), log = document.getElementById('log');
+const lvOf = (m) => Object.keys(LEVELS).find((k) => LEVELS[k] === m);
+for (const name of models) {
+  const gltf = await load(name);
+  const box = new THREE.Box3().setFromObject(gltf.scene), size = box.getSize(new THREE.Vector3());
+  log.textContent += `${name}: ${size.x.toFixed(2)} × ${size.y.toFixed(2)} × ${size.z.toFixed(2)}\n`;
+  if (PROBE) continue;
+  for (const hex of COLORS) {
+    document.getElementById('status').textContent = `${name} · ${hex}`;
+    const root = gltf.scene.clone(true);
+    // 바닥 가운데를 원점에
+    const b = new THREE.Box3().setFromObject(root), ctr = b.getCenter(new THREE.Vector3());
+    root.position.set(-ctr.x, -b.min.y, -ctr.z);
+    if (hex !== 'none') root.traverse((o) => { if (o.isMesh && o.material.map) { o.material = o.material.clone(); o.material.map = roofTinted(o.material.map, hex); } });
+    scene.add(root);
+    renderer.render(scene, cam);
+    const sheet = outline(renderer.domElement);
+    scene.remove(root);
+    const fig = document.createElement('figure');
+    const img = new Image(); img.src = sheet.toDataURL(); img.width = FW;
+    fig.append(img, `${name} ${hex}`);
+    out.append(fig);
+    const lv = lvOf(name);
+    if (SAVE && lv) await save(`lv${lv}-${hex.toLowerCase()}.webp`, sheet);
+  }
+}
+document.getElementById('status').textContent = '끝';
+window.renderDone = true;
+</script>
+</body>
+</html>

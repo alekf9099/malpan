@@ -732,7 +732,7 @@ function enterGame() {
     <div class="fx-layer" id="fx"></div>`;
   FX.useLayer($('#fx'));
   useBoard(isLoop(M()) ? M().region : 'map');
-  Camera.setFollowZoom(isLoop(M()) ? 0.6 : undefined, isLoop(M()));
+  Camera.setFollowZoom(isLoop(M()) ? 0.68 : undefined, isLoop(M()));
   Camera.attach($('#board'), $('#cam'), canvasSize());
   $('#throw').onclick = () => onThrow();
   $('#skillBtn').onclick = onSkill;
@@ -1364,9 +1364,12 @@ function moneyDelta(el, d) {
 
 /** 순환선 칸이 눌렸다 튀어 오른다(말이 밟을 때 · 땅이 바뀔 때). 노선도에는 칸이 없어 그냥 넘어간다 */
 function pressTile(n, k = 1) {
-  const els = $('#mat')?.querySelectorAll(`.lt[data-n="${n}"], .lb[data-n="${n}"]`);
-  if (!els?.length) return;
-  for (const g of els) g.animate([{ transform: 'translateY(0)' }, { transform: `translateY(${7 * k}px)`, offset: 0.3 }, { transform: `translateY(${-3 * k}px)`, offset: 0.65 }, { transform: 'translateY(0)' }], { duration: 260 + 60 * k, easing: 'ease-out' });
+  const mat = $('#mat');
+  if (!mat) return;
+  // 칸(.lt)은 눕힌 판 좌표라 (d, d) 로 밀어야 화면에서 곧장 아래로 눌린다 · 서 있는 것(.lb)은 화면 좌표
+  const press = (el, dx, dy) => el.animate([{ transform: 'translate(0, 0)' }, { transform: `translate(${dx}px, ${dy}px)`, offset: 0.3 }, { transform: `translate(${-dx * 0.4}px, ${-dy * 0.4}px)`, offset: 0.65 }, { transform: 'translate(0, 0)' }], { duration: 260 + 60 * k, easing: 'ease-out' });
+  mat.querySelectorAll(`.lt[data-n="${n}"]`).forEach((el) => press(el, 6 * k, 6 * k));
+  mat.querySelectorAll(`.lb[data-n="${n}"]`).forEach((el) => press(el, 0, 5 * k));
 }
 
 function drawControls() {

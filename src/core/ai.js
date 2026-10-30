@@ -68,7 +68,8 @@ function pathValue(m, p, path, rng) {
     else v += (dist(p.node, p.goal) - dist(end, p.goal)) * 12;
   }
   const corner = cornerAt(m, end);
-  if (corner) v += CORNER_VALUE[corner.kind] || 0;
+  // 축제 모서리는 적립금 단지까지, 미로는 이용료까지
+  if (corner) v += (CORNER_VALUE[corner.kind] || 0) + (corner.kind === 'festival' ? m.pot || 0 : 0) - (corner.kind === 'maze' ? 50 : 0);
   for (const [, f] of passFares(m, p, path)) v -= f.amount;
   const owner = m.owned[end];
   if (owner && owner !== p.id) {

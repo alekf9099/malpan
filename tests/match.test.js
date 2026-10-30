@@ -649,3 +649,19 @@ test('고리 판의 떡상: 지나가는 상대 하나를 끌어와 통행료를
   assert.ok(rival.money < before);
   assert.ok(!m.incidents.some((i) => i.node === '신당'));
 });
+
+test('적립금: 고리 판에서 은행으로 가는 돈(미로 이용료 등)은 단지에 쌓이고, 축제 모서리에 서면 통째로 가져간다', () => {
+  const m = loopGame(2, ['worker', 'driver']);
+  const p = current(m);
+  at(m, '구로디지털단지', '신림', 1);
+  move(m, ['신도림']);
+  assert.equal(m.pot, 50);
+  assert.equal(p.money, START_MONEY - 50);
+  const q = m.players[1];
+  m.turn = 1; m.phase = 'move'; q.node = '뚝섬'; q.prev = '한양대';
+  m.pending = { roll: { value: 1 }, steps: 1 };
+  const before = q.money;
+  move(m, ['성수']);
+  assert.equal(m.pot, 0);
+  assert.equal(q.money, before + 50 + (m.choice ? 0 : 50));
+});

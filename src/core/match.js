@@ -54,6 +54,8 @@ export const SHORTCUT_PAY = 60;
 /** 고리 판의 떡상: 목적지 대신 지나가는 상대 하나를 끌어온다(통행료 배수는 그대로) */
 export const HYPE_LOOP_X = 1;
 export const EXPRESS_REACH = 12;
+/** 미로 · 휴게소 · 환승 라운지 모서리에서 한 턴 쉬며 내는 이용료(적립금으로) */
+export const REST_FEE = 50;
 export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /** 찬스 역: 노선도 곳곳의 한 호선 역. 살 수 없고, 서면 찬스 카드를 뽑는다 */
@@ -93,7 +95,8 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false, regio
     clock: CLOCK.start, end: CLOCK.end,
     incidents: [],      // { node, kind, until } — 인파(스킬·명소역)
     phase: 'roll',      // roll → (pick 주사위 고르기) → move → (choose) → decide → (다음 사람) roll … → over
-    pending: null, offer: null, choice: null, ranking: null, reason: null, winner: null
+    pending: null, offer: null, choice: null, ranking: null, reason: null, winner: null,
+    pot: 0              // 적립금(고리 판): 은행으로 가는 돈이 쌓이고, 축제 모서리에 선 사람이 가져간다
   };
   for (const p of m.players) p.goal = pickGoal(m, p);
   return m;
@@ -379,13 +382,15 @@ function cornerPower(m, p, c) {
   const n = p.node;
   const events = [{ type: 'corner', player: p.id, node: n, kind: c.kind, name: c.name, short: c.short }];
   if (c.kind === 'festival') {
+    // 적립금 단지를 통째로
+    if (m.pot > 0) { p.money += m.pot; events.push({ type: 'cash', player: p.id, node: n, amount: m.pot, why: 'pot' }); m.pot = 0; }
     const mine = stationsOf(m, p).filter((x) => !fires(m).has(x));
     if (mine.length) m.choice = { kind: 'festival', node: n, options: mine };
     else { p.money += 50; events.push({ type: 'cash', player: p.id, node: n, amount: 50, why: 'corner' }); }
   } else if (c.kind === 'express') {
     const options = reachAhead(m, n, EXPRESS_REACH);
     if (options.length) m.choice = { kind: 'warp', node: n, options };
-  } else if (c.kind === 'maze') p.rest = 1;
+  } else if (c.kind === 'maze') { p.rest = 1; events.push(...pay(m, p, REST_FEE, null, { node: n, why: 'rest' })); }
   return events;
 }
 
@@ -610,7 +615,10 @@ function pay(m, p, amount, to, info = {}) {
   p.money -= paid;
   const recv = to ? playerById(m, to) : null;
   if (recv) recv.money += paid;
-  events.push({ type: 'pay', player: p.id, to: to || null, amount: paid, ...info });
+  // 고리 판: 은행으로 가는 돈(벌금 · 수리비 · 휴게소 이용료)은 판 가운데 적립금 단지로
+  const pot = !to && isLoop(m) && paid > 0;
+  if (pot) m.pot += paid;
+  events.push({ type: 'pay', player: p.id, to: to || null, amount: paid, ...info, ...(pot ? { pot: m.pot } : {}) });
   if (paid < amount) {
     const rescue = perkOf(m, p).rescue;
     if (rescue && !p.rescued) {

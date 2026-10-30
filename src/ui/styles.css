@@ -1922,3 +1922,7 @@ body.land .demo-sheet .dm-steps li { padding: 4px 10px; }
 @media (prefers-reduced-motion: reduce) {
   .loop-mat .amb-tree, .loop-mat .amb-flow, .efx-flag.wave .cloth { animation: none; }
 }
+
+/* ══ v3.21 판 가운데 무대: 적립금 금액 ══ */
+.pot-tag { position: absolute; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; padding: 3px 12px 4px; border: 3px solid var(--ink); border-radius: 14px; background: #FFF3D1; box-shadow: 0 4px 0 var(--ink); font-family: var(--display); font-size: 22px; line-height: 1; color: #8A5A2C; pointer-events: none; white-space: nowrap; }
+.pot-tag small { font-family: var(--body); font-size: 11px; font-weight: 900; color: var(--ink-2); margin-bottom: 2px; }

@@ -27,7 +27,7 @@ import { INCIDENTS } from '../core/incidents.js';
 import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
 import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
-import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, buildingArt, preloadBuildings, liftOf } from './board-view.js';
+import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, buildingArt, preloadBuildings, liftOf, centerSpots } from './board-view.js';
 import { hotArt } from './hot-art.js';
 import * as Camera from './camera.js';
 import { sleep, tween, hop, drop, knockOut, squish, shake, flash, fly } from './anim.js';
@@ -530,6 +530,7 @@ const LOOP_GUIDE = [
   ['노선 투자', '주사위 전, 이어진 내 칸(2칸 이상)은 어디서든 증축'],
   ['스킬', '주사위를 던질 때마다 1칸 충전 · 다 차면 주사위 전에 사용'],
   ['찬스 · 명소', '? 칸은 찬스 카드 · DDP·잠실·홍대는 명소 칸(도착 효과)'],
+  ['적립금', '벌금 · 수리비 · 미로 이용료(50)가 판 가운데 단지에 쌓이고, 축제 칸에 서면 통째로 가져간다'],
   ['독점 승리', '명소 3칸 전부 또는 5칸 연속 보유 시 즉시 승리'],
   ['승리 조건', '최후의 1인, 독점, 또는 막차 시 자산 1위']
 ];
@@ -546,8 +547,9 @@ function ringGuide(r) {
     ['모서리 칸', `${corner('festival')}(내 칸 통행료 2배) · ${corner('express')}(앞 12칸 중 원하는 칸) · ${corner('maze')}(한 턴 쉬기)`],
     LOOP_GUIDE[5], LOOP_GUIDE[6], LOOP_GUIDE[7], LOOP_GUIDE[8],
     [r.chanceName, `? 칸은 ${r.chanceName} — 찬스 카드를 뽑는다`],
+    ['적립금', `벌금 · 수리비 · ${corner('maze')} 이용료(50)가 판 가운데 단지에 쌓이고, ${corner('festival')} 칸에 서면 통째로 가져간다`],
     ['독점 승리', `모서리·${r.chanceName} 칸 사이 ${r.lineWin}칸 구간을 통째로 가지면 즉시 승리`],
-    LOOP_GUIDE[11]
+    LOOP_GUIDE[12]
   ];
 }
 
@@ -758,7 +760,7 @@ function intro() {
     <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
-    <p>${isLoop(m) ? `${ringIn(m).intro}<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
+    <p>${isLoop(m) ? `${ringIn(m).intro} · 가운데 <b>적립금 단지</b>는 축제 칸에 서면 통째로<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -1322,7 +1324,31 @@ function drawHud() {
     G.hudMoney[p.id] = p.money;
   }
   drawClock();
+  drawPot();
 }
+
+/** 판 가운데 적립금 단지 위 금액(고리 판). 바뀌면 톡 튄다 */
+function drawPot() {
+  const m = M(), cs = centerSpots(), layer = $('#layer');
+  if (!m || !cs || !layer) return;
+  let tag = layer.querySelector('.pot-tag');
+  if (!tag) {
+    tag = document.createElement('div');
+    tag.className = 'pot-tag';
+    tag.style.left = cs.pot[0] + 'px'; tag.style.top = cs.pot[1] - 92 + 'px';
+    tag.style.zIndex = depth(cs.pot[1]) + 30;
+    layer.appendChild(tag);
+  }
+  const v = m.pot || 0;
+  if (tag.dataset.v !== String(v)) {
+    const was = tag.dataset.v != null;
+    tag.dataset.v = v;
+    tag.innerHTML = `<small>적립금</small>${v.toLocaleString()}`;
+    if (was) tween(tag, [{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: 'translate(-50%,-50%) scale(1.35)' }, { transform: 'translate(-50%,-50%) scale(1)' }], { duration: 360, easing: 'cubic-bezier(.3,.7,.3,1.4)' });
+  }
+}
+/** 판 가운데 무대의 한 자리를 앱 좌표로(카메라 반영) */
+const centerApp = (k) => { const cs = centerSpots(); return cs ? toApp(Camera.toView(cs[k])) : null; };
 
 /** 플레이어 판의 스킬 충전 막대 — 다 차면 스킬 아이콘 */
 function hudCharge(p) {
@@ -1498,7 +1524,7 @@ const CARD_DECK = { good: '찬스 카드', bad: '찬스 카드', warn: '역 사�
  * 모두의 마블 찬스 카드처럼: 카드 더미에서 날아와 뒤집힌다. to 를 주면 다 읽은 뒤 그 역으로 날아가 꽂힌다.
  * quick 이면(AI 차례) 짧게. 화면을 누르면 바로 넘어간다.
  */
-async function drawCard({ tone, deck, title, short, art, place = null, to = null, quick = false }) {
+async function drawCard({ tone, deck, title, short, art, place = null, to = null, quick = false, from = null }) {
   const stage = document.createElement('div');
   stage.className = `card-stage tone-${tone}`;
   stage.innerHTML = `
@@ -1522,9 +1548,11 @@ async function drawCard({ tone, deck, title, short, art, place = null, to = null
   const tapped = new Promise((done) => { skip = done; });
   stage.onclick = () => skip();
   const W = app.clientWidth, H = app.clientHeight;
+  // 카드 더미(판 가운데)가 보이면 거기서, 아니면 화면 오른쪽 위에서 날아온다
+  const [sx, sy] = from ? [from[0] - W / 2, from[1] - H / 2] : [W / 2 - 30, -H / 2 + 50];
   Sound.whoosh();
   await tween(card, [
-    { transform: `translate(${W / 2 - 30}px, ${-H / 2 + 50}px) scale(.18) rotate(28deg)`, opacity: 0 },
+    { transform: `translate(${sx}px, ${sy}px) scale(.18) rotate(28deg)`, opacity: 0 },
     { transform: 'translate(0, 12px) scale(1.06) rotate(-6deg)', opacity: 1, offset: 0.75 },
     { transform: 'translate(0, 0) scale(1) rotate(0deg)', opacity: 1 }
   ], { duration: quick ? 380 : 560, easing: 'cubic-bezier(.25,.8,.3,1)', fill: 'forwards' });
@@ -1991,6 +2019,8 @@ const HANDLERS = {
   async roll(e) {
     const p = playerById(M(), e.player);
     if (p.human) {
+      const cs = centerSpots();
+      if (cs) { Camera.follow(cs.tray, 260); await sleep(280); }
       Sound.toss();
       if (Roller3D.ready()) {
         const board = $('#board');
@@ -2040,13 +2070,13 @@ const HANDLERS = {
       await SFX.transfuse($('#layer'), a, b, { s: pieceSize(), z: Math.max(depth(a[1]), depth(b[1])) + 60, n: e.amount > 60 ? 7 : 5 });
     }
     const at = nodeApp(node);
-    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : `−${e.amount}`;
+    const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : e.why === 'rest' ? `이용료 −${e.amount}` : e.why === 'repair' ? `수리비 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
     if (e.why === 'toll') { pressTile(node, 1.2); FX.ring(at[0], at[1], to ? colorOf(to) : '#E0533D'); Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
     else Sound.coin();
     FX.pow(at[0], at[1] - (e.why === 'pass' ? 50 : 70), label, to ? colorOf(to) : '#6E6A5E', '#FFFDF7', e.why === 'pass' ? 4 : -6);
     if (e.why === 'toll') shake($(`#players [data-player="${p.id}"]`), 6, 300);
-    await moneyFly(panelSpot(p.id), to ? panelSpot(to.id) : [app.clientWidth / 2, -40], e.amount);
+    await moneyFly(panelSpot(p.id), to ? panelSpot(to.id) : e.pot != null ? centerApp('pot') || [app.clientWidth / 2, -40] : [app.clientWidth / 2, -40], e.amount);
     if (to) { Sound.toll(e.amount > 200); bump(to.id); }
     drawHud();
     await sleep(e.why === 'pass' ? 80 : 250);
@@ -2097,11 +2127,22 @@ const HANDLERS = {
   async offer() {},
   async chance(e) {
     const p = playerById(M(), e.player);
-    await drawCard({ tone: e.good ? 'good' : 'bad', deck: '찬스 카드', title: e.name, short: e.short, art: character(p.hero, 96, e.good ? 'cheer' : 'sad'), quick: !p.human });
+    await drawCard({ tone: e.good ? 'good' : 'bad', deck: '찬스 카드', title: e.name, short: e.short, art: character(p.hero, 96, e.good ? 'cheer' : 'sad'), quick: !p.human, from: centerApp('deck') });
   },
   async cash(e) {
     const p = playerById(M(), e.player);
     const at = e.node ? nodeApp(e.node) : panelSpot(p.id);
+    if (e.why === 'pot') {
+      const from = centerApp('pot') || at;
+      Sound.big(); buzz(30);
+      FX.confetti(from[0], from[1] - 40, 22);
+      FX.pow(at[0], at[1] - 70, `적립금 +${e.amount.toLocaleString()}`, '#C9822E', '#FFFDF7', -5);
+      drawPot();
+      await moneyFly(from, panelSpot(p.id), Math.max(e.amount, 200));
+      bump(p.id); drawHud();
+      await sleep(200);
+      return;
+    }
     if (e.why === 'salary') {
       Sound.home();
       FX.confetti(at[0], at[1] - 30, p.human ? 24 : 10);

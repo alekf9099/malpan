@@ -203,6 +203,43 @@ function buildFlat(i) {
   const [x, y] = standFlat(i);
   return [x - 8, y - 8];
 }
+// ── 판 가운데 무대 ─────────────────────────────────────────
+// 화면 왼쪽 = 평면 (-1, +1) 방향, 화면 위 = (-1, -1) 방향. 가운데 마당 한 변은 평면 644
+const MID = (LM + LC + LM + LS - LC) / 2, TRAY = 200, SIDE_K = 180;
+/** 가운데 무대 자리(화면): 주사위 받침 · 카드 더미 · 적립금 단지 — 연출이 쓴다(고리 판일 때만) */
+export function centerSpots() {
+  if (MODE !== 'loop') return null;
+  return { tray: isoPt(MID, MID), deck: isoPt(MID - SIDE_K, MID + SIDE_K), pot: isoPt(MID + SIDE_K, MID - SIDE_K) };
+}
+/** 주사위 받침(평면에 칠한다): 나무 테 + 초록 펠트 + 점선 */
+function traySvg() {
+  const x = MID - TRAY / 2, r = 34;
+  return `<rect x="${x + 6}" y="${x + 6}" width="${TRAY}" height="${TRAY}" rx="${r}" fill="${INK}" opacity=".25"/>`
+    + `<rect x="${x}" y="${x}" width="${TRAY}" height="${TRAY}" rx="${r}" fill="#8A5A2C" stroke="${INK}" stroke-width="5"/>`
+    + `<rect x="${x + 16}" y="${x + 16}" width="${TRAY - 32}" height="${TRAY - 32}" rx="${r - 12}" fill="#2F7A4F" stroke="${INK}" stroke-width="4"/>`
+    + `<rect x="${x + 28}" y="${x + 28}" width="${TRAY - 56}" height="${TRAY - 56}" rx="${r - 18}" fill="none" stroke="#FFFFFF" stroke-opacity=".35" stroke-width="3" stroke-dasharray="10 9"/>`
+    + `<path d="M${x + 8} ${x + 12} H${x + TRAY - 8}" stroke="#C99A62" stroke-width="3" stroke-linecap="round" opacity=".8"/>`;
+}
+/** 찬스 카드 더미(평면에 칠한다): 겹친 카드 넷 + 맨 위 물음표 */
+function deckSvg() {
+  const [cx, cy] = [MID - SIDE_K, MID + SIDE_K], w = 74, h = 100;
+  const card = (dx, dy, top) => `<rect x="${cx - w / 2 + dx}" y="${cy - h / 2 + dy}" width="${w}" height="${h}" rx="10" fill="${top ? '#F7C94A' : '#E9B53A'}" stroke="${INK}" stroke-width="3.5"/>`;
+  return [6, 4, 2].map((k) => card(k * 3, k * 3, false)).join('') + card(0, 0, true)
+    + `<rect x="${cx - w / 2 + 8}" y="${cy - h / 2 + 8}" width="${w - 16}" height="${h - 16}" rx="6" fill="none" stroke="#FFFDF7" stroke-width="2.5" stroke-dasharray="6 5"/>`
+    + txt(cx, cy + 20, '?', { size: 56, font: DISPLAY, weight: 400, fill: '#E0533D' });
+}
+/** 적립금 단지(화면에 세운다): 동전이 쌓인 항아리 — 금액은 화면이 따로 띄운다 */
+function potSvg() {
+  const [x, y] = isoPt(MID + SIDE_K, MID - SIDE_K);
+  const coin = (dx, dy) => `<ellipse cx="${x + dx}" cy="${y + dy}" rx="11" ry="6" fill="#F2B33D" stroke="${INK}" stroke-width="2.4"/>`;
+  return `<g><ellipse cx="${x}" cy="${y + 4}" rx="44" ry="13" fill="${INK}" opacity=".18"/>`
+    + `<path d="M${x - 34} ${y - 46} Q${x - 46} ${y - 6} ${x - 22} ${y + 4} H${x + 22} Q${x + 46} ${y - 6} ${x + 34} ${y - 46} Z" fill="#C9822E" stroke="${INK}" stroke-width="3.5" stroke-linejoin="round"/>`
+    + `<path d="M${x - 30} ${y - 26} Q${x} ${y - 16} ${x + 30} ${y - 26}" fill="none" stroke="#8A5A2C" stroke-width="5"/>`
+    + `<ellipse cx="${x}" cy="${y - 48}" rx="38" ry="12" fill="#A8692A" stroke="${INK}" stroke-width="3.5"/>`
+    + coin(-14, -52) + coin(10, -54) + coin(-2, -60) + coin(14, -62)
+    + `<path d="M${x - 24} ${y - 38} Q${x - 30} ${y - 18} ${x - 18} ${y - 6}" fill="none" stroke="#FFFFFF" stroke-opacity=".4" stroke-width="4" stroke-linecap="round"/></g>`;
+}
+
 /** 판마다 칸 자리(화면, 한 번만 센다) */
 const XY = {};
 const ringXY = () => (XY[RING.id] ||= Object.fromEntries(RING.tiles.map((n, i) => [n, isoPt(...standFlat(i))])));
@@ -443,9 +480,10 @@ function loopSvg(state = {}) {
       <g clip-path="url(#parkClip)"><g transform="rotate(-45 ${cx} ${cx})">${sc.art}${amb.back}</g></g>
       <g>${rails}</g>
       ${amb.mid}
+      ${traySvg()}${deckSvg()}
       <g>${tiles}</g><g>${chain}</g>
     </g>
-    ${logoSvg(...isoPt(cx, cx), sc)}
+    ${logoSvg(...isoPt(cx, cx), sc)}${potSvg()}
     <g>${blds}</g>
   </svg>`;
 }
@@ -528,7 +566,7 @@ const SCENES = {
       fill: '#CFE8B5',
       art: `<path d="${river}" fill="none" stroke="${INK}" stroke-width="66" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#9FD6F0" stroke-width="58" stroke-linecap="round"/><path d="${river}" fill="none" stroke="#C4E8F8" stroke-width="22" stroke-linecap="round"/>`
         + bridge(c - 150, c + 12, 6) + bridge(c + 190, c + 18, -4),
-      river, logo: [0, -70], sub: '2호선 순환선', subColor: '#2FA84F'
+      river, logo: [0, -122], sub: '2호선 순환선', subColor: '#2FA84F'
     };
   },
   korea(I0, I1) {
@@ -539,7 +577,7 @@ const SCENES = {
     return {
       fill: '#9FD6F0',
       art: halo([land, jeju]) + [land, jeju].map((d) => `<path d="${d}" fill="${INK}" opacity=".18" transform="translate(5 6)"/><path d="${d}" fill="#C9E5B0" stroke="${INK}" stroke-width="5" stroke-linejoin="round"/>`).join(''),
-      river: `M${I0 - 60} ${I1 - 40} Q${c} ${I1 + 10} ${I1 + 60} ${I1 - 70}`, logo: [210, -40], sub: '한반도 KTX 일주', subColor: '#2F6FD0'
+      river: `M${I0 - 60} ${I1 - 40} Q${c} ${I1 + 10} ${I1 + 60} ${I1 - 70}`, logo: [0, -122], sub: '한반도 KTX 일주', subColor: '#2F6FD0'
     };
   },
   world(I0, I1) {
@@ -549,7 +587,7 @@ const SCENES = {
     return {
       fill: '#9FD6F0',
       art: halo(lands) + lands.map((d) => `<path d="${d}" fill="${INK}" opacity=".16" transform="translate(4 5)"/>`).join('') + lands.map((d) => `<path d="${d}" fill="#F1DFAE" stroke="${INK}" stroke-width="4" stroke-linejoin="round"/>`).join(''),
-      river: `M${I0 - 60} ${c + 260} Q${c} ${c + 300} ${I1 + 60} ${c + 250}`, logo: [0, -150], sub: '세계 일주 항공로', subColor: '#2F6BD8'
+      river: `M${I0 - 60} ${c + 260} Q${c} ${c + 300} ${I1 + 60} ${c + 250}`, logo: [0, -122], sub: '세계 일주 항공로', subColor: '#2F6BD8'
     };
   }
 };

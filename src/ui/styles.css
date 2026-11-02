@@ -1961,3 +1961,17 @@ body.land .demo-sheet .dm-steps li { padding: 4px 10px; }
 @keyframes lmPin { from { translate: 0 0; } to { translate: 0 -10px; } }
 @keyframes lmDash { to { stroke-dashoffset: -28; } }
 @media (prefers-reduced-motion: reduce) { .land-mark .lm-ring, .land-mark .lm-pin, .land-link path:last-child { animation: none; } }
+
+/* ══ v3.24 전체 랭킹(클라우드) ══ */
+.rank-tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 4px; padding: 3px; border: 2.5px solid var(--ink); border-radius: 14px; background: var(--paper-2); flex: none; }
+.rank-tabs button { flex: 1; appearance: none; border: 0; border-radius: 10px; padding: 6px 8px; background: transparent; font: inherit; font-size: 13px; font-weight: 900; color: var(--ink-2); cursor: pointer; }
+.rank-tabs button.on { background: var(--white); color: var(--ink); box-shadow: 0 0 0 2px var(--ink); }
+.rank-pane, .rank-rows { display: flex; flex-direction: column; gap: 6px; }
+.rank-pane[hidden] { display: none; }
+.rank-sec { display: flex; align-items: center; gap: 8px; margin: 2px 2px 0; }
+.rank-sec span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 800; color: var(--ink-2); }
+.rank-sec .btn[hidden] { display: none; }
+.rank-row.me { background: #FFF3D1; box-shadow: inset 0 0 0 2px var(--yellow); }
+.rank-row .what b em { margin-left: 4px; padding: 0 6px; border-radius: 8px; background: var(--ink); color: var(--yellow); font-style: normal; font-size: 11px; }
+.rank-row .what span { display: flex; align-items: center; gap: 4px; }
+.rank-row .pts small { margin-left: 2px; font-size: 10px; font-weight: 900; color: var(--ink-3); }

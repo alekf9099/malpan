@@ -1,0 +1,25 @@
+rules_version = '2';
+// 역전 Firestore 보안 규칙 — Firebase 콘솔 → Firestore Database → 규칙 에 그대로 붙여 넣고 [게시].
+//   users/{uid}    내 저장(기록 · 출석 · 설정). 로그인한 본인만 읽고 쓴다
+//   ranking/{uid}  전체 랭킹 한 줄. 누구나 읽고, 본인 줄만 정해진 모양으로 쓴다
+// 점수는 기기에서 계산해 올리므로 마음먹고 고치면 막을 수 없다 — 터무니없는 값만 걸러 낸다.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /ranking/{uid} {
+      allow read: if true;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'hero', 'rp', 'total', 'plays', 'wins', 'updated'])
+        && request.resource.data.name is string && request.resource.data.name.size() > 0 && request.resource.data.name.size() <= 10
+        && request.resource.data.hero is string && request.resource.data.hero.size() <= 24
+        && request.resource.data.rp is int && request.resource.data.rp >= 0 && request.resource.data.rp <= 100000
+        && request.resource.data.total is int && request.resource.data.total >= 0
+        && request.resource.data.plays is int && request.resource.data.plays >= 0
+        && request.resource.data.wins is int && request.resource.data.wins >= 0 && request.resource.data.wins <= request.resource.data.plays
+        && request.resource.data.updated == request.time;
+    }
+  }
+}

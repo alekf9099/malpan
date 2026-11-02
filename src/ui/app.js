@@ -24,7 +24,7 @@ import { LINES, STATION_LINES, ALL_EDGES, dist, lineOfEdge } from '../core/board
 import { BOARDS } from '../core/boards/index.js';
 import { links, chainOf, LEVEL_NAME, LEVEL_MULT, MAX_LEVEL, stationPrice, baseToll, HOTSPOTS } from '../core/estate.js';
 import { INCIDENTS } from '../core/incidents.js';
-import { matchPoints, rpDelta, RP_TABLE } from '../core/ranking.js';
+import { matchPoints, rpDelta, RP_TABLE, tierOf } from '../core/ranking.js';
 import { tierBadge } from './tier-art.js';
 import { character, act, face, coin, ownerFlag } from './art.js';
 import { boardSvg, nodeXY, depth, pieceSize, canvasSize, useBoard, groundOf, buildingArt, preloadBuildings, liftOf, centerSpots } from './board-view.js';
@@ -37,6 +37,7 @@ import * as Roller3D from './roller3d.js';
 import * as Records from './records.js';
 import * as Prefs from './prefs.js';
 import * as Daily from './daily.js';
+import * as Cloud from './cloud.js';
 import { ATTEND_REWARDS } from '../core/missions.js';
 import { Sound } from './sound.js';
 
@@ -491,6 +492,8 @@ function dex(which = 0) {
 function ranking() {
   app.className = 'app dex-app';
   const m = Records.summary();
+  // 클라우드가 켜져 있으면 전체 랭킹부터, 아니면 내 기록부터
+  const tab = Cloud.enabled() ? 'global' : 'mine';
   const tier = m.tier;
   const date = (at) => { const d = new Date(at); return `${d.getMonth() + 1}/${d.getDate()}`; };
   const rows = m.games.length ? m.games.map((g, i) => `
@@ -509,12 +512,58 @@ function ranking() {
         <p>${tier.hi ? `다음 단계까지 ${tier.hi - m.rp} RP` : '최고 티어'} · 누적 승점 ${m.total.toLocaleString()}</p>
       </div>
       <div class="rank-rule">RP(4인) 1등 +${RP_TABLE[4][0]} · 2등 +${RP_TABLE[4][1]} · 3등 ${RP_TABLE[4][2]} · 4등 ${RP_TABLE[4][3]} · 조기 승리 +5 · 티어 바닥 아래로는 내려가지 않음<br>승점: 판당 +10 · 보유 역 +1 · 1등 +30 · 2등 +15 · 3등 +5 · 승점만큼 승차권 지급(보유 ${Records.tickets()}장)</div>
-      <div class="rank-list">${rows}</div>
+      <div class="rank-list">
+        <div class="rank-tabs" role="tablist">${[['global', '전체 랭킹'], ['mine', '내 최고 기록']].map(([t, label]) => `<button role="tab" data-t="${t}" aria-selected="${t === tab}" class="${t === tab ? 'on' : ''}">${label}</button>`).join('')}</div>
+        <div class="rank-pane" data-p="global"${tab === 'global' ? '' : ' hidden'}>
+          <div class="rank-sec"><span id="rgPlace">${Cloud.enabled() ? '' : '온라인 랭킹 준비 중 · 지금은 이 기기 기록만 남아요'}</span><button class="btn small white" id="rgName" hidden>이름 바꾸기</button></div>
+          <div class="rank-rows" id="rgList">${Cloud.enabled() ? '<p class="rank-empty">불러오는 중…</p>' : ''}</div>
+        </div>
+        <div class="rank-pane rank-rows" data-p="mine"${tab === 'mine' ? '' : ' hidden'}>${rows}</div>
+      </div>
       ${gnbHTML('rank')}
     </div>`;
   $('#dexBack').onclick = () => { Sound.click(); title(); };
+  app.querySelectorAll('.rank-tabs button').forEach((b) => {
+    b.onclick = () => {
+      Sound.click();
+      app.querySelectorAll('.rank-tabs button').forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-selected', on); });
+      app.querySelectorAll('.rank-pane').forEach((p) => { p.hidden = p.dataset.p !== b.dataset.t; });
+    };
+  });
   bindGnb();
+  if (Cloud.enabled()) fillGlobalRank(m.rp, m.plays);
 }
+
+/** 전체 랭킹(클라우드): 위 50명 + 내 순위 + 이름 바꾸기 */
+async function fillGlobalRank(rp, plays) {
+  const list = await Cloud.top(50);
+  const box = $('#rgList');
+  if (!box) return; // 그사이 다른 화면으로 갔다
+  if (!list) { box.innerHTML = '<p class="rank-empty">온라인 랭킹에 연결하지 못했어요 · 기기 기록은 그대로 남아요</p>'; return; }
+  box.innerHTML = list.length ? list.map((r, i) => {
+    const t = tierOf(r.rp || 0);
+    return `<div class="rank-row ${i < 3 ? 'top' + (i + 1) : ''} ${r.me ? 'me' : ''}">
+        <span class="no">${i + 1}</span>
+        <div class="what"><b>${r.hero && heroById(r.hero) ? character(r.hero, 26) : ''} ${esc(r.name || '승객')}${r.me ? ' <em>나</em>' : ''}</b><span>${tierBadge(t, 14)} ${t.label} · ${r.plays || 0}판 ${r.wins || 0}승</span></div>
+        <b class="pts">${(r.rp || 0).toLocaleString()}<small>RP</small></b>
+      </div>`;
+  }).join('') : '<p class="rank-empty">아직 아무도 없어요 · 첫 대결을 끝내면 이름이 올라가요</p>';
+  const place = plays ? await Cloud.myPlace(rp) : null;
+  const pl = $('#rgPlace');
+  if (pl) pl.textContent = `${Cloud.myName()}${place ? ` · 전체 ${place}위` : plays ? '' : ' · 한 판 끝내면 등록'}`;
+  const btn = $('#rgName');
+  if (btn) {
+    btn.hidden = false;
+    btn.onclick = () => {
+      Sound.click();
+      const v = prompt(`랭킹에 보일 이름(${Cloud.NAME_MAX}자까지)`, Cloud.myName());
+      if (v == null) return;
+      Cloud.setName(v);
+      ranking();
+    };
+  }
+}
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // ── 하는 법 ────────────────────────────────────────────────
 
@@ -2658,5 +2707,12 @@ document.addEventListener('keydown', (e) => {
 
 // 개발 중 콘솔 확인용
 window.__game = { get m() { return G.m; }, get G() { return G; } };
+
+// 클라우드 저장: 켜 두고(설정이 없으면 아무 일도 안 한다), 내려받아 기록이 바뀌면 로비를 다시 그린다
+Cloud.onSync(() => {
+  Daily.reload(); Prefs.reload();
+  if (!G.m && app.classList.contains('home-app')) title();
+});
+Cloud.start();
 
 splash();

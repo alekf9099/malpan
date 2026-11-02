@@ -3,6 +3,7 @@
 
 import { dailyMissions, dayKey, nextAttend } from '../core/missions.js';
 import * as Records from './records.js';
+import { queue } from './cloud.js';
 
 const KEY = 'yeokjeon.daily.v1';
 let memo = null;
@@ -18,7 +19,10 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(memo)); } catch { /* 저장 못 해도 진행 */ }
+  queue();
 }
+/** 클라우드에서 내려받은 뒤: 기억해 둔 것을 버리고 저장소에서 다시 읽는다 */
+export function reload() { memo = null; }
 
 /** 오늘의 미션: [{ id, text, goal, reward, have, done, claimed }] */
 export function missions() {

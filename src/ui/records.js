@@ -1,9 +1,10 @@
-// 기기 안 랭킹·승차권: 끝난 판의 승점을 이 브라우저(localStorage)에 남긴다. 다른 기기·다른 사람과는 나누지 않는다.
+// 랭킹·승차권: 끝난 판의 승점을 이 브라우저(localStorage)에 남긴다. 클라우드가 켜져 있으면 저장할 때마다 함께 올린다(cloud.js).
 // 승점만큼 승차권이 쌓이고, 승차권으로 잠긴 캐릭터를 연다(칭호는 누적 승점 그대로).
 // 저장이 막혀 있어도(사생활 보호 창 등) 게임은 그대로 돌아가고, 기록만 남지 않는다.
 
 import { rankOf, tierOf, applyRp } from '../core/ranking.js';
 import { STARTERS } from '../core/heroes.js';
+import { queue } from './cloud.js';
 
 const KEY = 'yeokjeon.records.v1';
 const KEEP = 10;
@@ -23,6 +24,7 @@ function load() {
 }
 function store(d) {
   try { localStorage.setItem(KEY, JSON.stringify(d)); } catch { /* 저장 못 해도 진행 */ }
+  queue();
 }
 
 /**

@@ -1,6 +1,6 @@
 // 오프라인 캐시. 인터넷이 되면 늘 새 파일을 받고(네트워크 우선), 끊기면 마지막으로 받아 둔 것을 쓴다.
 // 한 번 끝까지 열어 두면 글꼴·캐릭터 그림까지 캐시에 남아 비행기 모드에서도 할 수 있다.
-const CACHE = 'malpan-v39';
+const CACHE = 'malpan-v40';
 const CORE = ['./', 'index.html', 'src/ui/styles.css', 'src/ui/app.js', 'manifest.webmanifest', 'assets/icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {
@@ -16,6 +16,8 @@ self.addEventListener('activate', (e) => {
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || !req.url.startsWith('http')) return;
+  // Firebase 로그인 · DB 통신은 캐시를 거치지 않는다(SDK 파일만 gstatic 에서 받아 캐시)
+  if (/^(firestore|identitytoolkit|securetoken|firebaseinstallations)\.googleapis\.com$|\.firebaseio\.com$|\.firebaseapp\.com$/.test(new URL(req.url).hostname)) return;
   e.respondWith(
     fetch(req)
       .then((res) => {

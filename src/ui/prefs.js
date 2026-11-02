@@ -1,5 +1,7 @@
 // 기기에 남겨 두는 작은 설정: 내 캐릭터 · 상대 수 · 안내를 봤는지. 저장이 막혀 있으면 이번 실행 동안만 기억한다.
 
+import { queue } from './cloud.js';
+
 const KEY = 'yeokjeon.prefs.v1';
 let memo = null;
 
@@ -10,7 +12,10 @@ function load() {
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(memo)); } catch { /* 저장소를 못 써도 된다 */ }
+  queue();
 }
+/** 클라우드에서 내려받은 뒤: 기억해 둔 것을 버리고 저장소에서 다시 읽는다 */
+export function reload() { memo = null; }
 
 /** 내 캐릭터(ids 안에서). 없으면 첫 캐릭터 */
 export function getLeader(ids) { const v = load().hero; return ids.includes(v) ? v : ids[0]; }

@@ -35,6 +35,8 @@ const plain = (v) => JSON.parse(JSON.stringify(v));
 export const status = () => (FIREBASE_CONFIG ? state : 'off');
 export const enabled = () => !!FIREBASE_CONFIG;
 export const myUid = () => fb?.uid || null;
+/** 연결된 Firebase 묶음 { app, auth, fs(firestore 모듈), db, uid } — 온라인 대결(online.js)이 함께 쓴다. 연결 전이면 null */
+export const firebase = () => fb;
 export const myName = () => meta().name || '';
 /** 클라우드에서 기록을 내려받아 기기 저장이 바뀌었을 때 */
 export const onSync = (fn) => listeners.add(fn);

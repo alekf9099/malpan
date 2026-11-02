@@ -11,7 +11,7 @@ import {
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
   monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf, takeoverFor, DOUBLE_JAIL
 } from '../core/match.js';
-import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
+import { ACTS, aiSteps, actOk, applyAct, fastForward, sig } from '../core/lockstep.js';
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeOf } from '../core/heroes.js';
 import { SALARY, ringOf } from '../core/boards/loop.js';
@@ -38,6 +38,7 @@ import * as Records from './records.js';
 import * as Prefs from './prefs.js';
 import * as Daily from './daily.js';
 import * as Cloud from './cloud.js';
+import * as Online from './online.js';
 import { ATTEND_REWARDS } from '../core/missions.js';
 import { Sound } from './sound.js';
 
@@ -45,13 +46,15 @@ import { Sound } from './sound.js';
 export const GAME_TITLE = { main: '역전', hanja: '驛戰', sub: '역을 차지하라 — 서울 지하철 땅따먹기' };
 
 const app = document.getElementById('app');
-const G = { m: null, busy: false, size: 4, wait: null, daily: false };
+const G = { m: null, busy: false, size: 4, wait: null, daily: false, me: 'p0', online: null };
 const $ = (sel) => app.querySelector(sel);
 const M = () => G.m;
 const ids = HERO_DATA.map((h) => h.id);
-const ME = () => M().players[0];
+// 내 자리: 혼자 할 땐 p0, 온라인은 방에 들어간 순서의 자리(G.me). 다른 사람 자리는 방 이름으로 부른다
+const ME = () => playerById(M(), G.me);
+const isMine = (p) => !!p && p.id === G.me;
 const colorOf = (p) => heroById(p.hero).color;
-const nameOf = (p) => heroById(p.hero).name;
+const nameOf = (p) => G.online?.names[p.id] || heroById(p.hero).name;
 const TIME_NAME = { rush: '러시아워', night: '심야', last: '막차' };
 
 // ── 스플래시 ────────────────────────────────────────────────
@@ -113,6 +116,7 @@ const ICON = {
   cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10 H21 M8 3 V7 M16 3 V7"/></svg>',
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5 Q9.5 7 12 7 Q14.5 7 14.5 9.3 Q14.5 11 12 12 V14 M12 17 V17.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7 V12 L15 14"/></svg>',
+  online: '<svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="8" r="3"/><path d="M2.5 19 Q2.5 13.5 8 13.5 Q13.5 13.5 13.5 19 Z M14 13.6 Q21.5 13 21.5 19 H15.5"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 Q18 12 16 15 M18.5 7 Q22 12 18.5 17"/></svg>',
   mute: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 L21 15 M21 9 L16 15"/></svg>',
   swap: '<svg viewBox="0 0 24 24"><path d="M5 9 H18 L14.5 5.5 M19 15 H6 L9.5 18.5"/></svg>',
@@ -163,6 +167,7 @@ const bannerHTML = (list, i) => {
 
 function title(fromSplash = false) {
   G.m = null;
+  leaveOnline();
   app.className = 'app home-app';
   document.title = `${GAME_TITLE.main}(${GAME_TITLE.hanja}): 역을 차지하라`;
   const li = myIndex(), h = HERO_DATA[li];
@@ -198,6 +203,7 @@ function title(fromSplash = false) {
         <div class="lb-side left">
           <button class="lb-float" data-go="attend"><span>${ICON.cal}</span><b>출석</b>${at.today ? '' : '<i class="dot"></i>'}</button>
           <button class="lb-float" data-go="mission"><span>${ICON.mission}</span><b>미션 ${mDone}/${missions.length}</b>${ready ? `<i class="dot n">${ready}</i>` : ''}</button>
+          <button class="lb-float" data-go="online"><span>${ICON.online}</span><b>온라인 대결</b></button>
         </div>
         <div class="lb-side right">
           <button class="lb-float hot" data-go="daily"><span>${ICON.today}</span><b>오늘의 대결</b><i class="lb-date">${today.getMonth() + 1}/${today.getDate()}</i></button>
@@ -234,6 +240,7 @@ function title(fromSplash = false) {
     else if (k === 'guide') guide();
     else if (k === 'attend') openAttendance();
     else if (k === 'daily') startGame(true);
+    else if (k === 'online') onlineMenu();
   };
   app.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => go(b.dataset.go); });
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); $('#snd').innerHTML = Sound.isOn() ? ICON.sound : ICON.mute; };
@@ -757,6 +764,7 @@ async function startGame(daily) {
   const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: ringOf(Prefs.getBoard()) ? Prefs.getBoard() : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
+  G.me = 'p0';
   G.m = m;
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
   G.hudMoney = {};
@@ -765,7 +773,160 @@ async function startGame(daily) {
   enterGame();
 }
 
-function enterGame() {
+// ── 온라인 대결: 방 만들기 · 참가 · 대기실 ───────────────────
+
+const BOARD_NAMES = { loop: '순환선', korea: '국내', world: '해외', map: '노선도' };
+const ONLINE_ERR = { offline: '온라인에 연결하지 못했어요', nothing: '그런 방이 없어요', full: '방이 꽉 찼어요', started: '이미 시작한 방이에요', taken: '방을 만들지 못했어요 · 다시 눌러 주세요' };
+const onlineErr = (err) => ONLINE_ERR[err?.message] || (err?.code === 'permission-denied' ? '권한이 없어요 · 규칙(firestore.rules)을 확인해 주세요' : '연결이 불안정해요 · 다시 해 주세요');
+const inviteLink = (code) => `${location.origin}${location.pathname}?room=${code}`;
+
+/** 온라인 대결 첫 창: 이어 하기 · 방 만들기 · 코드로 참가 */
+async function onlineMenu(code = '') {
+  if (!Cloud.enabled()) { toast('온라인 대결을 쓸 수 없어요'); return; }
+  let size = Math.max(2, Math.min(4, Prefs.getRivals() + 1));
+  const s = sheet(`<span class="kind">친구와 같이 · 빈자리는 AI</span><h2>온라인 대결</h2>
+    <div class="on-resume" id="onResume" hidden></div>
+    <div class="on-box"><b>방 만들기</b><p>${BOARD_NAMES[Prefs.getBoard()]} 판 · 코드를 친구에게 보내면 같이 해요</p>
+      <div class="on-line"><div class="lb-seg on-size" role="radiogroup" aria-label="자리 수"><span>자리</span>${[2, 3, 4].map((n) => `<button role="radio" data-s="${n}" class="${n === size ? 'on' : ''}" aria-checked="${n === size}">${n}</button>`).join('')}</div>
+      <button class="btn small" id="onMake">만들기</button></div></div>
+    <div class="on-box"><b>코드로 참가</b>
+      <div class="on-line"><input class="on-code" id="onCode" maxlength="${Online.CODE_LEN}" placeholder="코드 ${Online.CODE_LEN}자리" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${code}">
+      <button class="btn small" id="onJoin">참가</button></div></div>
+    <div class="row"><button class="btn white" id="onClose">닫기</button></div>`);
+  const busy = (on) => s.querySelectorAll('button').forEach((b) => { b.disabled = on; });
+  s.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { Sound.click(); size = +b.dataset.s; s.querySelectorAll('[data-s]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); }); }; });
+  s.querySelector('#onClose').onclick = () => { Sound.click(); closeSheet(); };
+  const input = s.querySelector('#onCode');
+  input.oninput = () => { input.value = Online.normCode(input.value); };
+  s.querySelector('#onMake').onclick = async () => {
+    Sound.unlock(); Sound.click(); busy(true);
+    try { roomPage(await Online.createRoom({ size, board: Prefs.getBoard(), hero: Prefs.getLeader(Records.unlocked()) })); }
+    catch (err) { console.warn(err); toast(onlineErr(err)); busy(false); }
+  };
+  const join = async () => {
+    const c = Online.normCode(input.value);
+    if (c.length !== Online.CODE_LEN) { Sound.deny(); toast(`코드 ${Online.CODE_LEN}자리를 넣어 주세요`); return; }
+    Sound.unlock(); Sound.click(); busy(true);
+    try { const room = await Online.joinRoom(c, { hero: Prefs.getLeader(Records.unlocked()) }); if (room.status === 'play') startOnline(c, room); else roomPage(c); }
+    catch (err) { console.warn(err); toast(onlineErr(err)); busy(false); }
+  };
+  s.querySelector('#onJoin').onclick = join;
+  input.onkeydown = (e) => { if (e.key === 'Enter') join(); };
+  if (code.length === Online.CODE_LEN) { join(); return; }
+  // 하다 만 판이 있으면 이어 하기
+  const last = Online.lastRoom();
+  if (!last) return;
+  const room = await Online.getRoom(last);
+  if (!document.body.contains(s) || !room || room.status !== 'play' || !room.uids.includes(Online.myUid())) return;
+  const box = s.querySelector('#onResume');
+  box.hidden = false;
+  box.innerHTML = `<button class="btn" id="onBack">진행 중인 대결로 돌아가기 · ${last}</button>`;
+  box.querySelector('#onBack').onclick = () => { Sound.click(); startOnline(last, room); };
+}
+
+/** 대기실: 방 코드 · 자리(빈자리는 AI) · 방장은 자리 수 · 판을 고르고 시작 */
+function roomPage(code) {
+  closeSheet();
+  const uid = Online.myUid();
+  let room = null, stop = () => {};
+  const s = sheet(`<span class="kind">온라인 대결 · 대기실</span><div id="roomBody"><p>방에 들어가는 중…</p></div>`);
+  s.classList.add('room-sheet');
+  const body = s.querySelector('#roomBody');
+  const draw = () => {
+    const host = room.host === uid;
+    const seats = Array.from({ length: room.size }, (_, i) => room.seats[i] || null);
+    body.innerHTML = `
+      <div class="room-code"><span>방 코드</span><b>${code}</b><button class="btn small white" id="rmCopy">초대 링크</button></div>
+      <p>${BOARD_NAMES[room.board] || '순환선'} 판 · ${room.size}자리 · 사람 ${room.seats.length}명${room.seats.length < room.size ? ` · 빈자리 ${room.size - room.seats.length}곳은 AI` : ''}</p>
+      <div class="room-seats">${seats.map((x, i) => x
+        ? `<div class="rm-seat ${x.uid === uid ? 'me' : ''}" style="--pc:${heroById(x.hero)?.color || '#888'}">${character(x.hero, 40)}<b>${esc(x.name)}${x.uid === uid ? ' (나)' : ''}</b><i>${i === 0 ? '방장' : `${i + 1}번`}</i></div>`
+        : '<div class="rm-seat ai"><span class="rm-ai">AI</span><b>빈자리</b><i>시작하면 AI</i></div>').join('')}</div>
+      ${host ? `<div class="rm-opts"><div class="lb-seg" role="radiogroup" aria-label="자리 수"><span>자리</span>${[2, 3, 4].map((n) => `<button role="radio" data-s="${n}" class="${n === room.size ? 'on' : ''}" ${n < room.seats.length ? 'disabled' : ''}>${n}</button>`).join('')}</div>
+        <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${Object.entries(BOARD_NAMES).map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === room.board ? 'on' : ''}">${n}</button>`).join('')}</div></div>`
+        : '<p class="rm-wait">방장이 시작하면 바로 시작해요</p>'}
+      <div class="row"><button class="btn white" id="rmLeave">나가기</button>${host ? `<button class="btn" id="rmGo" ${room.seats.length < 2 ? 'disabled' : ''}>${room.seats.length < 2 ? '친구를 기다리는 중' : '시작'}</button>` : ''}</div>`;
+    body.querySelector('#rmCopy').onclick = async () => {
+      Sound.click();
+      const link = inviteLink(code);
+      try {
+        if (navigator.share) await navigator.share({ title: `${GAME_TITLE.main} 온라인 대결`, text: `방 코드 ${code}`, url: link });
+        else { await navigator.clipboard.writeText(link); toast('초대 링크를 복사했어요'); }
+      } catch { /* 공유 창을 닫았다 */ }
+    };
+    body.querySelector('#rmLeave').onclick = () => { Sound.click(); stop(); Online.leaveRoom(code); closeSheet(); };
+    body.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { Sound.click(); Online.updateRoom(code, { size: +b.dataset.s }).catch((e) => toast(onlineErr(e))); }; });
+    body.querySelectorAll('[data-b]').forEach((b) => { b.onclick = () => { Sound.click(); Online.updateRoom(code, { board: b.dataset.b }).catch((e) => toast(onlineErr(e))); }; });
+    const go = body.querySelector('#rmGo');
+    if (go) go.onclick = async () => {
+      Sound.unlock(); Sound.click(); go.disabled = true;
+      try { await Online.startRoom(code, planRoom); } catch (e) { toast(onlineErr(e)); go.disabled = false; }
+    };
+  };
+  stop = Online.watchRoom(code, (r) => {
+    if (!document.body.contains(s)) { stop(); return; }
+    if (!r || r.status === 'gone' || !r.uids.includes(uid)) { stop(); closeSheet(); Online.forget(); toast(r?.status === 'gone' ? '방장이 방을 닫았어요' : '방에서 나왔어요'); return; }
+    room = r;
+    if (r.status === 'play') { stop(); startOnline(code, r); return; }
+    draw();
+  });
+}
+
+/** 방장이 시작할 때: 시드 · 캐릭터(겹치면 다른 캐릭터로) · 빈자리 AI 를 정한다 */
+function planRoom(room) {
+  const seed = (Date.now() & 0x7fffffff) || 1;
+  const taken = new Set();
+  const heroes = room.seats.map((x) => {
+    let h = x.hero;
+    if (!ids.includes(h) || taken.has(h)) h = ids.find((y) => !taken.has(y) && !room.seats.some((o) => o.hero === y)) || ids.find((y) => !taken.has(y));
+    taken.add(h);
+    return h;
+  });
+  const bots = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((y) => !taken.has(y))).slice(0, room.size - room.seats.length);
+  return { status: 'play', seed, heroes: [...heroes, ...bots] };
+}
+
+/** 판 시작(또는 새로고침 뒤 이어 하기): 지금까지 올라온 행동으로 따라잡고 대결 화면으로 */
+async function startOnline(code, room) {
+  closeSheet();
+  leaveOnline();
+  const uid = Online.myUid(), seat = room.uids.indexOf(uid);
+  if (seat < 0) { toast('이 방의 사람이 아니에요'); return; }
+  const m = createMatch({ seed: room.seed, heroes: room.heroes, humans: room.uids.length, region: ringOf(room.board) ? room.board : null });
+  const O = {
+    code, room, n: 0, inbox: [], log: [], waiter: null, turnKey: null, stop: () => {},
+    owners: Object.fromEntries(room.uids.map((u, i) => ['p' + i, u])),
+    names: Object.fromEntries(room.seats.map((x, i) => ['p' + i, x.name]))
+  };
+  delete O.names['p' + seat];
+  G.online = O;
+  // 첫 묶음(지금까지의 행동)을 받을 때까지 기다린다
+  await new Promise((ready) => { O.stop = Online.watchActs(code, (a) => onAct(O, a), ready); });
+  if (G.online !== O) return;
+  const used = O.inbox.length ? fastForward(m, O.inbox, { isBot: (p) => !p.human, ownerOf: (id) => O.owners[id] }) : 0;
+  O.inbox.splice(0, used);
+  O.n = used;
+  G.daily = false;
+  G.me = 'p' + seat;
+  G.m = m;
+  G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
+  G.hudMoney = {};
+  G.combo = null;
+  G.entered = used ? new Set(m.players.map((p) => p.id)) : new Set([current(m).id]);
+  enterGame(!!used);
+}
+
+/** 온라인 연결 끊기(로비로 돌아갈 때) */
+function leaveOnline() {
+  const O = G.online;
+  if (!O) return;
+  G.online = null;
+  O.stop();
+  O.cancel?.();
+}
+
+
+/** 대결 화면. resumed: 온라인 이어 하기 — 첫 화면 없이 바로 차례로 */
+function enterGame(resumed = false) {
   app.className = 'app game';
   app.innerHTML = `
     <div class="hud" id="hud">
@@ -803,16 +964,16 @@ function enterGame() {
   drawControls();
   Camera.follow(nodeXY(ME().node), 0);
   drawZoom();
-  intro();
+  if (resumed) loop(); else intro();
 }
 
 /** 첫 화면: 누가 누구와, 어디서 출발 */
 function intro() {
   const m = M();
   const s = sheet(`
-    <span class="kind">${G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
+    <span class="kind">${G.online ? `온라인 대결 · 방 ${G.online.code}` : G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
-    <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${i ? '' : 'me'}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${i ? nameOf(p) : '나'}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
+    <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${isMine(p) ? 'me' : ''}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${isMine(p) ? '나' : nameOf(p)}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
     <p>${isLoop(m) ? `${ringIn(m).intro} · 가운데 <b>적립금 단지</b>는 축제 칸에 서면 통째로<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
@@ -825,7 +986,9 @@ async function loop() {
   const m = M();
   while (m === M() && m.phase !== 'over') {
     const p = current(m);
-    if (p.human) await humanTurn(p); else await aiTurn(p);
+    if (isMine(p)) await humanTurn(p);
+    else if (p.human) await remoteTurn(p);
+    else await aiTurn(p);
   }
   if (m === M() && m.phase === 'over') await results();
 }
@@ -885,48 +1048,99 @@ function countUp(el, from, to, ms = 480) {
 /** 내 차례: 출발·스킬·노선 투자를 기다린다. 달리는 중엔 갈림길을 고르고, 거래 제안엔 답한다 */
 async function humanTurn(p) {
   const m = M();
+  // 온라인에서 내가 첫 자리가 아니면 첫 차례에 출발 칸으로 내려선다
+  if (G.entered && !G.entered.has(p.id)) await play([{ type: 'turnStart', player: p.id }]);
   showPlayer(p);
   if (m.phase === 'roll' && !p.rest) await turnBanner(p);
   await new Promise((resolve) => { G.wait = resolve; drawControls(); });
   G.wait = null;
   if (m.phase === 'pick') {
     const i = await pickDiePrompt();
-    await play(pickDie(m, i));
+    await doAct('pick', i);
   }
   if (m.phase === 'move') {
     const path = await pickPath();
-    await play(move(m, path));
+    await doAct('move', path);
   }
   if (m.phase === 'choose') {
     const v = await choicePrompt();
-    await play(choose(m, v));
+    await doAct('choose', v);
   }
   if (m.phase === 'decide') {
     const yes = await offerPrompt();
-    await play(decide(m, yes));
+    await doAct('decide', yes);
   }
 }
 
 /** AI 차례: 노선 투자 → 스킬 → 굴리기 → 길 → 거래, 빠르게 */
 async function aiTurn(p) {
   const m = M();
-  await play([{ type: 'turnStart', player: p.id }]);
-  const sk = wantsSkill(m);
-  if (sk) await play(useSkill(m, sk.target));
-  for (let n = chooseInvest(m); n; n = chooseInvest(m)) await play(invest(m, n));
-  if (m.phase === 'roll' && current(m) === p) await play(roll(m));
-  if (m.phase === 'pick') await play(pickDie(m, chooseDie(m)));
-  if (m.phase === 'move') await play(move(m, choosePath(m)));
-  if (m.phase === 'choose') { await sleep(300); await play(choose(m, chooseOption(m))); }
-  if (m.phase === 'decide') { await sleep(250); await play(decide(m, decideOffer(m))); }
+  for (const step of aiSteps(m)) {
+    if (m !== M()) return;
+    if (step.pause) await sleep(step.pause); else await play(step.events);
+  }
+}
+
+/** 내 행동 하나: 판에 넣고 연출한다. 온라인이면 넣기 전에 방에도 올린다 */
+function doAct(a, v) {
+  const m = M();
+  if (G.online) sendMine(a, v);
+  return play(ACTS[a](m, v));
+}
+
+// ── 온라인 대결: 다른 사람 차례 ─────────────────────────────
+
+/** 다른 사람 차례: 그 사람이 올린 행동을 하나 받아 판에 넣는다(차례가 이어지면 바깥 loop 가 다시 부른다) */
+async function remoteTurn(p) {
+  const m = M(), O = G.online;
+  const key = `${m.round}:${m.turn}`;
+  if (O.turnKey !== key) { O.turnKey = key; await play([{ type: 'turnStart', player: p.id }]); }
+  setHint(`${nameOf(p)} 차례 · 기다리는 중`);
+  const a = await nextAct(O);
+  if (m !== M() || !a) return;
+  if (!actOk(m, a, (id) => O.owners[id])) return; // 차례가 아닌 사람 · 맞지 않는 단계의 행동은 모두 똑같이 건너뛴다
+  if (a.h && a.h !== sig(m) && !O.warned) { O.warned = true; console.warn('[online] 판 서명이 다르다', a, sig(m)); toast('판이 어긋났어요 · 새로고침하면 다시 맞춰요'); }
+  await play(applyAct(m, a) || []);
+}
+
+/** 받은 행동 중 다음 순번 하나(아직 없으면 올 때까지) */
+function nextAct(O) {
+  return new Promise((resolve) => {
+    const take = () => { O.waiter = null; const a = O.inbox.shift(); O.n = a.n + 1; resolve(a); };
+    if (O.inbox.length) take(); else O.waiter = take;
+    O.cancel = () => { O.waiter = null; resolve(null); };
+  });
+}
+
+/** 방에서 행동이 왔다: 이미 넣은 것(내가 올린 것)은 넘기고, 나머지는 줄 세운다 */
+function onAct(O, a) {
+  O.log[a.n] = a;
+  if (a.n < O.n) return;
+  O.inbox.push(a);
+  O.waiter?.();
+}
+
+/** 내 행동을 방에 올린다(순번은 바로 차지하고, 실패하면 몇 번 더) */
+function sendMine(a, v) {
+  const m = M(), O = G.online;
+  const rec = { n: O.n++, seat: current(m).id, a, v: v === undefined ? null : v, h: sig(m) };
+  O.log[rec.n] = { ...rec, by: Online.myUid() };
+  const send = async (tries) => {
+    try { await Online.sendAct(O.code, rec); } catch (err) {
+      if (tries < 3 && G.online === O) { await sleep(800 * (tries + 1)); return send(tries + 1); }
+      console.warn('[online] 행동을 못 보냈다', err);
+      toast('연결이 끊겨 행동을 못 보냈어요 · 새로고침해 주세요');
+    }
+  };
+  send(0);
 }
 
 async function onThrow() {
   const m = M();
-  if (G.busy || !m || m.phase !== 'roll' || !current(m).human || !G.wait) return;
+  if (G.busy || !m || m.phase !== 'roll' || !isMine(current(m)) || !G.wait) return;
   Sound.unlock();
   hideFork();
-  await play(roll(m));
+  await doAct('roll');
   G.wait?.();
 }
 
@@ -938,7 +1152,7 @@ async function onSkill() {
   const target = await skillSheet();
   if (target === undefined) return;
   const p = current(m);
-  await play(useSkill(m, target));
+  await doAct('skill', target);
   drawControls();
   // 직통 열차처럼 차례가 이어지면(거래·고르기·다음 사람) 기다리던 차례를 푼다
   if (m.phase !== 'roll' || current(m) !== p) G.wait?.();
@@ -1262,7 +1476,7 @@ function offerPrompt() {
 
 function openInvest() {
   const m = M();
-  if (G.busy || !current(m).human || m.phase !== 'roll') { Sound.deny(); return; }
+  if (G.busy || !isMine(current(m)) || m.phase !== 'roll') { Sound.deny(); return; }
   const can = investable(m);
   if (!can.length) { Sound.deny(); toast('연결된 내 역(2역 이상)이 필요해요'); return; }
   Sound.click();
@@ -1277,7 +1491,7 @@ function openInvest() {
   s.querySelectorAll('.inv-row').forEach((b) => {
     b.onclick = async () => {
       closeSheet();
-      await play(invest(m, b.dataset.n));
+      await doAct('invest', b.dataset.n);
       drawControls();
       if (investable(m).length) openInvest();
     };
@@ -1310,12 +1524,12 @@ function pieceEl(pid) {
   if (!el) {
     const p = playerById(M(), pid);
     el = document.createElement('div');
-    el.className = 'piece' + (p.human ? ' me' : '');
+    el.className = 'piece' + (isMine(p) ? ' me' : '');
     el.dataset.piece = pid;
     el.style.setProperty('--pc', colorOf(p));
     const s = pieceSize();
     el.style.width = el.style.height = s + 'px';
-    el.innerHTML = `<span class="ring"></span>${character(p.hero)}<span class="tag">${p.human ? '나' : nameOf(p)}</span>`;
+    el.innerHTML = `<span class="ring"></span>${character(p.hero)}<span class="tag">${isMine(p) ? '나' : nameOf(p)}</span>`;
     $('#layer').appendChild(el);
   }
   return el;
@@ -1353,13 +1567,13 @@ function drawMarks() {
   for (const p of m.players) {
     if (p.out || !p.goal) continue;
     const el = document.createElement('div');
-    el.className = 'goal-flag' + (p.human ? ' me' : '');
+    el.className = 'goal-flag' + (isMine(p) ? ' me' : '');
     el.dataset.player = p.id;
     el.style.setProperty('--pc', colorOf(p));
     const [x, y] = nodeXY(p.goal);
     el.style.left = x + 'px'; el.style.top = y + 'px';
     el.style.zIndex = depth(y) + 5;
-    el.innerHTML = `${p.human ? '<i class="ring"></i><i class="ring r2"></i>' : ''}<span class="gf">${p.human ? '내 목적지' : character(p.hero, 22)}</span>`;
+    el.innerHTML = `${isMine(p) ? '<i class="ring"></i><i class="ring r2"></i>' : ''}<span class="gf">${isMine(p) ? '내 목적지' : character(p.hero, 22)}</span>`;
     $('#layer').appendChild(el);
   }
   for (const i of m.incidents) addIncident(i);
@@ -1375,9 +1589,9 @@ function monoNote(m, p) {
 function drawHud() {
   const m = M();
   $('#players').innerHTML = m.players.map((p) => `
-    <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${p.human ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
+    <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${isMine(p) ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
       <span class="pa">${character(p.hero, 34)}${p.out ? '' : hudCharge(p)}</span>
-      <div class="pi"><b>${p.human ? '나' : nameOf(p)}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
+      <div class="pi"><b>${isMine(p) ? '나' : nameOf(p)}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
     </div>`).join('');
   // 돈이 바뀌었으면 숫자가 차오르고(늘면 초록, 줄면 빨강) 반짝인다
   G.hudMoney ||= {};
@@ -1473,7 +1687,7 @@ function drawControls() {
   tb.disabled = !mine;
   const who = current(m);
   tb.innerHTML = mine ? `출발${me.dash ? `<small>+${me.dash}역</small>` : '<small>주사위 2개</small>'}`
-    : who.human ? `내 차례<small>${m.phase === 'pick' ? '주사위 선택 중' : m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
+    : isMine(who) ? `내 차례<small>${m.phase === 'pick' ? '주사위 선택 중' : m.phase === 'move' ? '방향 선택 중' : '이동 중'}</small>` : `${nameOf(who)} 차례<small>${hhmm(m.clock)}</small>`;
   const sb = $('#skillBtn'), h = heroById(me.hero);
   const cost = skillCost(me), ready = me.charge >= cost;
   sb.classList.toggle('ready', ready);
@@ -1589,14 +1803,14 @@ async function showLanding(pid, n) {
   tween(card, [{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 1, offset: 0.7 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }], { duration: 340, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
   // 카메라: 도착 칸과 판 가운데 안내판이 한 화면에
   G.land = { n, pid, x, y, sx, sy, w: card.offsetWidth, h: card.offsetHeight };
-  landFrame([], p.human ? 380 : 260);
-  await sleep(p.human ? 520 : 320);
+  landFrame([], isMine(p) ? 380 : 260);
+  await sleep(isMine(p) ? 520 : 320);
 }
 /** 안내판 내용(칸을 사거나 올리면 다시 채운다) */
 function fillLanding(card, p, n) {
   const f = tileFacts(n, p);
   card.style.setProperty('--tc', f.color);
-  card.innerHTML = `<div class="li-top"><span class="li-who">${character(p.hero, 30)}<b>${p.human ? '나' : nameOf(p)}</b> 도착</span><span class="li-kind"${f.owner ? ` style="--oc:${f.owner}"` : ''}>${f.kind}</span></div>`
+  card.innerHTML = `<div class="li-top"><span class="li-who">${character(p.hero, 30)}<b>${isMine(p) ? '나' : nameOf(p)}</b> 도착</span><span class="li-kind"${f.owner ? ` style="--oc:${f.owner}"` : ''}>${f.kind}</span></div>`
     + `<div class="li-title">${f.title}${f.sub ? `<small>${f.sub}</small>` : ''}</div>`
     + (f.rows.length ? `<div class="li-rows">${f.rows.map(([k, v, bad]) => `<span><i>${k}</i><b class="${bad ? 'bad' : ''}">${typeof v === 'number' ? v.toLocaleString() : v}</b></span>`).join('')}</div>` : '')
     + `<p class="li-note">${f.note}</p>`;
@@ -1642,7 +1856,7 @@ function onMapTap(ev) {
   const hot = HOTSPOTS[best] ? ` · 명소역 ${HOTSPOTS[best].tag}: ${HOTSPOTS[best].desc}` : '';
   const name = tileName(best);
   const text = isChance(best) ? `${ringIn(m)?.chanceName || '찬스'} 칸 · 찬스 카드`
-    : o ? `${name}(${lines}) · ${o.human ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
+    : o ? `${name}(${lines}) · ${isMine(o) ? '내' : nameOf(o)} ${LEVEL_NAME[m.levels[best]]} · 통행료 ${o === me ? baseToll(m.owned, m.levels, best) : tollFor(m, best, me)}`
       : `${name}(${lines}) · 빈 칸 · ${stationPrice(best)}`;
   toast(text + hot);
 }
@@ -2048,7 +2262,7 @@ async function play(events) {
   drawControls();
 }
 
-const isMe = (pid) => playerById(M(), pid)?.human;
+const isMe = (pid) => isMine(playerById(M(), pid));
 const quick = (pid) => !isMe(pid);
 
 /** 요소 가운데의 앱 좌표(FX 층 기준) */
@@ -2194,7 +2408,7 @@ const HANDLERS = {
   async roll(e) {
     const p = playerById(M(), e.player);
     clearLanding();
-    if (p.human) {
+    if (isMine(p)) {
       const cs = centerSpots();
       if (cs) { Camera.follow(cs.tray, 260); await sleep(280); }
       Sound.toss();
@@ -2218,19 +2432,19 @@ const HANDLERS = {
   async double(e) {
     const p = playerById(M(), e.player);
     Sound.big();
-    if (p.human) buzz(30);
+    if (isMine(p)) buzz(30);
     G.doubleNote = e.count >= DOUBLE_JAIL - 1 ? `더블 ${e.count}번 · 한 번 더 나오면 ${ringIn(M()) ? `${jailName()}행` : '한 턴 휴식'}!` : '더블 · 이동 뒤 한 번 더';
     stampText(e.count > 1 ? `더블 ${e.count}번!` : '더블!', 'yellow', G.doubleNote);
-    await sleep(p.human ? 700 : 450);
+    await sleep(isMine(p) ? 700 : 450);
   },
   /** 더블 연속: 감옥(환승 미로)으로 끌려가 한 턴 쉰다 */
   async jail(e) {
     const p = playerById(M(), e.player);
     G.doubleNote = null;
     Sound.horn(); flash(app);
-    if (p.human) buzz([40, 60, 40]);
+    if (isMine(p)) buzz([40, 60, 40]);
     stampText(`더블 ${e.count}번!`, 'ink', e.to !== e.from ? `${ro(jailName())} · 한 턴 쉬기` : '그 자리에서 한 턴 쉬기');
-    await sleep(p.human ? 900 : 600);
+    await sleep(isMine(p) ? 900 : 600);
     if (e.to !== e.from) await HANDLERS.warp({ player: e.player, from: e.from, to: e.to, by: 'jail' });
     act(pieceEl(p.id), 'sad', 900);
     await sleep(300);
@@ -2239,7 +2453,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     const sub = e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : G.doubleNote || '';
     G.doubleNote = null;
-    if (p.human) { stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', sub); await sleep(200); }
+    if (isMine(p)) { stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', sub); await sleep(200); }
     else { stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', sub); await sleep(300); }
   },
   async rest(e) { toast(`${isMe(e.player) ? '나' : nameOf(playerById(M(), e.player))} — 한 턴 휴식`); await sleep(700); },
@@ -2249,14 +2463,14 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     const at = nodeApp(e.node);
     Sound.home();
-    if (p.human) buzz(30);
-    FX.confetti(at[0], at[1] - 30, p.human ? 34 : 14);
+    if (isMine(p)) buzz(30);
+    FX.confetti(at[0], at[1] - 30, isMine(p) ? 34 : 14);
     FX.pow(at[0], at[1] - 70, `목적지 도착 +${e.bonus}`, colorOf(p), '#FFFDF7', -5);
     await moneyFly(at, panelSpot(p.id), e.bonus);
     bump(p.id);
     drawMarks();
-    if (p.human) toast(`새 목적지 ${e.next} (${dist(p.node, e.next)}역)`);
-    await sleep(p.human ? 500 : 200);
+    if (isMine(p)) toast(`새 목적지 ${e.next} (${dist(p.node, e.next)}역)`);
+    await sleep(isMine(p) ? 500 : 200);
   },
   async pay(e) {
     const p = playerById(M(), e.player), to = e.to ? playerById(M(), e.to) : null;
@@ -2270,7 +2484,7 @@ const HANDLERS = {
     const at = nodeApp(node);
     const label = e.why === 'toll' ? `통행료 −${e.amount}` : e.why === 'pass' ? `통과 요금 −${e.amount}` : e.why === 'fine' ? `벌금 −${e.amount}` : e.why === 'fashion' ? `패션 거리 −${e.amount}` : e.why === 'transfuse' ? `수혈 −${e.amount}` : e.why === 'rest' ? `이용료 −${e.amount}` : e.why === 'repair' ? `수리비 −${e.amount}` : `−${e.amount}`;
     if (e.why === 'toll' && e.amount >= 250) await bigHit(`통행료 −${e.amount.toLocaleString()}`, to ? colorOf(to) : '#E0533D');
-    if (e.why === 'toll') { pressTile(node, 1.2); FX.ring(at[0], at[1], to ? colorOf(to) : '#E0533D'); Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (p.human || to?.human) buzz(p.human ? [40, 30, 40] : 30); }
+    if (e.why === 'toll') { pressTile(node, 1.2); FX.ring(at[0], at[1], to ? colorOf(to) : '#E0533D'); Sound.penalty(); act(pieceEl(p.id), 'sad', 900); if (to) act(pieceEl(to.id), 'cheer', 900); if (isMine(p) || isMine(to)) buzz(isMine(p) ? [40, 30, 40] : 30); }
     else Sound.coin();
     FX.pow(at[0], at[1] - (e.why === 'pass' ? 50 : 70), label, to ? colorOf(to) : '#6E6A5E', '#FFFDF7', e.why === 'pass' ? 4 : -6);
     if (e.why === 'toll') shake($(`#players [data-player="${p.id}"]`), 6, 300);
@@ -2287,7 +2501,7 @@ const HANDLERS = {
   },
   async sell(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} · ${e.node} ${e.aid ? '현금화' : '매각'} +${e.amount}`);
+    toast(`${isMine(p) ? '나' : nameOf(p)} · ${e.node} ${e.aid ? '현금화' : '매각'} +${e.amount}`);
     drawBoard();
     await sleep(350);
   },
@@ -2298,7 +2512,7 @@ const HANDLERS = {
     act(el, 'sad');
     await knockOut(el, 1);
     el.style.display = 'none';
-    await drawCard({ tone: 'bad', deck: '파산', title: `${p.human ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 보유 역 모두 반납`, art: character(p.hero, 96, 'sad') });
+    await drawCard({ tone: 'bad', deck: '파산', title: `${isMine(p) ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 보유 역 모두 반납`, art: character(p.hero, 96, 'sad') });
     drawMarks();
   },
   async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); refreshLanding(e.node); },
@@ -2327,7 +2541,7 @@ const HANDLERS = {
   async offer() {},
   async chance(e) {
     const p = playerById(M(), e.player);
-    await drawCard({ tone: e.good ? 'good' : 'bad', deck: '찬스 카드', title: e.name, short: e.short, art: character(p.hero, 96, e.good ? 'cheer' : 'sad'), quick: !p.human, from: centerApp('deck') });
+    await drawCard({ tone: e.good ? 'good' : 'bad', deck: '찬스 카드', title: e.name, short: e.short, art: character(p.hero, 96, e.good ? 'cheer' : 'sad'), quick: !isMine(p), from: centerApp('deck') });
   },
   async cash(e) {
     const p = playerById(M(), e.player);
@@ -2345,10 +2559,10 @@ const HANDLERS = {
     }
     if (e.why === 'salary') {
       Sound.home();
-      FX.confetti(at[0], at[1] - 30, p.human ? 24 : 10);
+      FX.confetti(at[0], at[1] - 30, isMine(p) ? 24 : 10);
       const r = ringIn(M());
       FX.pow(at[0], at[1] - 70, `${e.landed ? `${r.startName} 도착! ` : ''}${r.payName} +${e.amount}`, '#E0533D', '#FFFDF7', -5);
-      if (p.human) buzz(25);
+      if (isMine(p)) buzz(25);
     } else Sound.coin();
     if (e.node && e.why !== 'salary') FX.pow(at[0], at[1] - 60, `+${e.amount}`, '#2EA6DA', '#FFFDF7', 4);
     if (e.why === 'shortcut') { const sp = panelSpot(p.id); FX.pow(sp[0], sp[1] + 30, `지름길 수당 +${e.amount}`, '#4C9A3A', '#FFFDF7', 4); }
@@ -2418,7 +2632,7 @@ const HANDLERS = {
   },
   async again(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} · ${p.doubles ? `더블 ${p.doubles}번 · ` : ''}한 번 더!`);
+    toast(`${isMine(p) ? '나' : nameOf(p)} · ${p.doubles ? `더블 ${p.doubles}번 · ` : ''}한 번 더!`);
     await sleep(400);
   },
   async clock() { drawClock(); },
@@ -2446,7 +2660,7 @@ const HANDLERS = {
   async charged(e) {
     const p = playerById(M(), e.player);
     drawHud();
-    if (!p.human) return;
+    if (!isMine(p)) return;
     drawControls();
     const b = $('#skillBtn');
     if (!b) return;
@@ -2459,12 +2673,12 @@ const HANDLERS = {
   },
   async rescue(e) {
     const p = playerById(M(), e.player);
-    await drawCard({ tone: 'good', deck: '응급 대기', title: `${p.human ? '나' : nameOf(p)} 긴급 구조!`, short: `빚 ${e.debt} 탕감 · ${e.amount}으로 재출발 (1회)`, art: character(p.hero, 96, 'cheer'), quick: !p.human });
+    await drawCard({ tone: 'good', deck: '응급 대기', title: `${isMine(p) ? '나' : nameOf(p)} 긴급 구조!`, short: `빚 ${e.debt} 탕감 · ${e.amount}으로 재출발 (1회)`, art: character(p.hero, 96, 'cheer'), quick: !isMine(p) });
     drawHud();
   },
   async hotspot(e) {
     const p = playerById(M(), e.player);
-    await drawCard({ tone: 'hot', deck: '명소역', title: e.tag, short: e.desc, art: hotArt(e.node, 110), place: e.node, quick: !p.human });
+    await drawCard({ tone: 'hot', deck: '명소역', title: e.tag, short: e.desc, art: hotArt(e.node, 110), place: e.node, quick: !isMine(p) });
   },
   async choice() {},
   async corner(e) {
@@ -2474,7 +2688,7 @@ const HANDLERS = {
     FX.ring(at[0], at[1], '#FFFDF7');
     const ic = cornerAt(M(), e.node)?.icon;
     const art = ic ? tourArt(ic, 96) : { festival: incidentArt('festival', 96), express: skillArt('direct', 96), maze: incidentArt('delay', 96) }[e.kind];
-    await drawCard({ tone: e.kind === 'maze' ? 'warn' : 'good', deck: '모서리 칸', title: e.node === e.name ? e.name : `${e.node} · ${e.name}`, short: e.short, art, quick: !p.human });
+    await drawCard({ tone: e.kind === 'maze' ? 'warn' : 'good', deck: '모서리 칸', title: e.node === e.name ? e.name : `${e.node} · ${e.name}`, short: e.short, art, quick: !isMine(p) });
     if (e.kind === 'maze') act(pieceEl(p.id), 'sad', 900);
   },
   async warp(e) {
@@ -2539,14 +2753,14 @@ const HANDLERS = {
   async newGoal(e) {
     const p = playerById(M(), e.player);
     drawMarks();
-    if (p.human) toast(e.by === 'hype' ? `떡상! 목적지 → ${e.goal}` : `새 목적지 ${e.goal} (${dist(p.node, e.goal)}역)`);
-    await sleep(p.human ? 500 : 150);
+    if (isMine(p)) toast(e.by === 'hype' ? `떡상! 목적지 → ${e.goal}` : `새 목적지 ${e.goal} (${dist(p.node, e.goal)}역)`);
+    await sleep(isMine(p) ? 500 : 150);
   },
   async monoWarn(e) {
     const m = M(), p = playerById(m, e.player);
     const what = e.kind === 'hot' ? `명소역 ${e.have}/${e.need}곳` : isLoop(m) ? `${e.have}칸 연속` : `${LINES[e.line]?.name || ''} ${e.have}역 연결`;
-    await drawCard({ tone: p.human ? 'good' : 'warn', deck: '독점 경고', title: `${p.human ? '나' : nameOf(p)} 독점 1곳 전!`,
-      short: p.human ? `${what} · 1곳 더 가지면 승리` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : isLoop(m) ? '칸' : '노선 끝 역'}을 견제하세요`, art: character(p.hero, 96, 'cheer') });
+    await drawCard({ tone: isMine(p) ? 'good' : 'warn', deck: '독점 경고', title: `${isMine(p) ? '나' : nameOf(p)} 독점 1곳 전!`,
+      short: isMine(p) ? `${what} · 1곳 더 가지면 승리` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : isLoop(m) ? '칸' : '노선 끝 역'}을 견제하세요`, art: character(p.hero, 96, 'cheer') });
     // 판에서 그 칸(들)을 짚어 준다 — '독점!' 깃발이 선 곳
     const spots = monoThreats(m).filter((t) => t.player === p.id).map((t) => nodeXY(t.node));
     if (!spots.length) return;
@@ -2555,12 +2769,12 @@ const HANDLERS = {
     await sleep(440);
     Sound.horn();
     for (const s of spots) { const [x, y] = toApp(Camera.toView(s)); FX.ring(x, y - 10, '#E0533D'); }
-    await sleep(p.human ? 700 : 900);
+    await sleep(isMine(p) ? 700 : 900);
   },
   async monopoly(e) {
     const p = playerById(M(), e.player);
     flash(app);
-    await drawCard({ tone: p.human ? 'good' : 'bad', deck: '독점 승리', title: `${p.human ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
+    await drawCard({ tone: isMine(p) ? 'good' : 'bad', deck: '독점 승리', title: `${isMine(p) ? '나' : nameOf(p)} ${e.kind === 'hot' ? '명소 독점!' : '노선 독점!'}`,
       short: e.kind === 'hot' ? `명소역 ${M().hotWin}곳 독점` : `${LINES[e.line]?.name || ''} ${M().lineWin}역 연결`, art: character(p.hero, 96, 'dance') });
   },
   async over() {}
@@ -2573,7 +2787,7 @@ async function estateFx(e, word, sound) {
   if (e.price) await moneyFly(panelSpot(p.id), at, e.price);
   sound.call(Sound);
   // 땅에 닿는 순간 칸을 새 색으로 칠하고 눌러 준다
-  const xy = nodeXY(e.node), opt = { s: pieceSize(), z: depth(xy[1]) + 70, color: colorOf(p), quick: !p.human, onHit: () => { drawBoard(); pressTile(e.node, 1.3); } };
+  const xy = nodeXY(e.node), opt = { s: pieceSize(), z: depth(xy[1]) + 70, color: colorOf(p), quick: !isMine(p), onHit: () => { drawBoard(); pressTile(e.node, 1.3); } };
   // 순환선: 칸의 입체 건물이 그 자리에서 솟는다(판에 남을 건물과 같은 그림)
   const g = groundOf(e.node, e.type === 'upgrade' ? e.level : 1);
   const iso = (lv) => { if (!g) return null; const a = buildingArt(lv, colorOf(p)); return { art: a.html, size: [a.w, a.h], anchor: a.anchor, level: lv }; };
@@ -2585,17 +2799,17 @@ async function estateFx(e, word, sound) {
   else drawBoard();
   FX.ring(at[0], at[1], colorOf(p));
   FX.ring(at[0], at[1], '#FFFDF7');
-  FX.confetti(at[0], at[1] - 30, p.human ? 22 : 8, 1);
+  FX.confetti(at[0], at[1] - 30, isMine(p) ? 22 : 8, 1);
   FX.pow(at[0], at[1] - 70, word, colorOf(p), '#22201D', -5);
   if (e.chain > 1 && (e.linked || e.invest)) FX.pow(at[0] + 40, at[1] - 104, `${e.chain}역 연결 ×${Math.min(4, e.chain)}`, '#22201D', '#FFFDF7', 6);
   act(pieceEl(p.id), 'cheer', 900);
   drawHud();
-  await sleep(p.human ? 550 : 250);
+  await sleep(isMine(p) ? 550 : 250);
 }
 
 // ── 결과 ───────────────────────────────────────────────────
 
-const winnerName = (m) => { const w = playerById(m, m.winner); return w?.human ? '나' : nameOf(w); };
+const winnerName = (m) => { const w = playerById(m, m.winner); return isMine(w) ? '나' : nameOf(w); };
 
 const CHEST = `<svg viewBox="0 0 80 64" width="104" height="83" aria-hidden="true">
   <rect x="8" y="28" width="64" height="32" rx="5" fill="#C9822E" stroke="#22201D" stroke-width="3"/>
@@ -2616,8 +2830,8 @@ async function results() {
   const got = rec.rp - rec.rpBefore;
   const rows = m.ranking.map((r) => {
     const p = playerById(m, r.id);
-    return `<div class="res-row ${p.human ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
-      <div><b>${p.human ? '나' : nameOf(p)}</b><span>${r.out ? '파산' : `자산 ${r.assets.toLocaleString()} · 역 ${stationsOf(m, p).length}곳`}</span></div></div>`;
+    return `<div class="res-row ${isMine(p) ? 'me' : ''}" style="--pc:${colorOf(p)}"><b class="pl-no">${r.place}</b>${character(p.hero, 40, r.place === 1 ? 'dance' : r.out ? 'sad' : 'idle')}
+      <div><b>${isMine(p) ? '나' : nameOf(p)}</b><span>${r.out ? '파산' : `자산 ${r.assets.toLocaleString()} · 역 ${stationsOf(m, p).length}곳`}</span></div></div>`;
   }).join('');
   const reason = m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} · ${m.mono?.kind === 'hot' ? `명소역 ${m.hotWin}곳 독점` : `${LINES[m.mono?.line]?.name || ''} ${m.lineWin}역 독점`}` : `${hhmm(m.end)} 막차 · 자산 순위`;
   const s = sheet(`
@@ -2638,10 +2852,11 @@ async function results() {
       <em class="rs-delta ${got >= 0 ? 'up' : 'down'}">${got >= 0 ? '+' : ''}${got} RP${got > rp ? '<small>강등 보호</small>' : ''}</em>
     </div>
     <div class="rs-extra">${canOpen ? `<i class="hot">${canOpen.job} ${canOpen.name} 해금 가능!</i>` : ''}${fresh.length ? `<i>미션 완료 · ${fresh.map((x) => x.text).join(' · ')}</i>` : ''}</div>
-    <div class="row"><button class="btn white" id="home">로비</button><button class="btn" id="again">다시 하기</button></div>`);
+    <div class="row"><button class="btn white" id="home">로비</button><button class="btn" id="again">${G.online ? '새 방' : '다시 하기'}</button></div>`);
   s.classList.add('result-sheet');
+  if (G.online) Online.forget(); // 끝난 판은 이어 하기에서 뺀다
   s.querySelector('#home').onclick = () => { closeSheet(); title(); };
-  s.querySelector('#again').onclick = () => { closeSheet(); startGame(G.daily); };
+  s.querySelector('#again').onclick = () => { closeSheet(); if (G.online) { title(); onlineMenu(); } else startGame(G.daily); };
   const live = () => document.body.contains(s);
 
   // 1) 등수 발표
@@ -2759,3 +2974,9 @@ Cloud.onSync(() => {
 Cloud.start();
 
 splash();
+// 초대 링크(?room=코드): 로비가 뜨면 그 방으로
+const invited = Online.normCode(new URLSearchParams(location.search).get('room'));
+if (invited.length === Online.CODE_LEN) {
+  history.replaceState(null, '', location.pathname);
+  const wait = setInterval(() => { if (app.classList.contains('home-app') && !app.querySelector('.sheet')) { clearInterval(wait); onlineMenu(invited); } }, 300);
+}

@@ -56,6 +56,8 @@ export const HYPE_LOOP_X = 1;
 export const EXPRESS_REACH = 12;
 /** 미로 · 휴게소 · 환승 라운지 모서리에서 한 턴 쉬며 내는 이용료(적립금으로) */
 export const REST_FEE = 50;
+/** 더블(두 주사위 같은 눈)이 이만큼 이어지면 감옥(환승 미로)으로 */
+export const DOUBLE_JAIL = 3;
 export const hhmm = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
 /** 찬스 역: 노선도 곳곳의 한 호선 역. 살 수 없고, 서면 찬스 카드를 뽑는다 */
@@ -86,7 +88,7 @@ export function createMatch({ seed = 1, heroes, humans = 1, daily = false, regio
     players: heroes.map((hero, i) => ({
       id: 'p' + i, hero, human: i < humans, money: START_MONEY,
       node: starts[i], prev: null, goal: null, out: false, place: null,
-      charge: 0, cost: chargeOf(heroById(hero), loop && ring.id), dash: 0, fly: false, again: false, rest: 0, coupon: false, goals: 0,
+      charge: 0, cost: chargeOf(heroById(hero), loop && ring.id), dash: 0, fly: false, again: false, doubles: 0, rest: 0, coupon: false, goals: 0,
       combo: false, rescued: false
     })),
     owned: {},          // 역 → 주인 id
@@ -178,7 +180,10 @@ export function tollFor(m, n, payer) {
 
 // ── 차례 ───────────────────────────────────────────────────
 
-/** 굴리기: 주사위 2개. 같은 눈이면 바로 그 눈으로, 다르면 하나를 고른다(pickDie). 쉬어야 하는 사람이면 넘어간다 */
+/**
+ * 굴리기: 주사위 2개. 다르면 하나를 고른다(pickDie). 쉬어야 하는 사람이면 넘어간다.
+ * 같은 눈(더블)이면 그 눈으로 가고 한 번 더 — 한 차례에 더블이 DOUBLE_JAIL 번 이어지면 움직이지 않고 감옥(환승 미로)으로
+ */
 export function roll(m, rng = m.rng) {
   if (m.phase !== 'roll') throw new Error('지금은 굴릴 차례가 아닙니다: ' + m.phase);
   const p = current(m);
@@ -194,8 +199,28 @@ export function roll(m, rng = m.rng) {
   const cost = skillCost(p);
   if (p.charge < cost && ++p.charge === cost) events.push({ type: 'charged', player: p.id });
   if (p.combo) { m.pending.combo = true; return events; }
-  if (rolls[0].face === rolls[1].face) return events.concat(pickDie(m, 0));
+  if (rolls[0].face === rolls[1].face) {
+    p.doubles = (p.doubles || 0) + 1;
+    if (p.doubles >= DOUBLE_JAIL) return events.concat(jail(m, p));
+    events.push({ type: 'double', player: p.id, count: p.doubles });
+    const picked = pickDie(m, 0);
+    if (m.phase === 'move') p.again = true; // 길이 막혀 차례가 이미 넘어갔으면 그만
+    return events.concat(picked);
+  }
   return events;
+}
+
+/** 더블 연속: 감옥(고리 판의 환승 미로 · 휴게소 · 라운지)으로 끌려가 한 턴 쉰다. 미로가 없는 노선도 판은 제자리에서 쉰다 */
+function jail(m, p) {
+  const ring = ringIn(m);
+  const to = (ring && Object.keys(ring.corners).find((n) => ring.corners[n].kind === 'maze')) || p.node;
+  const events = [{ type: 'jail', player: p.id, from: p.node, to, count: p.doubles }];
+  if (to !== p.node) { p.prev = null; p.node = to; }
+  p.doubles = 0;
+  p.again = false;
+  p.rest = 1;
+  m.pending = null;
+  return events.concat(endTurn(m));
 }
 
 /** 고를 수 있는 주사위: 0·1, 동시 배달 중이면 2(둘의 합)도 */
@@ -730,12 +755,14 @@ function endTurn(m) {
   m.phase = 'roll';
   if (alive(m).length <= 1) return events.concat(finish(m, 'bankrupt'));
   const p = current(m);
-  if (p.again && !p.out) {
+  // 한 번 더(더블 · 홍대 · 카드) — 쉬어야 하는 칸(미로)에 섰으면 거기서 끝
+  if (p.again && !p.out && !p.rest) {
     p.again = false;
     events.push({ type: 'again', player: p.id });
     return events;
   }
   p.again = false;
+  p.doubles = 0; // 차례가 넘어가면 더블 세기도 처음부터
   const before = m.turn;
   do { m.turn = (m.turn + 1) % m.players.length; } while (m.players[m.turn].out);
   if (m.turn <= before) {

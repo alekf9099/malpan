@@ -405,6 +405,33 @@ test('주사위 둘: 굴리면 고르기, 고른 눈만큼 간다(같은 눈이�
   assert.equal(m.phase, 'move');
 });
 
+test('더블: 같은 눈이면 그 눈으로 가고 한 번 더 · 3번 이어지면 감옥(환승 미로)에서 한 턴 쉰다', () => {
+  const m = loopGame(2);
+  const p = current(m);
+  // 1 · 1: 고르지 않고 바로 이동, 다 가면 같은 사람이 한 번 더
+  let ev = roll(m, rngAlways(0));
+  assert.ok(ev.some((e) => e.type === 'double' && e.count === 1));
+  assert.equal(m.phase, 'move');
+  assert.equal(m.pending.steps, 1);
+  assert.equal(p.again, true);
+  // 세 번째 더블: 움직이지 않고 신도림 환승 미로로, 한 턴 쉬고 차례가 넘어간다
+  m.phase = 'roll'; m.pending = null; p.again = false; p.doubles = 2;
+  ev = roll(m, rngAlways(0));
+  const j = ev.find((e) => e.type === 'jail');
+  assert.ok(j);
+  assert.equal(j.to, '신도림');
+  assert.equal(p.node, '신도림');
+  assert.equal(p.rest, 1);
+  assert.equal(p.doubles, 0);
+  assert.notEqual(current(m), p);
+  assert.ok(!ev.some((e) => e.type === 'die'));
+  // 다른 눈이면 더블이 아니다
+  const q = current(m), seq = [0, 0.5];
+  ev = roll(m, { next: () => seq.shift() ?? 0.5, shuffle: (a) => a });
+  assert.ok(!ev.some((e) => e.type === 'double'));
+  assert.equal(q.doubles, 0);
+});
+
 // ── 순환선 판(부루마블식) ──────────────────────────────────
 
 const loopGame = (n = 2, heroes = ['student', 'worker', 'driver', 'staff']) => createMatch({ seed: 5, heroes: heroes.slice(0, n), humans: 1, region: 'loop' });

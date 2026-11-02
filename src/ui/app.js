@@ -9,7 +9,7 @@ import {
   createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
   invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
-  monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf, takeoverFor
+  monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf, takeoverFor, DOUBLE_JAIL
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
@@ -571,6 +571,7 @@ const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 const LOOP_GUIDE = [
   ['순환선', '2호선 32칸 고리를 시계 방향으로 · 모두 시청에서 출발 · 18바퀴'],
   ['이동', '주사위 2개 중 하나를 골라 이동(1~6칸) · 뒤로는 못 감'],
+  ['더블', `두 주사위가 같은 눈이면 그 눈만큼 가고 한 번 더 · 한 차례에 ${DOUBLE_JAIL}번 이어지면 신도림 환승 미로로 끌려가 한 턴 쉬기`],
   ['월급', `시청을 지날 때마다 +${SALARY} · 시청에 서면 1.5배`],
   ['지름길', '3호선 을지로3가↔교대 · 4호선 동대문↔사당 — 지나거나 출발할 때 판을 가로지를 수 있음'],
   ['모서리 칸', '성수 팝업 축제(내 역 통행료 2배) · 강남 급행 환승(앞 12칸 중 원하는 칸) · 신도림 환승 미로(한 턴 쉬기)'],
@@ -591,14 +592,15 @@ function ringGuide(r) {
   return [
     [r.name, `32칸 고리를 시계 방향으로 · 모두 ${r.startName}에서 출발 · 18바퀴`],
     LOOP_GUIDE[1],
+    ['더블', `두 주사위가 같은 눈이면 그 눈만큼 가고 한 번 더 · 한 차례에 ${DOUBLE_JAIL}번 이어지면 ${corner('maze')}로 끌려가 한 턴 쉬기`],
     [r.payName, `${r.startName}을 지날 때마다 +${SALARY} · ${r.startName}에 서면 1.5배`],
     ['지름길', `${r.shortcuts.map(([a, b, , l]) => `${l} ${r.nameOf(a)}↔${r.nameOf(b)}`).join(' · ')} — 지나거나 출발할 때 판을 가로지를 수 있음`],
     ['모서리 칸', `${corner('festival')}(내 칸 통행료 2배) · ${corner('express')}(앞 12칸 중 원하는 칸) · ${corner('maze')}(한 턴 쉬기)`],
-    LOOP_GUIDE[5], LOOP_GUIDE[6], LOOP_GUIDE[7], LOOP_GUIDE[8],
+    LOOP_GUIDE[6], LOOP_GUIDE[7], LOOP_GUIDE[8], LOOP_GUIDE[9],
     [r.chanceName, `? 칸은 ${r.chanceName} — 찬스 카드를 뽑는다`],
     ['적립금', `벌금 · 수리비 · ${corner('maze')} 이용료(50)가 판 가운데 단지에 쌓이고, ${corner('festival')} 칸에 서면 통째로 가져간다`],
     ['독점 승리', `모서리·${r.chanceName} 칸 사이 ${r.lineWin}칸 구간을 통째로 가지면 즉시 승리`],
-    LOOP_GUIDE[12]
+    LOOP_GUIDE[13]
   ];
 }
 
@@ -607,6 +609,7 @@ function guide(then = null) {
   const steps = ring ? ringGuide(ring) : [
     ['지역', '판마다 서울의 한 지역(도심 · 강남 · 서남 · 동부, 72역)에서 대결 · 12바퀴'],
     ['이동', '주사위 2개 중 하나를 골라 이동(1~6역) · 눈마다 도착할 곳이 미리 보임'],
+    ['더블', `같은 눈이면 그 눈만큼 가고 한 번 더 · ${DOUBLE_JAIL}번 이어지면 그 자리에서 한 턴 쉬기`],
     ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
     ['구매 · 증축', '빈 역 도착 시 구매(일반 100 · 환승 180 · 3개 노선 260) · 내 역 재도착 시 증축, 3단계는 랜드마크'],
     ['통행료', '남의 역 도착 시 통행료, 지나가기만 해도 20% · 같은 노선 연결 ×2~×4 · 단계 ×3 · ×7'],
@@ -1510,6 +1513,18 @@ function showPlayer(p) { G.regionView = false; Camera.follow(nodeXY(p.node), 380
 /** 판 화면 좌표 → 앱 좌표 */
 function toApp([x, y]) { const b = $('#board'); return [x + b.offsetLeft, y + b.offsetTop]; }
 const nodeApp = (n) => toApp(Camera.toView(nodeXY(n)));
+/** 감옥(더블 연속) 칸 이름 — 고리 판의 미로 모서리(환승 미로 · 휴게소 · 환승 라운지), 노선도 판은 '휴식' */
+function jailName() {
+  const r = ringIn(M()), n = r && Object.keys(r.corners).find((k) => r.corners[k].kind === 'maze');
+  return n ? r.corners[n].name : '휴식';
+}
+
+/** 받침에 맞춰 '로' · '으로'(ㄹ 받침은 '로') */
+function ro(word) {
+  const c = word.charCodeAt(word.length - 1) - 0xac00, jong = c >= 0 && c < 11172 ? c % 28 : 0;
+  return word + (jong && jong !== 8 ? '으로' : '로');
+}
+
 /** 플레이어 판(위 HUD)의 자리 */
 function panelSpot(pid) {
   const el = $(`#players [data-player="${pid}"]`);
@@ -2195,13 +2210,35 @@ const HANDLERS = {
         await Roller.animate(spot, BOARDS.metro, e.rolls[0], 'me');
         setTimeout(() => spot.classList.remove('show'), 600);
       }
-      stampText(`${e.rolls[0].label} · ${e.rolls[1].label}`, '', M().pending?.combo ? '동시 배달 · 합도 가능' : e.rolls[0].face === e.rolls[1].face ? '같은 눈!' : '하나를 고르세요');
+      stampText(`${e.rolls[0].label} · ${e.rolls[1].label}`, '', M().pending?.combo ? '동시 배달 · 합도 가능' : e.rolls[0].face === e.rolls[1].face ? '더블!' : '하나를 고르세요');
       await sleep(250);
     } else Sound.clatter();
   },
+  /** 더블: 그 눈으로 가고 한 번 더 — 한 번만 더 나오면 감옥이라고 미리 알린다 */
+  async double(e) {
+    const p = playerById(M(), e.player);
+    Sound.big();
+    if (p.human) buzz(30);
+    G.doubleNote = e.count >= DOUBLE_JAIL - 1 ? `더블 ${e.count}번 · 한 번 더 나오면 ${ringIn(M()) ? `${jailName()}행` : '한 턴 휴식'}!` : '더블 · 이동 뒤 한 번 더';
+    stampText(e.count > 1 ? `더블 ${e.count}번!` : '더블!', 'yellow', G.doubleNote);
+    await sleep(p.human ? 700 : 450);
+  },
+  /** 더블 연속: 감옥(환승 미로)으로 끌려가 한 턴 쉰다 */
+  async jail(e) {
+    const p = playerById(M(), e.player);
+    G.doubleNote = null;
+    Sound.horn(); flash(app);
+    if (p.human) buzz([40, 60, 40]);
+    stampText(`더블 ${e.count}번!`, 'ink', e.to !== e.from ? `${ro(jailName())} · 한 턴 쉬기` : '그 자리에서 한 턴 쉬기');
+    await sleep(p.human ? 900 : 600);
+    if (e.to !== e.from) await HANDLERS.warp({ player: e.player, from: e.from, to: e.to, by: 'jail' });
+    act(pieceEl(p.id), 'sad', 900);
+    await sleep(300);
+  },
   async die(e) {
     const p = playerById(M(), e.player);
-    const sub = e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : e.roll.bonus ? '한 번 더!' : '';
+    const sub = e.fly ? `×2 · 총 ${e.steps}역` : e.dash ? `+${e.dash} · 총 ${e.steps}역` : G.doubleNote || '';
+    G.doubleNote = null;
     if (p.human) { stampText(e.roll.label + '!', e.roll.bonus ? 'yellow' : '', sub); await sleep(200); }
     else { stampText(`${nameOf(p)} ${e.roll.label}`, 'ink opp', sub); await sleep(300); }
   },
@@ -2381,7 +2418,7 @@ const HANDLERS = {
   },
   async again(e) {
     const p = playerById(M(), e.player);
-    toast(`${p.human ? '나' : nameOf(p)} · 한 번 더!`);
+    toast(`${p.human ? '나' : nameOf(p)} · ${p.doubles ? `더블 ${p.doubles}번 · ` : ''}한 번 더!`);
     await sleep(400);
   },
   async clock() { drawClock(); },
@@ -2481,7 +2518,7 @@ const HANDLERS = {
     }
     const from = nodeApp(e.from);
     Sound.whoosh();
-    const WARP_TEXT = { direct: ['직통 열차!', '#2F6FD0'], gather: ['회식 소집!', '#E0533D'] };
+    const WARP_TEXT = { direct: ['직통 열차!', '#2F6FD0'], gather: ['회식 소집!', '#E0533D'], jail: [`${jailName()}행!`, '#6B3FA0'] };
     const [wt, wc] = WARP_TEXT[e.by] || ['KTX 출발!', '#2EA6DA'];
     FX.pow(from[0], from[1] - 70, wt, wc, '#FFFDF7', -5);
     await tween(el, [{ transform: 'translateY(0) scale(1)', opacity: 1 }, { transform: 'translateY(-90px) scale(.4)', opacity: 0 }], { duration: 320, easing: 'ease-in', fill: 'forwards' });

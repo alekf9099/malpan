@@ -112,6 +112,9 @@ export function boardSvg(state = {}) {
   const faded = ALL_EDGES.filter((e) => !edgeIn(e)).map((e) => `<line ${seg(e)} stroke="#D9CFBE" stroke-width="8" stroke-linecap="round"/>`).join('');
   const under = ALL_EDGES.filter(edgeIn).map((e) => `<line ${seg(e)} stroke="${INK}" stroke-width="15" stroke-linecap="round"/>`).join('');
   const over = ALL_EDGES.filter(edgeIn).map((e) => `<line ${seg(e)} stroke="${LINES[e.line].color}" stroke-width="9" stroke-linecap="round"/>`).join('');
+  const threat = {};
+  for (const t of state.threats || []) threat[t.node] ??= t.color;
+  const warn = Object.entries(threat).map(([n, c]) => { const [x, y] = nodeXY(n); return `<circle cx="${x}" cy="${y}" r="34" fill="${c}" opacity=".25"/><circle class="mono-threat" cx="${x}" cy="${y}" r="34" fill="none" stroke="#E0533D" stroke-width="6" stroke-dasharray="11 8"/>`; }).join('');
   const stations = ALL_STATIONS.map((n) => {
     const [x, y] = nodeXY(n);
     const big = isTransfer(n);
@@ -148,7 +151,7 @@ export function boardSvg(state = {}) {
     <rect width="${geo.w}" height="${geo.h}" fill="#F7F3EA"/>
     ${grid}
     <path d="${river}" fill="none" stroke="#CFE7F3" stroke-width="80" stroke-linecap="round"/>
-    <g>${faded}</g><g>${halos}</g><g>${glow}</g><g>${under}</g><g>${over}</g><g>${stations}</g>
+    <g>${faded}</g><g>${halos}</g><g>${glow}</g><g>${under}</g><g>${over}</g><g>${warn}</g><g>${stations}</g>
   </svg>`;
 }
 
@@ -276,7 +279,7 @@ const CORNER_INK = { start: '#C0392B', festival: '#B8336A', express: '#1F4F99', 
  * 칸 하나. tile = 판에 칠할 평면 그림, bld = 화면에 세울 것(건물 · 그림), y = 세울 것의 화면 바닥(앞뒤 순서)
  * 땅 칸: 위쪽 머리띠(구역 색 + 이름) · 몸통 · 값. 산 칸은 몸통이 주인 색이고 주인 색 테.
  */
-function loopTile(n, i, owner, level) {
+function loopTile(n, i, owner, level, threat = {}, toll = {}) {
   const b = tileBox(i), { x, y, w, h } = b, cx = x + w / 2;
   const own = owner[n], lv = level[n] || 0, c = RING.corners[n];
   const clip = (inner) => `<clipPath id="lt${i}"><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12"/></clipPath><g clip-path="url(#lt${i})">${inner}</g>`;
@@ -306,16 +309,41 @@ function loopTile(n, i, owner, level) {
     + clip(`<rect x="${x}" y="${hy}" width="${w}" height="${HB}" fill="${col}"/><path d="M${x} ${hy} H${x + w}" stroke="${INK}" stroke-width="3"/>`)
     + txt(cx, hy + HB / 2 + 7, name, { size: Math.min(19, ((w - 10) / name.length) * 1.05), fill: '#FFFDF7' });
   if (own) tile += `<rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - HB - 7}" rx="8" fill="none" stroke="${own}" stroke-width="5"/>`;
+  // 독점 위기: 이 칸을 가지면 독점 승리 — 그 사람 색 빗금 + 깜빡이는 점선 테
+  const th = threat[n];
+  if (th) tile += `<rect x="${x + 2}" y="${y + 2}" width="${w - 4}" height="${h - HB - 2}" rx="10" fill="url(#thr-${th.slice(1)})"/>`
+    + `<rect class="mono-threat" x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="11" fill="none" stroke="#E0533D" stroke-width="7" stroke-dasharray="14 9"/>`;
   else {
     const px = wide ? x + w - 30 : cx, py = wide ? y + 26 : y + 22;
     tile += `<circle cx="${px - 22}" cy="${py - 5}" r="7" fill="#F2B33D" stroke="${INK}" stroke-width="2"/>` + txt(px + 6, py, stationPrice(n), { size: 17, fill: '#5A5248' });
   }
   // 세울 것: 산 칸은 단계 건물, 빈 칸은 여행지 · 명소 그림(없으면 지하철 입구)
   const shadow = `<ellipse cx="${gx}" cy="${gy}" rx="26" ry="8" fill="${INK}" opacity=".16"/>`;
-  const stand = own ? buildingSvg(...isoPt(...buildFlat(i)), lv || 1, own)
+  const [bx, by] = isoPt(...buildFlat(i));
+  const stand = own ? buildingSvg(bx, by, lv || 1, own)
     : pic ? `${shadow}<svg x="${gx - 30}" y="${gy - 56}" width="60" height="60" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
       : `<g transform="translate(${gx} ${gy}) scale(${ISO_K})">${isoBuilding(0)}</g>`;
-  return { tile, bld: `<g class="lb" data-n="${n}">${stand}</g>`, y: gy };
+  // 산 칸: 통행료 팻말(건물 앞 바닥) — 모두의 마블처럼 판만 봐도 얼마인지
+  const tag = own && toll[n] ? tollTag(...isoPt(...(wide ? [x + w - 44, y + (h - HB) / 2 + 6] : [cx, hy - 16])), toll[n], own) : '';
+  // 독점 위기 깃발: 서 있는 것 꼭대기 위
+  const top = own ? by - SPRITE.h * kOf(lv || 1) * SPRITE.ay + 6 : pic ? gy - 58 : gy - 26;
+  const flag = th ? threatFlag(own ? bx : gx, top, th) : '';
+  return { tile, bld: `<g class="lb" data-n="${n}">${stand}${tag}</g>${flag}`, y: gy };
+}
+
+/** 통행료 팻말(화면에 세운다): 주인 색 테 + 동전 + 값 */
+function tollTag(x, y, amount, color) {
+  const label = amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(amount), w = 26 + label.length * 10;
+  return `<g class="toll-tag"><rect x="${x - w / 2}" y="${y - 12}" width="${w}" height="24" rx="12" fill="${INK}"/><rect x="${x - w / 2}" y="${y - 15}" width="${w}" height="24" rx="12" fill="#FFFDF7" stroke="${color}" stroke-width="3.5"/>`
+    + `<circle cx="${x - w / 2 + 12}" cy="${y - 3}" r="6" fill="#F2B33D" stroke="${INK}" stroke-width="2"/>`
+    + txt(x + 7, y + 3, label, { size: 16, fill: INK }) + '</g>';
+}
+/** 독점 위기 깃발(화면에 세운다): 빨간 말풍선 '독점!' + 노리는 사람 색 점 */
+function threatFlag(x, y, color) {
+  return `<g class="mono-flag" style="transform-origin:${x}px ${y + 30}px"><path d="M${x} ${y + 30} L${x - 7} ${y + 16} H${x + 7} Z" fill="#E0533D" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`
+    + `<rect x="${x - 40}" y="${y - 12}" width="80" height="30" rx="15" fill="#E0533D" stroke="${INK}" stroke-width="3.5"/>`
+    + `<circle cx="${x - 25}" cy="${y + 3}" r="7" fill="${color}" stroke="#FFFDF7" stroke-width="2.5"/>`
+    + txt(x + 8, y + 10, '독점!', { size: 18, font: DISPLAY, weight: 400, fill: '#FFFDF7' }) + '</g>';
 }
 
 const LINE2 = '#3CB44A';
@@ -328,8 +356,12 @@ export function isoBuilding(level, c = LINE2) {
   const K = `stroke="${INK}" stroke-width="2.5" stroke-linejoin="round"`, W = 'fill="#BFE3F5" stroke="#22201D" stroke-width="1.6"';
   const ground = (a, b) => `<path d="M-${a} 0 L0 -${b} L${a} 0 L0 ${b} Z" fill="#E8E1D2" ${K}/>`;
   if (level === 0) {
-    return ground(22, 11) + `<path d="M-22 0 V8 L0 19 V11 Z" fill="#CFC6B3" ${K}/><path d="M22 0 V8 L0 19 V11 Z" fill="#B9AF9A" ${K}/>`
-      + `<path d="M-12 -8 Q0 -24 12 -8 Z" fill="${LINE2}" ${K}/><rect x="-4" y="-16" width="8" height="9" fill="#FFFDF7" ${K}/>`;
+    // 지하철 입구: 바닥 판 + 내려가는 계단 구멍 + 기둥 둘에 얹은 초록 유리 지붕 + 호선 표지 기둥
+    return ground(24, 12) + `<path d="M-13 1 L0 -5.5 L13 1 L0 7.5 Z" fill="#5A5248" ${K}/><path d="M-7 2 L0 -1.5 L7 2" fill="none" stroke="#8A8173" stroke-width="2"/>`
+      + `<path d="M-13 1 V-17 M13 1 V-17" stroke="${INK}" stroke-width="2.5"/>`
+      + `<path d="M-17 -16 L0 -26 L17 -16 L0 -6 Z" fill="${LINE2}" ${K}/><path d="M-17 -16 L0 -6 L17 -16 V-12 L0 -2 L-17 -12 Z" fill="${shade(LINE2)}" ${K}/>`
+      + `<path d="M-10 -16 L0 -22" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round" opacity=".7"/>`
+      + `<path d="M21 6 V-26" stroke="${INK}" stroke-width="3" stroke-linecap="round"/><circle cx="21" cy="-30" r="7.5" fill="${LINE2}" ${K}/><circle cx="21" cy="-30" r="3" fill="#FFFDF7"/>`;
   }
   if (level === 1) {
     return ground(24, 12) + `<path d="M-20 -22 L0 -32 L20 -22 V-2 L0 8 L-20 -2 Z" fill="#FFFDF7" ${K}/><path d="M0 -12 V8 L20 -2 V-22 Z" fill="#D9D0BE" ${K}/>`
@@ -460,7 +492,10 @@ function loopSvg(state = {}) {
     const [ax, ay] = innerPoint(ia), [bx, by] = innerPoint(ib);
     return `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${INK}" stroke-width="14" stroke-linecap="round"/><line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${e.color}" stroke-width="8" stroke-linecap="round"/>`;
   }).join('');
-  const made = RING.tiles.map((n, i) => ({ n, t: loopTile(n, i, owner, level) }));
+  const threat = {};
+  for (const t of state.threats || []) threat[t.node] ??= t.color;
+  const made = RING.tiles.map((n, i) => ({ n, t: loopTile(n, i, owner, level, threat, state.tolls || {}) }));
+  const hatch = [...new Set(Object.values(threat))].map((c) => `<pattern id="thr-${c.slice(1)}" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="22" height="22" fill="${c}" opacity=".12"/><rect width="9" height="22" fill="${c}" opacity=".32"/></pattern>`).join('');
   const tiles = made.map(({ n, t }) => `<g class="lt" data-n="${n}">${t.tile}</g>`).join('');
   const blds = made.filter(({ t }) => t.bld).sort((a, b) => a.t.y - b.t.y).map(({ t }) => t.bld).join('');
   const sc = SCENES[RING.scene || 'seoul'](I0, I1);
@@ -473,6 +508,7 @@ function loopSvg(state = {}) {
   return `<svg class="mat loop-mat" viewBox="0 0 ${PW} ${PH}" width="${PW}" height="${PH}" aria-hidden="true" overflow="visible">
     ${backdrop}
     ${baseSvg()}
+    <defs>${hatch}</defs>
     <g transform="${MATRIX}">
       ${topSvg()}
       <clipPath id="parkClip"><rect x="${I0 + 10}" y="${I0 + 10}" width="${I1 - I0 - 20}" height="${I1 - I0 - 20}" rx="30"/></clipPath>

@@ -467,6 +467,21 @@ export function monopolyOf(m, p) {
 }
 const monoWin = (m, s) => s.hot >= m.hotWin || s.line >= m.lineWin;
 
+/** 독점 위기: 이 칸을 가지면(사거나 인수하면) 바로 독점 승리가 되는 칸과 그 사람 — [{ node, player }] */
+export function monoThreats(m) {
+  const out = [];
+  for (const q of alive(m)) {
+    const s = monopolyOf(m, q);
+    const hotNear = s.hot >= m.hotWin - 1, lineNear = s.line >= m.lineWin - 1;
+    if (!hotNear && !lineNear) continue;
+    for (const n of areaOf(m).stations) {
+      if (m.owned[n] === q.id || !buyable(n, m) || (m.owned[n] && m.levels[n] >= MAX_LEVEL)) continue; // 랜드마크는 못 뺏는다
+      if ((hotNear && isHot(n)) || (lineNear && (links({ ...m.owned, [n]: q.id }, q.id).at[n]?.len || 1) >= m.lineWin)) out.push({ node: n, player: q.id });
+    }
+  }
+  return out;
+}
+
 /** 지나간 남의 역마다 통과 요금(주인별로 묶는다). 도착역은 통행료라서 빼고 센다 */
 export function passFares(m, p, path) {
   const out = new Map();

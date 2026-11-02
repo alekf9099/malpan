@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>판 미리 보기</title>
-<!-- 개발용: 판 그림만 크게 띄운다. ?b=loop|korea|world · &vb=x,y,w,h(일부만 확대) · &own=1(산 칸 몇 개를 칠해서) -->
+<!-- 개발용: 판 그림만 크게 띄운다. ?b=loop|korea|world · &vb=x,y,w,h(일부만 확대) · &own=1(산 칸 몇 개를 칠해서, 통행료 팻말까지) · &thr=칸,칸(독점 위기 표시) -->
 <link href="https://fonts.googleapis.com/css2?family=Gasoek+One&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css" rel="stylesheet">
 <style>
@@ -28,7 +28,9 @@ const own = q.has('own');
 const owner = own ? Object.fromEntries(Object.entries(OWN).map(([n, [c]]) => [n, c])) : {};
 const level = own ? Object.fromEntries(Object.entries(OWN).map(([n, [, l]]) => [n, l])) : {};
 await document.fonts.ready;
-document.getElementById('out').innerHTML = boardSvg({ owner, level, links: [] });
+const tolls = Object.fromEntries(Object.keys(owner).map((n, i) => [n, [90, 240, 1260, 480][i % 4]]));
+const threats = (q.get('thr') || '').split(',').filter(Boolean).map((node) => ({ node, color: '#E39A1E' }));
+document.getElementById('out').innerHTML = boardSvg({ owner, level, links: [], tolls, threats });
 const svg = document.querySelector('#out svg');
 svg.removeAttribute('width'); svg.removeAttribute('height');
 if (q.get('vb')) svg.setAttribute('viewBox', q.get('vb').split(',').join(' '));

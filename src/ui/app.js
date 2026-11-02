@@ -9,7 +9,7 @@ import {
   createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
   invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
-  monopolyOf, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf
+  monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
@@ -1237,7 +1237,17 @@ function drawBoard() {
   const owner = {}, linkEdges = [];
   for (const [n, o] of Object.entries(m.owned)) owner[n] = colorOf(playerById(m, o));
   for (const p of m.players) if (!p.out) for (const e of links(m.owned, p.id).edges) linkEdges.push({ ...e, color: colorOf(p) });
-  $('#mat').innerHTML = boardSvg({ owner, level: m.levels, links: linkEdges, region: areaOf(m).set });
+  const threats = monoThreats(m).map((t) => ({ node: t.node, color: colorOf(playerById(m, t.player)) }));
+  // 통행료 팻말: 내가 서면 낼 값(내 칸이면 남이 낼 값)
+  const tolls = {};
+  if (isLoop(m)) {
+    const me = ME();
+    for (const n of Object.keys(m.owned)) {
+      const payer = m.owned[n] !== me.id ? me : alive(m).find((q) => q.id !== me.id);
+      tolls[n] = payer ? tollFor(m, n, payer) : baseToll(m.owned, m.levels, n);
+    }
+  }
+  $('#mat').innerHTML = boardSvg({ owner, level: m.levels, links: linkEdges, region: areaOf(m).set, threats, tolls });
 }
 
 function pieceEl(pid) {
@@ -2343,10 +2353,19 @@ const HANDLERS = {
     await sleep(p.human ? 500 : 150);
   },
   async monoWarn(e) {
-    const p = playerById(M(), e.player);
-    const what = e.kind === 'hot' ? `명소역 ${e.have}/${e.need}곳` : `${LINES[e.line]?.name || ''} ${e.have}역 연결`;
+    const m = M(), p = playerById(m, e.player);
+    const what = e.kind === 'hot' ? `명소역 ${e.have}/${e.need}곳` : isLoop(m) ? `${e.have}칸 연속` : `${LINES[e.line]?.name || ''} ${e.have}역 연결`;
     await drawCard({ tone: p.human ? 'good' : 'warn', deck: '독점 경고', title: `${p.human ? '나' : nameOf(p)} 독점 1곳 전!`,
-      short: p.human ? `${what} · 1곳 더 가지면 승리` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : '노선 끝 역'}을 견제하세요`, art: character(p.hero, 96, 'cheer') });
+      short: p.human ? `${what} · 1곳 더 가지면 승리` : `${what} · 남은 ${e.kind === 'hot' ? '명소역' : isLoop(m) ? '칸' : '노선 끝 역'}을 견제하세요`, art: character(p.hero, 96, 'cheer') });
+    // 판에서 그 칸(들)을 짚어 준다 — '독점!' 깃발이 선 곳
+    const spots = monoThreats(m).filter((t) => t.player === p.id).map((t) => nodeXY(t.node));
+    if (!spots.length) return;
+    drawBoard();
+    Camera.frame(spots, { maxZoom: 0.75, pad: 160, ms: 420 });
+    await sleep(440);
+    Sound.horn();
+    for (const s of spots) { const [x, y] = toApp(Camera.toView(s)); FX.ring(x, y - 10, '#E0533D'); }
+    await sleep(p.human ? 700 : 900);
   },
   async monopoly(e) {
     const p = playerById(M(), e.player);

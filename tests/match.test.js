@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   createMatch, roll, pickDie, move, decide, choose, useSkill, skillBlocked, invest, investable, current, assets, tollFor, passFares, legalPaths, validPath,
   nextStations, CHANCE_STATIONS, START_MONEY, CLOCK, PASS_RATE, HOT_GOAL_DIST, MIN_GOAL_DIST, areaOf, dieOptions, HOT_WIN, warpOptions, takeoverFor,
-  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf, incidentAt, isChance
+  skillTargets, dieChoices, dieSteps, buyoutFor, GATHER_MAX, GATHER_RATE, TRANSFUSE, roundsOf, incidentAt, isChance, monoThreats, cornerAt
 } from '../src/core/match.js';
 import { LOOP_START, SALARY, RINGS } from '../src/core/boards/loop.js';
 import { matchPoints } from '../src/core/ranking.js';
@@ -415,6 +415,23 @@ test('순환선: 모두 시청에서 출발, 목적지 없음, 18바퀴 · 5칸 
   assert.equal(roundsOf(m), 18);
   assert.equal(m.lineWin, 5);
   assert.equal(areaOf(m).stations.length, 32);
+});
+
+test('독점 위기: 가지면 바로 독점이 되는 칸(빈 칸 · 인수할 수 있는 남의 칸)만 짚는다 — 랜드마크 · 모서리는 빼고', () => {
+  const m = loopGame(3);
+  const [a, b] = m.players, T = areaOf(m).stations;
+  assert.deepEqual(monoThreats(m), []);
+  // 시청(0) 다음 1~4칸 중 1·2·3 을 a 가 가지면 4칸째만 이으면 5칸이 아니라 4칸 — 아직 아님
+  const run = T.slice(1, 5);
+  for (const n of run.slice(0, 3)) { m.owned[n] = a.id; m.levels[n] = 1; }
+  assert.deepEqual(monoThreats(m), []);
+  m.owned[run[3]] = a.id; m.levels[run[3]] = 1;
+  const th = monoThreats(m).filter((t) => t.player === a.id).map((t) => t.node);
+  assert.ok(th.length >= 1, '4칸을 이으면 양끝 중 살 수 있는 칸이 위기');
+  for (const n of th) { assert.ok(!m.owned[n] || m.owned[n] !== a.id); assert.ok(!cornerAt(m, n)); }
+  // 그 칸이 남의 랜드마크면 못 뺏으니 위기가 아니다
+  for (const n of th) { m.owned[n] = b.id; m.levels[n] = MAX_LEVEL; }
+  assert.deepEqual(monoThreats(m).filter((t) => t.player === a.id), []);
 });
 
 test('순환선: 앞으로만 가고, 시청을 지나면 월급 · 서면 1.5배 · 통과 요금은 없다', () => {

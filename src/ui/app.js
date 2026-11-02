@@ -570,7 +570,7 @@ const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 /** 순환선 판 도움말 */
 const LOOP_GUIDE = [
   ['순환선', '2호선 32칸 고리를 시계 방향으로 · 모두 시청에서 출발 · 18바퀴'],
-  ['이동', '주사위 2개 중 하나를 골라 이동(1~5칸 · 급행 7칸+한 번 더) · 뒤로는 못 감'],
+  ['이동', '주사위 2개 중 하나를 골라 이동(1~6칸) · 뒤로는 못 감'],
   ['월급', `시청을 지날 때마다 +${SALARY} · 시청에 서면 1.5배`],
   ['지름길', '3호선 을지로3가↔교대 · 4호선 동대문↔사당 — 지나거나 출발할 때 판을 가로지를 수 있음'],
   ['모서리 칸', '성수 팝업 축제(내 역 통행료 2배) · 강남 급행 환승(앞 12칸 중 원하는 칸) · 신도림 환승 미로(한 턴 쉬기)'],
@@ -606,7 +606,7 @@ function guide(then = null) {
   const ring = ringOf(loopy());
   const steps = ring ? ringGuide(ring) : [
     ['지역', '판마다 서울의 한 지역(도심 · 강남 · 서남 · 동부, 72역)에서 대결 · 12바퀴'],
-    ['이동', '주사위 2개 중 하나를 골라 이동(1~5역 · 급행 7역+한 번 더) · 눈마다 도착할 곳이 미리 보임'],
+    ['이동', '주사위 2개 중 하나를 골라 이동(1~6역) · 눈마다 도착할 곳이 미리 보임'],
     ['갈림길', '환승역에서 노란 화살표로 방향 선택 · 왔던 길로는 못 돌아감'],
     ['구매 · 증축', '빈 역 도착 시 구매(일반 100 · 환승 180 · 3개 노선 260) · 내 역 재도착 시 증축, 3단계는 랜드마크'],
     ['통행료', '남의 역 도착 시 통행료, 지나가기만 해도 20% · 같은 노선 연결 ×2~×4 · 단계 ×3 · ×7'],
@@ -758,6 +758,7 @@ async function startGame(daily) {
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
   G.hudMoney = {};
   G.combo = null;
+  G.entered = new Set([current(m).id]); // 첫 차례를 맞은 사람 — 출발 칸에는 차례가 온 사람만 서 있게(첫 차례는 turnStart 없이 시작)
   enterGame();
 }
 
@@ -1333,7 +1334,8 @@ function drawPieces() {
   const at = {};
   for (const p of m.players) {
     const el = pieceEl(p.id);
-    if (p.out) { el.style.display = 'none'; continue; }
+    // 아직 첫 차례가 안 온 사람은 출발 칸에 세우지 않는다(차례가 오면 그때 내려선다)
+    if (p.out || (G.entered && !G.entered.has(p.id) && current(m) !== p)) { el.style.display = 'none'; continue; }
     el.style.display = '';
     (at[p.node] ||= []).push(p);
   }
@@ -2159,8 +2161,12 @@ const HANDLERS = {
     // 못 쓰고 남은 동시 배달 상자는 다음 차례에 치운다
     if (G.combo && G.combo.pid !== p.id) { G.combo.boxes.forEach((b) => b.remove()); G.combo = null; }
     clearLanding();
+    const first = G.entered && !G.entered.has(p.id);
+    G.entered?.add(p.id);
     drawPieces(); drawHud();
     showPlayer(p);
+    // 첫 차례: 출발 칸에 위에서 톡 내려선다
+    if (first) { const pe = pieceEl(p.id); tween(pe, [{ transform: 'translateY(-60px) scale(.6)', opacity: 0 }, { transform: 'translateY(0) scale(1.08)', opacity: 1, offset: 0.7 }, { transform: 'translateY(0) scale(1)', opacity: 1 }], { duration: 420, easing: 'cubic-bezier(.3,.7,.3,1.3)' }); }
     setHint(`${nameOf(p)} 차례`);
     // 차례가 온 사람: 플레이어 판이 톡 튀어나오고 말이 제자리에서 한 번 뛴다
     const card = $(`#players [data-player="${p.id}"]`);

@@ -11,7 +11,6 @@
 // 거기로 날아가 떨어지는 궤적(포물선 + 잦아드는 튕김 + 회전)을 맞춘다. 물리 엔진은 쓰지 않는다.
 
 import { METRO_FACES } from '../core/boards/seoul.js';
-import { TRAIN_SVG } from './roller.js';
 
 let THREE = null, RoundedBox = null;
 let renderer = null;
@@ -20,7 +19,7 @@ const tex = {};
 const INK = '#22201D';
 const SHADOW = 'rgba(34, 32, 29, .28)';
 // 2D 열차 주사위(roller.js)와 같은 색
-const DIE = { face: '#FFFDF7', express: '#2F6BD8', mark: '#E0533D' };
+const DIE = { face: '#FFFDF7', mark: '#E0533D' };
 const OUTLINE = 2.6; // 먹선 두께(CSS px)
 
 export async function load() {
@@ -53,20 +52,9 @@ function canvasTex(w, h, draw) {
   return t;
 }
 
-function svgImage(svg) {
-  return new Promise((ok, no) => {
-    const img = new Image();
-    img.onload = () => ok(img);
-    img.onerror = no;
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-  });
-}
-
 async function makeTextures() {
-  const train = await svgImage(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="256" height="256">${TRAIN_SVG}</svg>`);
   for (const f of METRO_FACES) {
     tex['metro-' + f] = canvasTex(256, 256, (g, w) => {
-      if (f === 'express') { g.fillStyle = DIE.express; g.fillRect(0, 0, w, w); g.drawImage(train, w * 0.1, w * 0.06, w * 0.8, w * 0.8); return; }
       g.fillStyle = DIE.face; g.fillRect(0, 0, w, w);
       g.fillStyle = INK; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.font = `${w * 0.62}px "Gasoek One", "Pretendard Variable", sans-serif`;
@@ -120,12 +108,12 @@ function scene(aspect, dist, lookY = 0) {
   return { sc, cam };
 }
 
-/** 결과로 주사위와 끝 자세를 만든다. roll 이 없으면 대기 모습(급행 면). */
+/** 결과로 주사위와 끝 자세를 만든다. roll 이 없으면 대기 모습(6 면). */
 function build(board, roll, rnd = Math.random) {
   // roll.pair 면 주사위 둘을 나란히
   const list = roll?.pair || [roll];
   return list.map((r, i) => {
-    const face = r?.face ?? 'express';
+    const face = r?.face ?? 6;
     const o = makeDie(METRO_FACES.map((f) => tex['metro-' + f]), 1.35);
     const q = faceUp(METRO_FACES.indexOf(face), (rnd() - 0.5) * 0.4);
     const x = list.length > 1 ? (i ? 1.1 : -1.1) : 0;

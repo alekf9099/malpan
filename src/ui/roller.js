@@ -5,11 +5,9 @@ import { METRO_FACES } from '../core/boards/seoul.js';
 
 const INK = '#22201D';
 
-/** 급행 면의 열차 그림(3D 주사위 면에도 쓴다) */
+/** 열차 그림(타이틀 주사위 아이콘) */
 export const TRAIN_SVG = '<rect x="20" y="22" width="60" height="50" rx="14" fill="#FFFDF7" stroke="#22201D" stroke-width="5"/><rect x="29" y="31" width="17" height="15" rx="3" fill="#22201D"/><rect x="54" y="31" width="17" height="15" rx="3" fill="#22201D"/><circle cx="34" cy="60" r="4" fill="#E0533D"/><circle cx="66" cy="60" r="4" fill="#E0533D"/><path d="M30 84l8-12M70 84l-8-12" stroke="#22201D" stroke-width="5" stroke-linecap="round"/>';
-const metroFace = (f) => f === 'express'
-  ? `<svg viewBox="0 0 100 100" style="background:#2F6BD8">${TRAIN_SVG}</svg>`
-  : `<svg viewBox="0 0 100 100"><text x="50" y="68" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="58" fill="${INK}">${f}</text></svg>`;
+const metroFace = (f) => `<svg viewBox="0 0 100 100"><text x="50" y="68" text-anchor="middle" font-family="Gasoek One, sans-serif" font-size="58" fill="${INK}">${f}</text></svg>`;
 const metroFaces = () => Object.fromEntries(METRO_FACES.map((f, i) => [i + 1, metroFace(f)]));
 
 // 면 번호 1~6 이 정면에 오도록 하는 회전

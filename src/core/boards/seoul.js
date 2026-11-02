@@ -10,14 +10,14 @@ import { LINE_STATIONS, STATION_XY, SEOUL_DIMS } from './seoul-data.js';
 
 export { LINE_STATIONS, STATION_XY, SEOUL_DIMS };
 
-// ── 열차 주사위: 1~5역, 급행(7역 + 한 번 더) ──────────────────
+// ── 열차 주사위: 1~6역 ──────────────────
+// (v3.24 까지는 6번째 면이 급행 7역 + 한 번 더였다. 주사위 2개 중 하나라도 급행일 확률이 31% 라 너무 자주 나와 뺐다)
 
-export const METRO_FACES = [1, 2, 3, 4, 5, 'express'];
-const TIER = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 4, express: 5 };
+export const METRO_FACES = [1, 2, 3, 4, 5, 6];
+const TIER = { 1: 1, 2: 2, 3: 3, 4: 4, 5: 4, 6: 5 };
 
 export function makeRoll(face) {
-  const express = face === 'express';
-  return { value: express ? 7 : face, face, tier: TIER[face], label: express ? '급행' : `${face}역`, faces: [face], bonus: express };
+  return { value: face, face, tier: TIER[face], label: `${face}역`, faces: [face], bonus: false };
 }
 export const rollDie = (rng) => makeRoll(METRO_FACES[Math.floor(rng.next() * METRO_FACES.length)]);
 

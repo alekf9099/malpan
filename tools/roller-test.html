@@ -25,7 +25,7 @@ import { BOARDS } from '../src/core/boards/index.js';
 import { METRO_FACES } from '../src/core/boards/seoul.js';
 await R3.load();
 const board = BOARDS.metro;
-const cases = METRO_FACES.map((f) => [{ face: f }, f === 'express' ? '급행' : `${f}역`]);
+const cases = METRO_FACES.map((f) => [{ face: f }, `${f}역`]);
 cases.push([null, '대기']);
 for (const [roll, label] of cases) {
   const cell = document.createElement('div');
@@ -38,7 +38,7 @@ for (const [roll, label] of cases) {
 if (new URLSearchParams(location.search).has('toss')) {
   document.body.innerHTML = '';
   document.body.style.gridTemplateColumns = 'repeat(3, 200px)';
-  for (const f of [3, 'express']) for (const t of [0.3, 0.6, 1]) {
+  for (const f of [3, 6]) for (const t of [0.3, 0.6, 1]) {
     const cell = document.createElement('div');
     cell.className = 'cell';
     cell.innerHTML = `<div style="position:relative;width:200px;height:175px;background:#EADCC4"></div><span>${f} · ${Math.round(t * 100)}%</span>`;

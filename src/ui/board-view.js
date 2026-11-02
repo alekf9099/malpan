@@ -192,27 +192,36 @@ function loopRect(i) {
 /** 칸 안 쓰는 자리(틈 4) */
 const tileBox = (i) => { const r = loopRect(i); return { ...r, x: r.x + 4, y: r.y + 4, w: r.w - 8, h: r.h - 8 }; };
 /**
- * 칸에 서 있는 것(말 · 여행지 그림)의 바닥 — 평면 좌표. 이름띠(앞쪽 = 평면 아래 가장자리) 위 몸통 가운데.
- * 눕힌 판에서 평면 아래 · 오른쪽 가장자리가 화면 앞이라, 이름띠를 앞에 두면 칸에 선 것이 이름을 가리지 않는다.
+ * 땅 칸의 구역(평면). 앞에서 뒤로: 이름띠 → 값 팻말 자리 → 말 자리 → 세울 것(건물 · 그림) 자리.
+ * 서 있는 것은 화면 위(= 뒤)로 솟는다. 그래서 이름띠를 화면 앞쪽 가장자리에, 세울 것을 맨 뒤에 두면
+ * 제 칸 글자도, 옆 칸 이름띠도 덮지 않는다. 화면 앞쪽 = 평면 값이 커지는 쪽:
+ * 위 · 아래 줄 칸은 y(아래 가장자리), 왼 · 오른 줄 칸(가로로 긴 칸)은 x(오른 가장자리 — 옆 칸과 닿는 쪽이 아니다).
  */
 const HB = 30;
+function zones(i) {
+  const { x, y, w, h } = tileBox(i), wide = w > h;
+  const band = wide ? { x: x + w - HB, y, w: HB, h } : { x, y: y + h - HB, w, h: HB };
+  const body = wide ? { x, y, w: w - HB, h } : { x, y, w, h: h - HB };
+  const at = (k) => (wide ? [x + body.w * k, y + h / 2] : [x + w / 2, y + body.h * k]);
+  return { wide, band, body, label: at(0.68), piece: at(0.48), stand: at(0.26) };
+}
+/** 칸에 선 말의 바닥(평면) */
 function standFlat(i) {
   const b = tileBox(i);
   if (!b.inner) return [b.x + b.w / 2, b.y + b.h / 2 + 4];
-  return b.w > b.h ? [b.x + b.w / 2 - 18, b.y + (b.h - HB) * 0.55] : [b.x + b.w / 2, b.y + (b.h - HB) * 0.52];
+  return zones(i).piece;
 }
-/** 산 칸 건물의 바닥(평면): 칸 뒤쪽(화면 위쪽)으로 물려 세운다 — 이름띠 · 말을 덜 가리게 */
-function buildFlat(i) {
-  const [x, y] = standFlat(i);
-  return [x - 8, y - 8];
-}
+/** 세울 것(건물 · 여행지 그림 · 지하철 입구)의 바닥(평면): 칸 맨 뒤 */
+const buildFlat = (i) => zones(i).stand;
 // ── 판 가운데 무대 ─────────────────────────────────────────
 // 화면 왼쪽 = 평면 (-1, +1) 방향, 화면 위 = (-1, -1) 방향. 가운데 마당 한 변은 평면 644
 const MID = (LM + LC + LM + LS - LC) / 2, TRAY = 200, SIDE_K = 180;
 /** 가운데 무대 자리(화면): 주사위 받침 · 카드 더미 · 적립금 단지 — 연출이 쓴다(고리 판일 때만) */
 export function centerSpots() {
   if (MODE !== 'loop') return null;
-  return { tray: isoPt(MID, MID), deck: isoPt(MID - SIDE_K, MID + SIDE_K), pot: isoPt(MID + SIDE_K, MID - SIDE_K) };
+  const [tx, ty] = isoPt(MID, MID);
+  // sign = 로고 간판 가운데(도착 칸 안내판이 그 자리에 뜬다)
+  return { tray: [tx, ty], deck: isoPt(MID - SIDE_K, MID + SIDE_K), pot: isoPt(MID + SIDE_K, MID - SIDE_K), sign: [tx, ty - 132] };
 }
 /** 주사위 받침(평면에 칠한다): 나무 테 + 초록 펠트 + 점선 */
 function traySvg() {
@@ -276,8 +285,9 @@ const CORNER_FILL = { start: '#FFD9CC', festival: '#FFD3E6', express: '#CFE2FA',
 const CORNER_INK = { start: '#C0392B', festival: '#B8336A', express: '#1F4F99', maze: '#6B3FA0' };
 
 /**
- * 칸 하나. tile = 판에 칠할 평면 그림, bld = 화면에 세울 것(건물 · 그림), y = 세울 것의 화면 바닥(앞뒤 순서)
- * 땅 칸: 위쪽 머리띠(구역 색 + 이름) · 몸통 · 값. 산 칸은 몸통이 주인 색이고 주인 색 테.
+ * 칸 하나. tile = 판에 칠할 평면 그림, bld = 화면에 세울 것(건물 · 그림), y = 세울 것의 화면 바닥(앞뒤 순서),
+ * label = 글자 팻말(값 · 통행료 · 독점 깃발) — 판에서 맨 위 층에 그려 어떤 그림에도 가리지 않는다.
+ * 땅 칸: 앞쪽 이름띠(구역 색 + 이름) · 몸통. 산 칸은 몸통이 주인 색이고 주인 색 테.
  */
 function loopTile(n, i, owner, level, threat = {}, toll = {}) {
   const b = tileBox(i), { x, y, w, h } = b, cx = x + w / 2;
@@ -302,35 +312,40 @@ function loopTile(n, i, owner, level, threat = {}, toll = {}) {
   }
   const hot = isHot(n), col = RING.colorOf(n) || '#8A8173';
   const pic = hot ? HOT_ART[n] : TOUR_ART[RING.icons?.[n]] || null;
-  const name = RING.nameOf(n), wide = w > h;
-  // 이름띠는 앞쪽(평면 아래 가장자리), 값은 뒤쪽 위
-  const hy = y + h - HB;
+  const name = RING.nameOf(n), Z = zones(i), { band: B, body: D, wide } = Z;
+  // 이름띠: 화면 앞쪽 가장자리. 가로로 긴 칸은 띠가 세로라 글자를 돌려 눕힌다(화면에서 오른쪽 위로 읽힌다)
+  const size = Math.min(19, ((Math.min(w, h) - 10) / name.length) * 1.05);
+  const bx = B.x + B.w / 2, by = B.y + B.h / 2;
+  const label = wide ? `<g transform="rotate(-90 ${bx} ${by})">${txt(bx, by + 7, name, { size, fill: '#FFFDF7' })}</g>` : txt(bx, by + 7, name, { size, fill: '#FFFDF7' });
   let tile = `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${own ? tint(own, 0.55) : hot ? '#FFF4D6' : '#FFFDF7'}" stroke="${INK}" stroke-width="3.5"/>`
-    + clip(`<rect x="${x}" y="${hy}" width="${w}" height="${HB}" fill="${col}"/><path d="M${x} ${hy} H${x + w}" stroke="${INK}" stroke-width="3"/>`)
-    + txt(cx, hy + HB / 2 + 7, name, { size: Math.min(19, ((w - 10) / name.length) * 1.05), fill: '#FFFDF7' });
-  if (own) tile += `<rect x="${x + 4}" y="${y + 4}" width="${w - 8}" height="${h - HB - 7}" rx="8" fill="none" stroke="${own}" stroke-width="5"/>`;
+    + clip(`<rect x="${B.x}" y="${B.y}" width="${B.w}" height="${B.h}" fill="${col}"/><path d="${wide ? `M${B.x} ${y} V${y + h}` : `M${x} ${B.y} H${x + w}`}" stroke="${INK}" stroke-width="3"/>`)
+    + label;
+  if (own) tile += `<rect x="${D.x + 4}" y="${D.y + 4}" width="${D.w - (wide ? 7 : 8)}" height="${D.h - (wide ? 8 : 7)}" rx="8" fill="none" stroke="${own}" stroke-width="5"/>`;
   // 독점 위기: 이 칸을 가지면 독점 승리 — 그 사람 색 빗금 + 깜빡이는 점선 테
   const th = threat[n];
-  if (th) tile += `<rect x="${x + 2}" y="${y + 2}" width="${w - 4}" height="${h - HB - 2}" rx="10" fill="url(#thr-${th.slice(1)})"/>`
+  if (th) tile += `<rect x="${D.x + 2}" y="${D.y + 2}" width="${D.w - (wide ? 2 : 4)}" height="${D.h - (wide ? 4 : 2)}" rx="10" fill="url(#thr-${th.slice(1)})"/>`
     + `<rect class="mono-threat" x="${x + 3}" y="${y + 3}" width="${w - 6}" height="${h - 6}" rx="11" fill="none" stroke="#E0533D" stroke-width="7" stroke-dasharray="14 9"/>`;
-  else {
-    const px = wide ? x + w - 30 : cx, py = wide ? y + 26 : y + 22;
-    tile += `<circle cx="${px - 22}" cy="${py - 5}" r="7" fill="#F2B33D" stroke="${INK}" stroke-width="2"/>` + txt(px + 6, py, stationPrice(n), { size: 17, fill: '#5A5248' });
-  }
-  // 세울 것: 산 칸은 단계 건물, 빈 칸은 여행지 · 명소 그림(없으면 지하철 입구)
-  const shadow = `<ellipse cx="${gx}" cy="${gy}" rx="26" ry="8" fill="${INK}" opacity=".16"/>`;
-  const [bx, by] = isoPt(...buildFlat(i));
-  const stand = own ? buildingSvg(bx, by, lv || 1, own)
-    : pic ? `${shadow}<svg x="${gx - 30}" y="${gy - 56}" width="60" height="60" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
-      : `<g transform="translate(${gx} ${gy}) scale(${ISO_K})">${isoBuilding(0)}</g>`;
-  // 산 칸: 통행료 팻말(건물 앞 바닥) — 모두의 마블처럼 판만 봐도 얼마인지
-  const tag = own && toll[n] ? tollTag(...isoPt(...(wide ? [x + w - 44, y + (h - HB) / 2 + 6] : [cx, hy - 16])), toll[n], own) : '';
+  // 세울 것(칸 맨 뒤): 산 칸은 단계 건물, 빈 칸은 여행지 · 명소 그림(없으면 지하철 입구)
+  const [sx, sy] = isoPt(...Z.stand);
+  const stand = own ? buildingSvg(sx, sy, lv || 1, own)
+    : pic ? `<ellipse cx="${sx}" cy="${sy}" rx="26" ry="8" fill="${INK}" opacity=".16"/><svg x="${sx - 30}" y="${sy - 56}" width="60" height="60" viewBox="0 0 40 40" overflow="visible">${pic}</svg>`
+      : `<g transform="translate(${sx} ${sy}) scale(${ISO_K})">${isoBuilding(0)}</g>`;
+  // 글자 팻말(맨 위 층): 이름띠 바로 뒤에 값(빈 칸) 또는 통행료(산 칸) — 모두의 마블처럼 판만 봐도 얼마인지
+  const [lx, ly] = isoPt(...Z.label);
+  const tag = own ? (toll[n] ? tollTag(lx, ly, toll[n], own) : '') : priceTag(lx, ly, stationPrice(n));
   // 독점 위기 깃발: 서 있는 것 꼭대기 위
-  const top = own ? by - SPRITE.h * kOf(lv || 1) * SPRITE.ay + 6 : pic ? gy - 58 : gy - 26;
-  const flag = th ? threatFlag(own ? bx : gx, top, th) : '';
-  return { tile, bld: `<g class="lb" data-n="${n}">${stand}${tag}</g>${flag}`, y: gy };
+  const top = own ? sy - SPRITE.h * kOf(lv || 1) * SPRITE.ay + 6 : pic ? sy - 58 : sy - 30;
+  const flag = th ? threatFlag(sx, top, th) : '';
+  return { tile, bld: `<g class="lb" data-n="${n}">${stand}</g>`, label: tag + flag, y: sy };
 }
 
+/** 빈 칸 값 팻말(화면에 세운다): 동전 + 값 */
+function priceTag(x, y, amount) {
+  const label = String(amount), w = 22 + label.length * 9;
+  return `<g class="price-tag"><rect x="${x - w / 2}" y="${y - 10}" width="${w}" height="20" rx="10" fill="${INK}" opacity=".25"/><rect x="${x - w / 2}" y="${y - 13}" width="${w}" height="20" rx="10" fill="#FFFDF7" stroke="${INK}" stroke-width="2.5"/>`
+    + `<circle cx="${x - w / 2 + 10}" cy="${y - 3}" r="5" fill="#F2B33D" stroke="${INK}" stroke-width="1.8"/>`
+    + txt(x + 6, y + 2, label, { size: 14, fill: '#5A5248' }) + '</g>';
+}
 /** 통행료 팻말(화면에 세운다): 주인 색 테 + 동전 + 값 */
 function tollTag(x, y, amount, color) {
   const label = amount >= 1000 ? `${(amount / 1000).toFixed(1)}k` : String(amount), w = 26 + label.length * 10;
@@ -341,8 +356,8 @@ function tollTag(x, y, amount, color) {
 /** 독점 위기 깃발(화면에 세운다): 빨간 말풍선 '독점!' + 노리는 사람 색 점 */
 function threatFlag(x, y, color) {
   return `<g class="mono-flag" style="transform-origin:${x}px ${y + 30}px"><path d="M${x} ${y + 30} L${x - 7} ${y + 16} H${x + 7} Z" fill="#E0533D" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>`
-    + `<rect x="${x - 40}" y="${y - 12}" width="80" height="30" rx="15" fill="#E0533D" stroke="${INK}" stroke-width="3.5"/>`
-    + `<circle cx="${x - 25}" cy="${y + 3}" r="7" fill="${color}" stroke="#FFFDF7" stroke-width="2.5"/>`
+    + `<rect x="${x - 46}" y="${y - 12}" width="92" height="30" rx="15" fill="#E0533D" stroke="${INK}" stroke-width="3.5"/>`
+    + `<circle cx="${x - 30}" cy="${y + 3}" r="7" fill="${color}" stroke="#FFFDF7" stroke-width="2.5"/>`
     + txt(x + 8, y + 10, '독점!', { size: 18, font: DISPLAY, weight: 400, fill: '#FFFDF7' }) + '</g>';
 }
 
@@ -498,6 +513,7 @@ function loopSvg(state = {}) {
   const hatch = [...new Set(Object.values(threat))].map((c) => `<pattern id="thr-${c.slice(1)}" width="22" height="22" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="22" height="22" fill="${c}" opacity=".12"/><rect width="9" height="22" fill="${c}" opacity=".32"/></pattern>`).join('');
   const tiles = made.map(({ n, t }) => `<g class="lt" data-n="${n}">${t.tile}</g>`).join('');
   const blds = made.filter(({ t }) => t.bld).sort((a, b) => a.t.y - b.t.y).map(({ t }) => t.bld).join('');
+  const labels = made.filter(({ t }) => t.label).sort((a, b) => a.t.y - b.t.y).map(({ t }) => t.label).join('');
   const sc = SCENES[RING.scene || 'seoul'](I0, I1);
   const amb = ambient(sc.river, railPaths);
   const cx = (I0 + I1) / 2;
@@ -521,13 +537,14 @@ function loopSvg(state = {}) {
     </g>
     ${logoSvg(...isoPt(cx, cx), sc)}${potSvg()}
     <g>${blds}</g>
+    <g class="tile-labels">${labels}</g>
   </svg>`;
 }
 
 /** 판 가운데 위에 똑바로 선 로고 간판(받침 그림자 + 두께) */
 function logoSvg(x0, y0, sc) {
   const [dx, dy] = sc.logo || [0, -30], x = x0 + dx, y = y0 + dy;
-  return `<g><ellipse cx="${x}" cy="${y + 66}" rx="120" ry="20" fill="${INK}" opacity=".18"/>
+  return `<g class="logo-sign"><ellipse cx="${x}" cy="${y + 66}" rx="120" ry="20" fill="${INK}" opacity=".18"/>
     <rect x="${x - 6}" y="${y + 20}" width="12" height="46" fill="#8A5A2C" stroke="${INK}" stroke-width="3"/>
     <rect x="${x - 128}" y="${y - 50}" width="256" height="96" rx="26" fill="${INK}"/>
     <rect x="${x - 128}" y="${y - 58}" width="256" height="96" rx="26" fill="#FFFDF7" stroke="${INK}" stroke-width="5"/>

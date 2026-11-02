@@ -9,7 +9,7 @@ import {
   createMatch, roll, pickDie, dieOptions, dieSteps, dieChoices, dieAt, areaOf, move, decide, choose, useSkill, skillBlocked, skillTargets, skillCost, buyoutFor, cramTargets, GATHER_RATE, GATHER_MAX, CRAM_COUNT,
   invest, investable, current, playerById, alive, assets, stationsOf,
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
-  monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf
+  monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf, takeoverFor
 } from '../core/match.js';
 import { choosePath, chooseDie, decideOffer, wantsSkill, chooseInvest, chooseOption } from '../core/ai.js';
 import { chanceById } from '../core/events.js';
@@ -1187,7 +1187,9 @@ function offerPrompt() {
   const toll = Math.round(stationPrice(o.node) * 0.3 * LEVEL_MULT[lvAfter] * chain);
   const title = o.kind === 'buy' ? '역 구매' : o.kind === 'upgrade' ? `${LEVEL_NAME[o.level]} 증축` : `${nameOf(playerById(m, o.from))}의 역 인수`;
   const btn = o.kind === 'buy' ? '구매' : o.kind === 'upgrade' ? '증축' : '인수';
-  Camera.follow([nodeXY(o.node)[0], nodeXY(o.node)[1] + 110], 300);
+  // 도착 안내판이 떠 있으면 칸과 안내판이 같이 보이게(구매 카드 자리만큼 아래를 비운다)
+  if (G.land) landFrame([[nodeXY(o.node)[0], nodeXY(o.node)[1] + 150]]);
+  else Camera.follow([nodeXY(o.node)[0], nodeXY(o.node)[1] + 110], 300);
   return new Promise((resolve) => {
     const card = document.createElement('div');
     card.className = 'offer-card kind-' + o.kind;
@@ -1463,6 +1465,97 @@ function panelSpot(pid) {
   if (!el) return [app.clientWidth / 2, 40];
   const ab = app.getBoundingClientRect(), b = el.getBoundingClientRect(), k = b.width / el.offsetWidth;
   return [(b.left - ab.left) / k + el.offsetWidth / 2, (b.top - ab.top) / k + el.offsetHeight / 2];
+}
+
+/**
+ * 칸 하나를 사람(p) 눈으로 풀어 쓴 것: { kind, color, title, sub, rows: [[이름, 값, 강조]], note }
+ * 판 가운데 도착 칸 안내판이 쓴다
+ */
+function tileFacts(n, p = ME()) {
+  const m = M(), ring = ringIn(m);
+  const cn = cornerAt(m, n);
+  if (cn) return { kind: '모서리 칸', color: '#22201D', title: cn.name, sub: cn.name === n ? '' : n, rows: [], note: cn.short };
+  if (isChance(n)) return { kind: '찬스', color: '#E39A1E', title: ring?.chanceName || '찬스', sub: '', rows: [], note: '찬스 카드를 한 장 뽑아요 — 좋은 일일 수도, 나쁜 일일 수도' };
+  const o = m.owned[n] ? playerById(m, m.owned[n]) : null, lv = m.levels[n] || 0;
+  const color = ring?.colorOf?.(n) || LINES[(STATION_LINES[n] || [])[0]]?.color || '#8A8173';
+  const sub = (STATION_LINES[n] || []).map((l) => LINES[l].name).join('·') || ring?.groupOf?.[n] || '';
+  const hot = HOTSPOTS[n] ? { tag: HOTSPOTS[n].tag, desc: HOTSPOTS[n].desc } : null;
+  const title = tileName(n);
+  if (!o) {
+    return { kind: hot ? `빈 칸 · 명소 ${hot.tag}` : '빈 칸', color, title, sub, rows: [['값', priceFor(m, n)], ['통행료', baseToll({ [n]: 'x' }, { [n]: 1 }, n)]],
+      note: hot ? hot.desc : '사면 내 칸 — 남이 서면 통행료를 받아요' };
+  }
+  const mine = o === p, land = lv >= MAX_LEVEL;
+  const rows = [['단계', LEVEL_NAME[lv]], ['통행료', mine ? baseToll(m.owned, m.levels, n) : p.coupon ? '면제' : tollFor(m, n, p), !mine]];
+  if (!mine && !land) rows.push(['인수', takeoverFor(m, n, p)]);
+  const note = mine ? (land ? '랜드마크 — 아무도 못 뺏어요' : `증축하면 통행료가 올라요 · 증축 ${upgradeFor(m, n, p)}`)
+    : land ? '랜드마크라 인수할 수 없어요' : '통행료를 내고, 돈이 되면 인수할 수 있어요';
+  return { kind: mine ? '내 칸' : `${nameOf(o)} 칸`, owner: colorOf(o), color, title, sub, rows, note: hot ? `${note} · 명소 ${hot.tag}` : note };
+}
+
+/** 도착 칸 안내: 판 가운데(로고 간판 자리)에 칸 설명판 + 그 칸에 위치 표시 + 둘을 잇는 점선 */
+async function showLanding(pid, n) {
+  const m = M(), cs = centerSpots(), layer = $('#layer');
+  if (!m || !cs || !layer) return;
+  clearLanding();
+  const p = playerById(m, pid), pc = colorOf(p);
+  const [x, y] = nodeXY(n), [sx, sy] = cs.sign;
+  // 위치 표시: 바닥 고리 + 머리 위 화살표
+  const mark = document.createElement('div');
+  mark.className = 'land-mark';
+  mark.style.left = x + 'px'; mark.style.top = y + 'px'; mark.style.setProperty('--pc', pc);
+  mark.style.setProperty('--lift', pieceSize() * 1.6 + 'px');
+  mark.innerHTML = '<i class="lm-ring"></i><i class="lm-pin"></i>';
+  // 안내판 → 칸 점선(안내판 아래 가운데에서 칸으로 휘어 내려간다)
+  const link = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  link.setAttribute('class', 'land-link');
+  const ax = sx, ay = sy + 70, mx = (ax + x) / 2, my = Math.min(ay, y) - 60;
+  link.innerHTML = `<path d="M${ax} ${ay} Q${mx} ${my} ${x} ${y - 6}" fill="none" stroke="#22201D" stroke-width="9" stroke-linecap="round" opacity=".35"/>`
+    + `<path d="M${ax} ${ay} Q${mx} ${my} ${x} ${y - 6}" fill="none" stroke="${pc}" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 12"/>`;
+  // 안내판
+  const card = document.createElement('div');
+  card.className = 'land-info';
+  card.style.left = sx + 'px'; card.style.top = sy + 'px'; card.style.zIndex = depth(sy) + 40;
+  card.style.setProperty('--pc', pc);
+  fillLanding(card, p, n);
+  layer.append(link, mark, card);
+  $('#mat')?.classList.add('landing');
+  tween(card, [{ transform: 'translate(-50%,-50%) scale(.3)', opacity: 0 }, { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 1, offset: 0.7 }, { transform: 'translate(-50%,-50%) scale(1)', opacity: 1 }], { duration: 340, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+  // 카메라: 도착 칸과 판 가운데 안내판이 한 화면에
+  G.land = { n, pid, x, y, sx, sy, w: card.offsetWidth, h: card.offsetHeight };
+  landFrame([], p.human ? 380 : 260);
+  await sleep(p.human ? 520 : 320);
+}
+/** 안내판 내용(칸을 사거나 올리면 다시 채운다) */
+function fillLanding(card, p, n) {
+  const f = tileFacts(n, p);
+  card.style.setProperty('--tc', f.color);
+  card.innerHTML = `<div class="li-top"><span class="li-who">${character(p.hero, 30)}<b>${p.human ? '나' : nameOf(p)}</b> 도착</span><span class="li-kind"${f.owner ? ` style="--oc:${f.owner}"` : ''}>${f.kind}</span></div>`
+    + `<div class="li-title">${f.title}${f.sub ? `<small>${f.sub}</small>` : ''}</div>`
+    + (f.rows.length ? `<div class="li-rows">${f.rows.map(([k, v, bad]) => `<span><i>${k}</i><b class="${bad ? 'bad' : ''}">${typeof v === 'number' ? v.toLocaleString() : v}</b></span>`).join('')}</div>` : '')
+    + `<p class="li-note">${f.note}</p>`;
+}
+/** 도착 칸이 바뀌었으면(구매 · 증축 · 인수) 안내판을 새로 채운다 */
+function refreshLanding(n) {
+  const card = $('#layer .land-info'), L = G.land;
+  if (!card || !L || L.n !== n) return;
+  fillLanding(card, playerById(M(), L.pid), n);
+  tween(card, [{ transform: 'translate(-50%,-50%) scale(1)' }, { transform: 'translate(-50%,-50%) scale(1.06)' }, { transform: 'translate(-50%,-50%) scale(1)' }], { duration: 260, easing: 'cubic-bezier(.3,.7,.3,1.4)' });
+}
+/** 도착 칸 + 안내판이 다 보이게. 안내판은 멀리 볼수록 커지므로(글자가 읽히게) 배율을 몇 번 맞춰 본다 */
+function landFrame(extra = [], ms = 300) {
+  const L = G.land;
+  if (!L) return;
+  for (let k = 0; k < 3; k++) {
+    const z = Math.max(1, 0.8 / Camera.scale()), hw = (L.w / 2) * z + 14, hh = (L.h / 2) * z + 14;
+    Camera.frame([[L.x, L.y - 50], [L.sx - hw, L.sy - hh], [L.sx + hw, L.sy + hh], ...extra], { maxZoom: 0.8, minZoom: 0.2, pad: 36, ms });
+  }
+}
+function clearLanding() {
+  const layer = $('#layer');
+  layer?.querySelectorAll('.land-info, .land-mark, .land-link').forEach((el) => el.remove());
+  $('#mat')?.classList.remove('landing');
+  G.land = null;
 }
 
 /** 역을 누르면: 주인·단계·통행료·값 */
@@ -1932,6 +2025,7 @@ function bump(pid) { const el = $(`#players [data-player="${pid}"]`); if (el) tw
 
 /** 길을 따라 한 역씩 달린다 */
 async function travel(pid, from, path) {
+  clearLanding();
   const el = pieceEl(pid);
   const fast = quick(pid);
   let prev = nodeXY(from);
@@ -2015,6 +2109,7 @@ const HANDLERS = {
     const p = playerById(M(), e.player);
     // 못 쓰고 남은 동시 배달 상자는 다음 차례에 치운다
     if (G.combo && G.combo.pid !== p.id) { G.combo.boxes.forEach((b) => b.remove()); G.combo = null; }
+    clearLanding();
     drawPieces(); drawHud();
     showPlayer(p);
     setHint(`${nameOf(p)} 차례`);
@@ -2028,6 +2123,7 @@ const HANDLERS = {
   async turn(e) { drawPieces(); drawHud(); },
   async roll(e) {
     const p = playerById(M(), e.player);
+    clearLanding();
     if (p.human) {
       const cs = centerSpots();
       if (cs) { Camera.follow(cs.tray, 260); await sleep(280); }
@@ -2056,7 +2152,7 @@ const HANDLERS = {
   },
   async rest(e) { toast(`${isMe(e.player) ? '나' : nameOf(playerById(M(), e.player))} — 한 턴 휴식`); await sleep(700); },
   async stuck(e) { toast('길이 막혀 이동 불가'); await sleep(600); },
-  async move(e) { await travel(e.player, e.from, e.path); },
+  async move(e) { await travel(e.player, e.from, e.path); await showLanding(e.player, e.path[e.path.length - 1]); },
   async goal(e) {
     const p = playerById(M(), e.player);
     const at = nodeApp(e.node);
@@ -2113,7 +2209,7 @@ const HANDLERS = {
     await drawCard({ tone: 'bad', deck: '파산', title: `${p.human ? '나' : nameOf(p)} 파산!`, short: `${e.place}등 · 보유 역 모두 반납`, art: character(p.hero, 96, 'sad') });
     drawMarks();
   },
-  async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); },
+  async buy(e) { if (isMe(e.player)) buzz(20); await estateFx(e, '구매!', Sound.buy); refreshLanding(e.node); },
   async upgrade(e) {
     if (e.opened) {
       // 착공한 역이 개통: 테이프 커팅
@@ -2127,11 +2223,13 @@ const HANDLERS = {
     if (e.free) { Camera.follow(nodeXY(e.node), 260); await sleep(240); await SFX.bolt($('#layer'), nodeXY(e.node), sfxAt(e.node)); }
     if (e.level >= MAX_LEVEL && isMe(e.player)) await bigHit('랜드마크!', '#F2B33D');
     await estateFx(e, e.level >= MAX_LEVEL ? '랜드마크!' : e.free ? '무료 증축!' : '증축!', Sound.big);
+    refreshLanding(e.node);
   },
   async takeover(e) {
     if (e.buyout) { Camera.follow(nodeXY(e.node), 260); await sleep(240); await SFX.gavel($('#layer'), nodeXY(e.node), sfxAt(e.node)); }
     flash(app);
     await estateFx(e, e.buyout ? '강제 매수!' : '인수!', Sound.capture);
+    refreshLanding(e.node);
   },
   async pass() {},
   async offer() {},

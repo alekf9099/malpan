@@ -1,6 +1,6 @@
 // 화면 컨트롤러 — 역전(驛戰): 역을 차지하라.
 // 규칙은 core(match.js)가 전부 처리하고, 여기서는 core 가 돌려준 이벤트를 차례로 연출한다.
-//   스플래시 → 로비(위 프로필·승차권, 배너, 내 캐릭터, 출석·미션, 대결 시작, 아래 탭) → 캐릭터 · 미션 · 랭킹 · 도감 → 대결 매칭 → 대결 화면 → 결과
+//   스플래시 → 로비(위 프로필·승차권, 배너, 내 캐릭터, 출석·미션, 대결 시작, 아래 탭) → 캐릭터(도감 겸) · 미션 · 랭킹 → 대결 매칭 → 대결 화면 → 결과
 // 대결 화면: 위 플레이어 판(돈·역 수·차례) + 시계 / 가운데 서울 노선도 / 아래 내 조작판(출발·스킬·노선 투자)
 // 내 차례에는 갈림길마다 갈 방향을 고르고, AI 차례는 저절로 빠르게 흘러간다.
 // 명소역에 서면 그 역 카드가 뒤집히고, KTX(갈 역)·명동(찬스 카드 두 장)은 내가 고른다.
@@ -115,7 +115,6 @@ const ICON = {
   mission: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 9 L10.5 11.5 L15.5 6.5 M8 16 H16"/></svg>',
   lobby: '<svg viewBox="0 0 24 24"><path d="M3 11 L12 4 L21 11 V20 H15 V14 H9 V20 H3 Z"/></svg>',
   rank: '<svg viewBox="0 0 24 24"><path d="M7 4 H17 V9 Q17 14 12 14 Q7 14 7 9 Z M12 14 V18 M8 20 H16 M7 6 H4 Q4 10 7 10 M17 6 H20 Q20 10 17 10"/></svg>',
-  dex: '<svg viewBox="0 0 24 24"><path d="M4 5 Q8 3 12 6 Q16 3 20 5 V19 Q16 17 12 20 Q8 17 4 19 Z M12 6 V20"/></svg>',
   cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10 H21 M8 3 V7 M16 3 V7"/></svg>',
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5 Q9.5 7 12 7 Q14.5 7 14.5 9.3 Q14.5 11 12 12 V14 M12 17 V17.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7 V12 L15 14"/></svg>',
@@ -127,8 +126,8 @@ const ICON = {
   ticket: '<svg viewBox="0 0 24 24"><path d="M3 7 H21 V10 Q19 10 19 12 Q19 14 21 14 V17 H3 V14 Q5 14 5 12 Q5 10 3 10 Z M14 7 V17" /></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M8 5 L19 12 L8 19 Z"/></svg>'
 };
-const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비'], ['rank', '랭킹'], ['dex', '도감']];
-/** 아래 탭(GNB) — 로비·캐릭터·미션·랭킹·도감 어디서나 같은 자리에 남는다 */
+const TABS = [['chars', '캐릭터'], ['mission', '미션'], ['lobby', '로비'], ['rank', '랭킹']];
+/** 아래 탭(GNB) — 로비·캐릭터·미션·랭킹 어디서나 같은 자리에 남는다(도감은 캐릭터 화면으로 합쳤다) */
 const gnbHTML = (on) => {
   const ready = Daily.claimable();
   return `<nav class="lb-tabs gnb">${TABS.map(([k, n]) => `<button data-tab-go="${k}" class="${k === on ? 'on' : ''}" ${k === on ? 'aria-current="page"' : ''}>${ICON[k]}<b>${n}</b>${k === 'mission' && ready ? `<i class="dot n">${ready}</i>` : ''}</button>`).join('')}</nav>`;
@@ -142,8 +141,7 @@ function bindGnb() {
       if (k === 'lobby') title();
       else if (k === 'chars') pickHero();
       else if (k === 'mission') missionsPage();
-      else if (k === 'rank') ranking();
-      else dex(myIndex());
+      else ranking();
     };
   });
 }
@@ -242,7 +240,6 @@ function title(fromSplash = false) {
     if (k === 'chars') pickHero(li);
     else if (k === 'mission') missionsPage();
     else if (k === 'rank') ranking();
-    else if (k === 'dex') dex(li);
     else if (k === 'guide') guide();
     else if (k === 'attend') openAttendance();
     else if (k === 'daily') startGame(true);
@@ -376,7 +373,7 @@ function pickHero(i = myIndex()) {
         <button class="pk-arrow left" id="pkPrev" aria-label="이전">◀</button>
         <div class="pk-hero ${open ? '' : 'locked'}" id="pkHero">${character(h.id, 230, 'idle')}${open ? '' : '<i class="pk-lock">잠김</i>'}</div>
         <button class="pk-arrow right" id="pkNext" aria-label="다음">▶</button>
-        <div class="pk-name"><b>${h.job} ${h.name}</b><span>${i + 1} / ${HERO_DATA.length}</span></div>
+        <div class="pk-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]} · ${i + 1} / ${HERO_DATA.length}</span></div>
       </div>
       <div class="pk-cards">
         <div class="pk-card"><span class="pk-kind">고유 · ${h.skill}</span><p>${skillDesc(h, loopy())}</p></div>
@@ -385,7 +382,7 @@ function pickHero(i = myIndex()) {
       </div>
       <div class="pk-thumbs">${thumbs}</div>
       <div class="pk-btns">
-        <button class="btn white" id="pkDex">정보</button>
+        <button class="btn white" id="pkDemo">스킬 미리 보기</button>
         ${choose}
       </div>
       ${gnbHTML('chars')}
@@ -403,7 +400,15 @@ function pickHero(i = myIndex()) {
   app.querySelectorAll('.pk-thumb').forEach((b) => { b.onclick = () => { const j = Number(b.dataset.i); if (j !== i) flip(j, j > i ? 1 : -1); }; });
   $('#pkBack').onclick = () => { Sound.click(); title(); };
   bindGnb();
-  $('#pkDex').onclick = () => { Sound.click(); dex(i); };
+  $('#pkDemo').onclick = async (ev) => {
+    const btn = ev.currentTarget;
+    if (btn.disabled) return;
+    btn.disabled = true; Sound.unlock(); Sound.click();
+    await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: activeDesc(h, loopy()) });
+    if (open) act($('#pkHero'), 'cheer', 1200);
+    btn.disabled = false;
+    skillDemo(h);
+  };
   $('#pkHero').onclick = () => { Sound.click(); if (open) act($('#pkHero'), 'dance', 1200); };
   const burst = (word) => {
     const hero = $('#pkHero');
@@ -454,52 +459,11 @@ const AI_NOTE = {
 
 // ── 도감 ───────────────────────────────────────────────────
 
-const ACT_LABEL = { idle: '대기', walk: '걷기', cheer: '환호', sad: '좌절', dance: '춤' };
 const DEX_LINE = {
   driver: '새벽 첫차를 모는 20년 차 기관사', staff: '노선도를 통째로 외운 역무원', worker: '환승 3번은 기본인 출근길 직장인', student: '정기권 한 장으로 서울을 누비는 새내기',
   youtuber: '구독자 10만, 서울 명소 정복이 목표', rider: '골목길은 내비보다 빠삭한 배달 라이더', nurse: '밤샘 근무에도 지치지 않는 간호사', foreman: '역 공사 현장만 30년, 안전모를 벗은 적 없는 현장소장', broker: '역세권이라면 냄새부터 맡는 부동산 중개인'
 };
 
-function dex(which = 0) {
-  app.className = 'app dex-app';
-  const h = HERO_DATA[which];
-  const tabs = HERO_DATA.map((x, i) => `<button class="dex-tab ${which === i ? 'on' : ''}" data-tab="${i}">${charOrShadow(x.id, 34)}<span>${x.name}</span></button>`).join('');
-  const lockNote = isOpen(h.id) ? '' : `<div class="dex-card lockcard"><span class="kind">잠김</span><p>승차권 <b>${h.price}장</b>으로 해금(보유 ${Records.tickets()}장) · 잠겨 있어도 AI 상대로 등장</p></div>`;
-  app.innerHTML = `
-    <div class="dex">
-      <div class="dex-head"><button class="btn small white" id="dexBack">← 로비</button><b>도감</b></div>
-      <div class="dex-tabs">${tabs}</div>
-      <div class="dex-body">
-        <div class="dex-stage"><div class="dex-floor"></div><div class="dex-char">${character(h.id, 210)}</div>
-          <div class="dex-acts">${Object.entries(ACT_LABEL).map(([a, l]) => `<button class="${a === 'idle' ? 'on' : ''}" data-act="${a}">${l}</button>`).join('')}</div></div>
-        <div class="dex-info">
-          <div class="dex-name"><b>${h.job} ${h.name}</b><span>${DEX_LINE[h.id]}</span></div>${lockNote}
-          <div class="dex-card"><span class="kind">고유</span><h3>${h.skill}</h3><p>${skillDesc(h, loopy())}</p></div>
-          ${skillCard(h, 'dex')}
-          <div class="dex-card tip"><span class="kind">AI 성향 · ${h.ai.name}</span><p>${AI_NOTE[h.id]}</p></div>
-        </div>
-      </div>
-      ${gnbHTML('dex')}
-    </div>
-    <div class="fx-layer" id="fx"></div>`;
-  FX.useLayer($('#fx'));
-  $('#dexBack').onclick = () => { Sound.click(); title(); };
-  bindGnb();
-  app.querySelectorAll('.dex-tab').forEach((t) => { t.onclick = () => { Sound.click(); dex(Number(t.dataset.tab)); }; });
-  const big = app.querySelector('.dex-char');
-  app.querySelectorAll('.dex-acts button').forEach((b) => {
-    b.onclick = () => { Sound.click(); app.querySelectorAll('.dex-acts button').forEach((x) => x.classList.toggle('on', x === b)); act(big, b.dataset.act); };
-  });
-  $('#dexSkill').onclick = async (ev) => {
-    const btn = ev.currentTarget;
-    if (btn.disabled) return;
-    btn.disabled = true; Sound.unlock();
-    await skillCutin({ hero: h.id, skill: h.active.id, name: h.active.name, desc: activeDesc(h, loopy()) });
-    act(big, 'cheer', 1200);
-    btn.disabled = false;
-    skillDemo(h);
-  };
-}
 
 // ── 랭킹 ───────────────────────────────────────────────────
 
@@ -1651,7 +1615,7 @@ function skillCard(h, kind) {
     <span class="sk-icon">${skillArt(a.id, 44)}</span>
     <div class="sk-body"><span class="${kind === 'pk' ? 'pk-kind' : 'kind'}">스킬 · 충전 ${a.charge}칸</span>
       <h3>${a.name}</h3><p>${a.desc}</p>${skillPips(a.charge, a.charge)}
-      ${kind === 'dex' ? '<div class="dex-rule">던질 때마다 1칸 · 다 차면 주사위 전에 사용</div><button class="btn small yellow" id="dexSkill">미리 보기</button>' : ''}</div>
+</div>
   </div>`;
 }
 
@@ -2718,13 +2682,16 @@ function countForMissions(e) {
 }
 
 async function play(events) {
+  const m0 = M();
   G.busy = true;
   drawControls();
   for (const e of events) {
+    // 연출 도중 판을 나갔으면(로비 · 온라인 나가기) 남은 연출은 버린다
+    if (M() !== m0) { G.busy = false; return; }
     countForMissions(e);
     if (G.run) relicPing(e);
     const h = HANDLERS[e.type];
-    if (h) await h(e);
+    try { if (h) await h(e); } catch (err) { if (M() === m0) throw err; G.busy = false; return; }
   }
   G.busy = false;
   if (!M()) return;

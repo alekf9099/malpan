@@ -40,8 +40,8 @@ import * as Daily from './daily.js';
 import * as Cloud from './cloud.js';
 import * as Online from './online.js';
 import * as RunStore from './run-store.js';
-import { relicArt, heartArt } from './relic-art.js';
-import { newRun, stagePlan, stageMatch, finishStage, pickRelic, tally, freshStats, bonusDone, bonusById, stageWon, runReward, relicById, RUN_STAGES, RUN_LIVES, REWARD } from '../core/expedition.js';
+import { relicArt, heartArt, relicCard } from './relic-art.js';
+import { newRun, stagePlan, stageMatch, finishStage, pickRelic, tally, freshStats, bonusDone, bonusById, stageWon, runReward, relicById, RUN_STAGES, RUN_LIVES, REWARD, TIERS, TAGS } from '../core/expedition.js';
 import { ATTEND_REWARDS } from '../core/missions.js';
 import { Sound } from './sound.js';
 
@@ -792,7 +792,9 @@ const inviteLink = (code) => `${location.origin}${location.pathname}?room=${code
 // ── 원정 모드(로그라이크): 원정 지도 · 스테이지 · 유물 고르기 · 결과 ────────
 
 const hearts = (n) => `<span class="run-hearts" aria-label="목숨 ${n}">${Array.from({ length: RUN_LIVES }, (_, i) => heartArt(i < n)).join('')}</span>`;
-const relicChip = (id) => { const r = relicById(id); return r ? `<span class="relic-chip" title="${r.desc}">${relicArt(id, 22)}<b>${r.name}</b></span>` : ''; };
+const relicChip = (id) => { const r = relicById(id); return r ? `<span class="relic-chip t-${r.tier}" title="${r.desc}">${relicArt(id, 24)}<b>${r.name}</b></span>` : ''; };
+const relicRow = (id) => { const r = relicById(id); return r ? `<div class="relic-row t-${r.tier}">${relicArt(id, 40)}<div><b>${r.name}<i>${TIERS[r.tier].name}</i></b><span>${r.desc}</span></div></div>` : ''; };
+const relicNames = (id) => { const r = relicById(id); return { tier: TIERS[r.tier].name, tag: TAGS[r.tag] }; };
 
 /** 원정 지도: 스테이지 길 · 목숨 · 모은 유물 · 다음 스테이지. 진행 중인 원정이 없으면 새 원정 안내 */
 function runPage() {
@@ -829,7 +831,7 @@ function runPage() {
       <p>상대 ${plan.rivals.length}명 · ${plan.rounds}바퀴 · 1등이면 통과 · 상대 자금 ${(START_MONEY + plan.cash).toLocaleString()}으로 시작${plan.relics ? ` · 상대마다 유물 ${plan.relics}개` : ''}${plan.boss ? ` · 보스는 자금 +${plan.boss.cash} · 유물 ${plan.boss.relics}개` : ''}</p>
       <p class="run-bonus"><b>보너스</b> ${b.text} — 해내면 다음 유물 4장 중에서</p>
     </div>
-    <div class="run-relics"><b>유물 ${run.relics.length}</b>${run.relics.length ? run.relics.map(relicChip).join('') : '<span class="run-none">아직 없음 · 스테이지를 통과하면 얻는다</span>'}</div>
+    <div class="run-relic-list"><b>유물 ${run.relics.length}</b>${run.relics.length ? run.relics.map(relicRow).join('') : '<span class="run-none">아직 없음 · 스테이지를 통과하면 얻는다</span>'}</div>
     <div class="row"><button class="btn white" id="rnQuit">포기</button><button class="btn white" id="rnClose">닫기</button><button class="btn" id="rnGo">출발</button></div>`);
   s.classList.add('run-sheet');
   s.querySelector('#rnClose').onclick = () => { Sound.click(); closeSheet(); };
@@ -841,6 +843,49 @@ function runPage() {
     q.querySelector('#qNo').onclick = () => { Sound.click(); runPage(); };
     q.querySelector('#qYes').onclick = () => { Sound.click(); runOver({ ...run, over: true }); };
   };
+}
+
+/** 판 위에서 내 유물 보기: 유물 띠 위에 뜨는 말풍선(판은 그대로 흘러간다) · 다시 누르거나 아무 데나 누르면 닫힌다 */
+function myRelics() {
+  const board = $('#board'), old = board?.querySelector('.relic-pop');
+  if (old) { old.remove(); return; }
+  if (!board || !G.run) return;
+  Sound.click();
+  const pop = document.createElement('div');
+  pop.className = 'relic-pop';
+  pop.innerHTML = `<b>내 유물 ${G.run.run.relics.length}</b><div class="run-relic-list">${G.run.run.relics.map(relicRow).join('')}</div>`;
+  board.appendChild(pop);
+  tween(pop, [{ opacity: 0, transform: 'translateY(8px) scale(.96)' }, { opacity: 1, transform: 'none' }], { duration: 180, easing: 'ease-out' });
+  const close = (e) => { if (e.target.closest('#relicBar')) return; pop.remove(); document.removeEventListener('pointerdown', close, true); };
+  setTimeout(() => document.addEventListener('pointerdown', close, true), 0);
+}
+
+/** 유물이 일했다: 판 위 유물 띠의 그 배지가 톡 튀고 효과 글이 떠오른다 */
+const RELIC_PING = { toll: '+25%', shield: '-25%', build: '-30%', buy: '-25%', deal: '-30%', salary: '+80', fee: '+15', rescue: '구조!', coupon: '면제', battery: '충전' };
+function relicPing(e) {
+  const me = G.me, have = G.run.run.relics, hits = [];
+  if (e.type === 'pay' && e.why === 'toll') { if (e.to === me) hits.push('toll'); if (e.player === me) hits.push('shield'); }
+  if (e.player === me) {
+    if (e.type === 'buy') hits.push('buy');
+    if (e.type === 'upgrade') hits.push('build');
+    if (e.type === 'takeover') hits.push('deal');
+    if ((e.type === 'cash' && e.why === 'salary') || e.type === 'goal') hits.push('salary');
+    if (e.type === 'cash' && e.why === 'commission') hits.push('fee');
+    if (e.type === 'rescue') hits.push('rescue');
+    if (e.type === 'tollFree') hits.push('coupon');
+    if (e.type === 'skill') hits.push('battery');
+  }
+  for (const id of hits) {
+    if (!have.includes(id)) continue;
+    const dot = $(`.relic-dot[data-r="${id}"]`);
+    if (!dot) continue;
+    tween(dot, [{ transform: 'scale(1)' }, { transform: 'scale(1.45) rotate(-8deg)', offset: 0.35 }, { transform: 'scale(1)' }], { duration: 520, easing: 'cubic-bezier(.3,.7,.3,1.3)' });
+    const tag = document.createElement('i');
+    tag.className = 'relic-ping';
+    tag.textContent = RELIC_PING[id];
+    dot.appendChild(tag);
+    setTimeout(() => tag.remove(), 1100);
+  }
 }
 
 /** 스테이지 시작: 원정 상태로 판을 꾸려 대결 화면으로 */
@@ -890,20 +935,57 @@ async function stageResults() {
   s.querySelector('#rsHome').onclick = () => { Sound.click(); title(); if (next.over) runOver(next); };
 }
 
-/** 유물 고르기: 후보 3~4장 중 하나 */
+/** 유물 고르기: 후보 3~4장이 뒷면으로 깔렸다가 하나씩 뒤집힌다(전설은 마지막에 반짝) → 눌러 고르고 → 받기 */
 function relicPick(run) {
-  const s = sheet(`<span class="kind">원정 · ${run.stage}/${RUN_STAGES.length} 통과</span><h2>유물 고르기</h2><p>하나를 골라 원정 끝까지 가져가요</p>
-    <div class="relic-cards ${run.offer.length > 3 ? 'four' : ''}">${run.offer.map((id) => { const r = relicById(id); return `<button class="relic-card" data-r="${id}">${relicArt(id, 52)}<b>${r.name}</b><span>${r.desc}</span></button>`; }).join('')}</div>`);
-  s.classList.add('run-sheet');
-  s.querySelectorAll('.relic-card').forEach((c, i) => {
-    tween(c, [{ transform: 'translateY(30px) rotate(-6deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, delay: i * 90, easing: 'cubic-bezier(.3,.7,.3,1.2)', fill: 'backwards' });
+  const four = run.offer.length > 3;
+  const order = run.offer.map((id, i) => ({ id, i, t: relicById(id).tier })).sort((a, b) => (a.t === 'legend') - (b.t === 'legend') || a.i - b.i);
+  const s = sheet(`<span class="kind">원정 · ${run.stage}/${RUN_STAGES.length} 통과${four ? ' · 보너스 1장 더' : ''}</span><h2>유물 고르기</h2>
+    <p class="relic-pick-hint" id="rpHint">카드를 뒤집는 중…</p>
+    <div class="relic-wrap"><div class="relic-cards ${four ? 'four' : ''}" id="rpCards">${run.offer.map((id) => relicCard(id, relicNames(id))).join('')}</div></div>
+    <div class="relic-pick-row"><button class="btn" id="rpTake" disabled>받기</button></div>`);
+  s.classList.add('run-sheet', 'relic-pick');
+  const cards = [...s.querySelectorAll('.relic-card')], box = s.querySelector('#rpCards'), hint = s.querySelector('#rpHint'), take = s.querySelector('#rpTake');
+  let picked = null, ready = false, done = false;
+  cards.forEach((c) => c.classList.add('down'));
+  // 하나씩 뒤집기
+  order.forEach(({ i, t }, k) => setTimeout(() => {
+    if (!document.body.contains(s)) return;
+    cards[i].classList.remove('down');
+    if (t === 'legend') { Sound.heung(3); buzz(30); const at = appSpot(cards[i]); FX.confetti(at[0], at[1] - 20, 26, 1.1); } else Sound.click();
+    if (k === order.length - 1) setTimeout(() => { ready = true; hint.textContent = '하나를 골라 원정 끝까지 가져가요'; }, 380);
+  }, 260 + k * 230));
+  const choose = (c) => {
+    picked = c;
+    cards.forEach((x) => x.classList.toggle('picked', x === c));
+    box.classList.add('choosing');
+    const r = relicById(c.dataset.r);
+    hint.innerHTML = `<b>${r.name}</b> · 한 번 더 누르거나 받기`;
+    take.disabled = false;
+    take.textContent = `${r.name} 받기`;
+  };
+  const confirm = () => {
+    if (!picked || done) return;
+    done = true;
+    const id = picked.dataset.r, r = relicById(id);
+    Sound.unlock(); Sound.heung(r.tier === 'legend' ? 3 : 2); buzz(25);
+    RunStore.save(pickRelic(run, id));
+    const at = appSpot(picked);
+    FX.confetti(at[0], at[1], r.tier === 'common' ? 14 : 30, 1);
+    picked.classList.add('taken');
+    cards.forEach((x) => { if (x !== picked) tween(x, [{ opacity: 0.55 }, { opacity: 0, transform: 'translateY(20px) scale(.9)' }], { duration: 260, fill: 'forwards' }); });
+    take.disabled = true;
+    setTimeout(() => { toast(`${r.name} 획득!`); runPage(); }, 650);
+  };
+  cards.forEach((c) => {
     c.onclick = () => {
-      Sound.unlock(); Sound.heung(2);
-      RunStore.save(pickRelic(run, c.dataset.r));
-      toast(`${relicById(c.dataset.r).name} 획득!`);
-      runPage();
+      if (!ready || done) return;
+      Sound.unlock();
+      if (picked === c) { confirm(); return; }
+      Sound.click();
+      choose(c);
     };
   });
+  take.onclick = confirm;
 }
 
 /** 원정이 끝났다(완주 · 목숨 다함 · 포기): 보상 승차권 · 기록 */
@@ -1208,7 +1290,7 @@ function enterGame(resumed = false) {
       <div class="stamp-spot" id="stampSpot"></div><div class="roller-float" id="roller"></div>
       <div class="hint" id="hint"></div>
       <button class="btn small white zoom-btn" id="zoom">전체 지도</button>
-      <button class="btn small white help-btn2" id="help" aria-label="도움말">?</button>${G.online ? '<button class="btn small white quit-btn" id="quit">나가기</button>' : ''}</div>
+      <button class="btn small white help-btn2" id="help" aria-label="도움말">?</button>${G.run?.run.relics.length ? `<div class="relic-bar" id="relicBar">${G.run.run.relics.map((id) => `<button class="relic-dot" data-r="${id}" aria-label="${relicById(id).name}">${relicArt(id, 30)}</button>`).join('')}</div>` : ''}${G.online ? '<button class="btn small white quit-btn" id="quit">나가기</button>' : ''}</div>
     <div class="dock" id="dock">
       <div class="me-row" id="meRow"></div>
       <div class="controls">
@@ -1228,6 +1310,7 @@ function enterGame(resumed = false) {
   $('#zoom').onclick = () => { Sound.click(); if (G.regionView) showPlayer(current(M())); else showRegion(); };
   $('#help').onclick = () => { if (!G.busy) guide(); };
   if ($('#quit')) $('#quit').onclick = quitOnline;
+  if ($('#relicBar')) $('#relicBar').onclick = (e) => { if (e.target.closest('.relic-dot')) myRelics(); };
   $('#mat').onclick = onMapTap;
   drawBoard();
   drawPieces();
@@ -1247,7 +1330,7 @@ function intro() {
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${isMine(p) ? 'me' : ''}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${isMine(p) ? '나' : nameOf(p)}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
     <p>${isLoop(m) ? `${ringIn(m).intro} · 가운데 <b>적립금 단지</b>는 축제 칸에 서면 통째로<br>` : ''}시작 자금 <b>${(G.run ? ME().money : START_MONEY).toLocaleString()}</b>${G.run && m.players.some((p) => p.money !== ME().money) ? ` · 상대 ${m.players.slice(1).map((p) => p.money.toLocaleString()).join(' · ')}` : ''} · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
-    ${G.run ? `<p class="run-bonus"><b>원정</b> 1등이면 통과 · ${roundsOf(m)}바퀴 · 보너스: ${bonusById(G.run.plan.bonus).text}</p>${G.run.run.relics.length ? `<div class="run-relics">${G.run.run.relics.map((id) => `<span class="relic-chip" title="${relicById(id).desc}">${relicArt(id, 22)}<b>${relicById(id).name}</b></span>`).join('')}</div>` : ''}` : ''}
+    ${G.run ? `<p class="run-bonus"><b>원정</b> 1등이면 통과 · ${roundsOf(m)}바퀴 · 보너스: ${bonusById(G.run.plan.bonus).text}</p>${G.run.run.relics.length ? `<div class="run-relics">${G.run.run.relics.map(relicChip).join('')}</div>` : ''}` : ''}
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -2639,6 +2722,7 @@ async function play(events) {
   drawControls();
   for (const e of events) {
     countForMissions(e);
+    if (G.run) relicPing(e);
     const h = HANDLERS[e.type];
     if (h) await h(e);
   }

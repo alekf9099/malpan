@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>유물 미리보기</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gasoek+One&display=swap">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="../src/ui/styles.css">
+<style>
+  body { display: block !important; height: auto !important; overflow: auto !important; margin: 0; padding: 16px; background: var(--paper); font-family: var(--body); }
+  h2 { font-family: var(--display); font-weight: 400; margin: 18px 0 8px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 10px; }
+  .cell { width: 120px; text-align: center; font-size: 12px; font-weight: 800; }
+  .cell div { background: #FFFDF7; border: 2px solid #22201D; border-radius: 12px; padding: 6px 0; }
+  .cards { display: grid !important; grid-template-columns: repeat(4, 150px) !important; gap: 12px; }
+  .phone { width: 360px; padding: 14px; border: 3px solid #22201D; border-radius: 22px; background: var(--paper); margin-top: 10px; }
+</style></head>
+<body>
+<h2>그림(bare)</h2><div class="grid" id="bare"></div>
+<h2>배지</h2><div class="grid" id="badge"></div>
+<h2>카드</h2><div class="cards relic-cards" id="cards"></div>
+<h2>휴대폰 폭(3장 · 4장)</h2><div class="phone relic-wrap"><div class="relic-cards" id="p3"></div></div><div class="phone relic-wrap"><div class="relic-cards four" id="p4"></div></div>
+<script type="module">
+  import { relicArt, relicCard } from '../src/ui/relic-art.js';
+  import { RELICS, TIERS, TAGS } from '../src/core/expedition.js';
+  document.getElementById('bare').innerHTML = RELICS.map((r) => `<div class="cell"><div>${relicArt(r.id, 104, { bare: true })}</div>${r.name}</div>`).join('');
+  document.getElementById('badge').innerHTML = RELICS.map((r) => `<div class="cell">${relicArt(r.id, 56)}<br>${r.name}</div>`).join('');
+  const card = (id) => relicCard(id, { tier: TIERS[RELICS.find((r) => r.id === id).tier].name, tag: TAGS[RELICS.find((r) => r.id === id).tag] });
+  document.getElementById('p3').innerHTML = ['cash', 'deal', 'toll'].map(card).join('');
+  document.getElementById('p4').innerHTML = ['coupon', 'salary', 'spark', 'rescue'].map(card).join('');
+  document.getElementById('cards').innerHTML = RELICS.map((r) => relicCard(r.id, { tier: TIERS[r.tier].name, tag: TAGS[r.tag] })).join('');
+</script>
+</body></html>

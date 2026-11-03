@@ -4,7 +4,7 @@ import { createMatch, tollFor, priceFor, upgradeFor, current, areaOf, buyable, C
 import { aiSteps } from '../src/core/lockstep.js';
 import {
   newRun, stagePlan, stageMatch, finishStage, pickRelic, offerRelics, equip, tally, freshStats, bonusDone, stageWon, runReward,
-  RUN_STAGES, RUN_LIVES, RELICS, REWARD
+  RUN_STAGES, RUN_LIVES, RELICS, REWARD, TIERS, TAGS
 } from '../src/core/expedition.js';
 import { stationPrice } from '../src/core/estate.js';
 
@@ -85,6 +85,22 @@ test('원정 유물 후보: 이미 가진 것은 안 나오고, 다 가지면 �
   const all = RELICS.map((r) => r.id);
   const run = { ...run0(), relics: all.slice(0, all.length - 2) };
   assert.deepEqual(offerRelics(run, 3).sort(), all.slice(-2).sort());
+});
+
+test('원정 유물 등급: 모두 등급 · 종류가 있고, 고르기에는 일반이 가장 흔하고 전설이 가장 드물다 · 보너스 4장엔 희귀 이상', () => {
+  for (const r of RELICS) { assert.ok(TIERS[r.tier], r.id); assert.ok(TAGS[r.tag], r.id); }
+  const seen = { common: 0, rare: 0, legend: 0 };
+  let fourOk = true;
+  for (let k = 0; k < 400; k++) {
+    const run = { ...newRun({ seed: 1000 + k, hero: 'driver', board: 'loop' }), stage: k % 4 };
+    const three = offerRelics(run, 3);
+    assert.equal(new Set(three).size, 3);
+    for (const id of three) seen[RELICS.find((r) => r.id === id).tier]++;
+    if (offerRelics(run, 4).every((id) => RELICS.find((r) => r.id === id).tier === 'common')) fourOk = false;
+  }
+  assert.ok(seen.common > seen.rare && seen.rare > seen.legend, JSON.stringify(seen));
+  assert.ok(seen.legend > 0);
+  assert.ok(fourOk);
 });
 
 test('원정 보너스 목표 · 판 기록: 내 행동만 세고, 받은 통행료는 금액으로', () => {

@@ -27,21 +27,28 @@ export const RUN_STAGES = [
   { name: '막차 보스', rivals: 3, rounds: 14, cash: -100, relics: 0, boss: { cash: 500, relics: 3 } }
 ];
 
-/** 유물. rival: 상대 · 보스도 받을 수 있는 것(AI 가 잘 쓰는 능력값만) */
+/**
+ * 유물. tier: 등급(common 일반 · rare 희귀 · legend 전설 — 고르기에 나올 확률이 다르다) · tag: 종류(카드 아래 표시)
+ * rival: 상대 · 보스도 받을 수 있는 것(AI 가 잘 쓰는 능력값만)
+ */
 export const RELICS = [
-  { id: 'cash', name: '비상금 봉투', desc: '판마다 시작 자금 +300', start: { money: 300 }, rival: true },
-  { id: 'toll', name: '황금 개찰구', desc: '내 역 통행료 +25%', mods: { tollBonus: 0.25 }, rival: true },
-  { id: 'shield', name: '정기권', desc: '내가 내는 통행료 -25%', mods: { tollDiscount: 0.25 }, rival: true },
-  { id: 'build', name: '공구 상자', desc: '증축 비용 -30%', mods: { buildDiscount: 0.3 }, rival: true },
-  { id: 'deal', name: '협상 수첩', desc: '인수 비용 -30%', mods: { takeoverDiscount: 0.3 }, rival: true },
-  { id: 'buy', name: '분양권', desc: '빈 역 사는 값 -25%', mods: { buyDiscount: 0.25 }, rival: true },
-  { id: 'salary', name: '성과급', desc: '월급 · 목적지 보너스 +80', mods: { goalBonus: 80 }, rival: true },
-  { id: 'fee', name: '중개 수수료', desc: '상대가 역을 살 때마다 +15', mods: { commission: 15 } },
-  { id: 'rescue', name: '구조 보험', desc: '판마다 한 번, 파산 직전에 400 으로 버틴다', mods: { rescue: 400 } },
-  { id: 'coupon', name: '무임승차권', desc: '판마다 첫 통행료 한 번 면제', start: { coupon: true } },
-  { id: 'battery', name: '보조 배터리', desc: '스킬 충전 칸 -1', start: { cost: -1 } },
-  { id: 'spark', name: '첫 충전', desc: '판 시작부터 스킬이 가득 충전', start: { charge: true } }
+  { id: 'cash', name: '비상금 봉투', desc: '판마다 시작 자금 +300', tier: 'common', tag: 'money', start: { money: 300 }, rival: true },
+  { id: 'shield', name: '정기권', desc: '내가 내는 통행료 -25%', tier: 'common', tag: 'toll', mods: { tollDiscount: 0.25 }, rival: true },
+  { id: 'build', name: '공구 상자', desc: '증축 비용 -30%', tier: 'common', tag: 'build', mods: { buildDiscount: 0.3 }, rival: true },
+  { id: 'buy', name: '분양권', desc: '빈 역 사는 값 -25%', tier: 'common', tag: 'build', mods: { buyDiscount: 0.25 }, rival: true },
+  { id: 'coupon', name: '무임승차권', desc: '판마다 첫 통행료 한 번 면제', tier: 'common', tag: 'toll', start: { coupon: true } },
+  { id: 'battery', name: '보조 배터리', desc: '스킬 충전 칸 -1', tier: 'common', tag: 'skill', start: { cost: -1 } },
+  { id: 'deal', name: '협상 수첩', desc: '인수 비용 -30%', tier: 'rare', tag: 'build', mods: { takeoverDiscount: 0.3 }, rival: true },
+  { id: 'salary', name: '성과급', desc: '월급 · 목적지 보너스 +80', tier: 'rare', tag: 'money', mods: { goalBonus: 80 }, rival: true },
+  { id: 'fee', name: '중개 수수료', desc: '상대가 역을 살 때마다 +15', tier: 'rare', tag: 'money', mods: { commission: 15 } },
+  { id: 'spark', name: '첫 충전', desc: '판 시작부터 스킬이 가득 충전', tier: 'rare', tag: 'skill', start: { charge: true } },
+  { id: 'toll', name: '황금 개찰구', desc: '내 역 통행료 +25%', tier: 'legend', tag: 'toll', mods: { tollBonus: 0.25 }, rival: true },
+  { id: 'rescue', name: '구조 보험', desc: '판마다 한 번, 파산 직전에 400으로 버틴다', tier: 'legend', tag: 'life', mods: { rescue: 400 } }
 ];
+/** 등급: 이름 · 고르기에 나올 무게(일반이 가장 흔하다) */
+export const TIERS = { common: { name: '일반', weight: 60 }, rare: { name: '희귀', weight: 30 }, legend: { name: '전설', weight: 10 } };
+/** 종류 이름 */
+export const TAGS = { toll: '통행료', build: '건설', money: '자금', skill: '스킬', life: '생존' };
 export const relicById = (id) => RELICS.find((r) => r.id === id);
 
 /** 보너스 목표(스테이지마다 하나): 해내면 다음 유물 고르기가 4장 · 원정 보상 + */
@@ -123,10 +130,25 @@ export const bonusDone = (id, stats) => { const b = bonusById(id); return !!b &&
 /** 끝난 스테이지 판 → 이겼나(1등). 내가 파산했으면 판이 덜 끝났어도 진 것 */
 export const stageWon = (m) => { const me = m.players[0]; return !me.out && m.phase === 'over' && me.place === 1; };
 
-/** 유물 고르기 후보: 아직 없는 것 중 n 장(같은 원정 · 같은 스테이지면 늘 같다) */
+/**
+ * 유물 고르기 후보: 아직 없는 것 중 n 장 — 등급 무게대로 뽑는다(같은 원정 · 같은 스테이지면 늘 같다).
+ * 보너스로 받은 4장 고르기(n ≥ 4)에는 희귀 이상이 적어도 한 장
+ */
 export function offerRelics(run, n) {
   const rng = createRng(mix(run.seed, 777, run.stage, run.relics.length));
-  return rng.shuffle(RELICS.filter((r) => !run.relics.includes(r.id)).map((r) => r.id)).slice(0, n);
+  const pool = RELICS.filter((r) => !run.relics.includes(r.id));
+  const out = [];
+  while (out.length < n && pool.length) {
+    const total = pool.reduce((s, r) => s + TIERS[r.tier].weight, 0);
+    let x = rng.next() * total, i = 0;
+    while ((x -= TIERS[pool[i].tier].weight) > 0) i++;
+    out.push(pool.splice(i, 1)[0]);
+  }
+  if (n >= 4 && out.length && out.every((r) => r.tier === 'common')) {
+    const better = pool.filter((r) => r.tier !== 'common');
+    if (better.length) out[out.length - 1] = better[rng.int(better.length)];
+  }
+  return out.map((r) => r.id);
 }
 
 /** 스테이지 결과를 원정에 반영 → 새 원정 상태 */

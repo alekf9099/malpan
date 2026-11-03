@@ -11,7 +11,7 @@ import {
   tollFor, upgradeFor, priceFor, nextStations, stopsAt, timeOf, hhmm, CLOCK, START_MONEY, GOAL_BONUS, PASS_RATE, isChance, incidentAt,
   monopolyOf, monoThreats, HOT_WIN, LINE_WIN, isLoop, roundsOf, ringIn, cornerAt, hotsOf, takeoverFor, DOUBLE_JAIL
 } from '../core/match.js';
-import { ACTS, aiSteps, actOk, applyAct, fastForward, sig } from '../core/lockstep.js';
+import { aiSteps, actOk, applyAct, fastForward, sig, isBot, AUTO_LIMIT } from '../core/lockstep.js';
 import { chanceById } from '../core/events.js';
 import { HEROES as HERO_DATA, heroById, STARTERS, skillDesc, activeDesc, chargeOf } from '../core/heroes.js';
 import { SALARY, ringOf } from '../core/boards/loop.js';
@@ -751,7 +751,8 @@ function matchmaking(me, rivals, daily, area) {
 
 // ── 대결 시작 ──────────────────────────────────────────────
 
-async function startGame(daily) {
+/** 대결 시작(AI 상대). rivalCount: 상대 수(없으면 로비에서 고른 수) */
+async function startGame(daily, rivalCount = Prefs.getRivals()) {
   Sound.unlock(); Sound.click();
   const me = Prefs.getLeader(Records.unlocked());
   const q = new URLSearchParams(location.search);
@@ -760,7 +761,7 @@ async function startGame(daily) {
   const seed = daily ? today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate()
     : Number.isNaN(fixed) ? (Date.now() & 0x7fffffff) : fixed;
   // 상대는 아홉 중 무작위(잠긴 캐릭터도 나온다) — 같은 시드면 같은 상대
-  const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, Prefs.getRivals());
+  const rivals = createRng((seed ^ 0x5bd1e995) >>> 0 || 1).shuffle(ids.filter((x) => x !== me)).slice(0, rivalCount);
   const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: ringOf(Prefs.getBoard()) ? Prefs.getBoard() : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
@@ -786,6 +787,8 @@ async function onlineMenu(code = '') {
   let size = Math.max(2, Math.min(4, Prefs.getRivals() + 1));
   const s = sheet(`<span class="kind">친구와 같이 · 빈자리는 AI</span><h2>온라인 대결</h2>
     <div class="on-resume" id="onResume" hidden></div>
+    <div class="on-box on-quick"><div><b>빠른 매칭</b><p>${BOARD_NAMES[Prefs.getBoard()]} 판 · 최대 ${quickSize()}명 · ${QUICK_WAIT}초 안에 못 찾으면 AI 와</p></div>
+      <button class="btn" id="onQuick">찾기</button></div>
     <div class="on-box"><b>방 만들기</b><p>${BOARD_NAMES[Prefs.getBoard()]} 판 · 코드를 친구에게 보내면 같이 해요</p>
       <div class="on-line"><div class="lb-seg on-size" role="radiogroup" aria-label="자리 수"><span>자리</span>${[2, 3, 4].map((n) => `<button role="radio" data-s="${n}" class="${n === size ? 'on' : ''}" aria-checked="${n === size}">${n}</button>`).join('')}</div>
       <button class="btn small" id="onMake">만들기</button></div></div>
@@ -796,6 +799,7 @@ async function onlineMenu(code = '') {
   const busy = (on) => s.querySelectorAll('button').forEach((b) => { b.disabled = on; });
   s.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { Sound.click(); size = +b.dataset.s; s.querySelectorAll('[data-s]').forEach((x) => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); }); }; });
   s.querySelector('#onClose').onclick = () => { Sound.click(); closeSheet(); };
+  s.querySelector('#onQuick').onclick = () => { Sound.unlock(); Sound.click(); quickMatch(); };
   const input = s.querySelector('#onCode');
   input.oninput = () => { input.value = Online.normCode(input.value); };
   s.querySelector('#onMake').onclick = async () => {
@@ -824,7 +828,103 @@ async function onlineMenu(code = '') {
   box.querySelector('#onBack').onclick = () => { Sound.click(); startOnline(last, room); };
 }
 
-/** 대기실: 방 코드 · 자리(빈자리는 AI) · 방장은 자리 수 · 판을 고르고 시작 */
+/** 빠른 매칭: 이만큼(초) 기다려도 사람이 다 안 차면 있는 사람 + AI 로 시작 · 아무도 없으면 AI 대결로 */
+const QUICK_WAIT = 20;
+/** 들어간 방의 방장이 이만큼 더 지나도 시작하지 않으면(방장이 사라졌다) AI 대결로 */
+const QUICK_GIVEUP = 20;
+
+const quickSize = () => Math.max(2, Math.min(4, Prefs.getRivals() + 1));
+
+/** 빠른 매칭 시작: 기다리는 방을 찾아 들어가거나 새로 연다. deadline 은 다시 찾을 때 이어 쓰는 마감 시각 */
+async function quickMatch(deadline = Date.now() + QUICK_WAIT * 1000) {
+  if (!Cloud.enabled()) { toast('온라인 대결을 쓸 수 없어요'); return; }
+  const s = quickSheet();
+  s.querySelector('#qmBody').innerHTML = '<p class="qm-note">기다리는 방을 찾는 중…</p>';
+  let found;
+  try { found = await Online.quickMatch({ size: quickSize(), board: Prefs.getBoard(), hero: Prefs.getLeader(Records.unlocked()) }); }
+  catch (err) { console.warn(err); if (document.body.contains(s)) quickToAi('온라인에 연결하지 못해 AI 와 시작해요'); return; }
+  if (!document.body.contains(s)) { Online.leaveRoom(found.code); return; } // 그사이 그만뒀다
+  quickWait(found.code, found.host, deadline);
+}
+
+function quickSheet() {
+  const board = Prefs.getBoard();
+  const s = sheet(`<span class="kind">빠른 매칭 · ${BOARD_NAMES[board]} · 최대 ${quickSize()}명</span><h2>상대 찾는 중</h2>
+    <div id="qmBody"></div>
+    <div class="row"><button class="btn white" id="qmCancel">그만두기</button></div>`);
+  s.classList.add('room-sheet', 'quick-sheet');
+  s.querySelector('#qmCancel').onclick = () => { Sound.click(); closeSheet(); };
+  return s;
+}
+
+/** 빠른 매칭 방에서 기다리기: 방장은 다 차거나 마감이 되면 시작(혼자면 AI 대결로), 손님은 방장을 기다린다 */
+function quickWait(code, host, deadline) {
+  const s = app.querySelector('.quick-sheet') || quickSheet();
+  const body = s.querySelector('#qmBody');
+  const uid = Online.myUid(), board = Prefs.getBoard();
+  let room = null, alive = true, going = false;
+  const timers = [];
+  const end = () => { alive = false; stop(); timers.forEach(clearInterval); };
+  s.querySelector('#qmCancel').onclick = () => { Sound.click(); end(); Online.leaveRoom(code); closeSheet(); };
+  const go = async () => {
+    if (going || !room) return;
+    going = true;
+    if (room.uids.length < 2) { end(); Online.leaveRoom(code); quickToAi('사람을 못 찾아 AI 와 시작해요'); return; }
+    try { await Online.startRoom(code, planRoom); } catch (err) { console.warn(err); going = false; }
+  };
+  const draw = () => {
+    if (!room) return;
+    const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    const seats = Array.from({ length: room.size }, (_, i) => room.seats[i] || null);
+    body.innerHTML = `
+      <div class="qm-count"><b>${left}</b><span>${host ? (room.uids.length < 2 ? '초 뒤 AI 와 대결' : '초 뒤 시작 · 빈자리는 AI') : '초 · 방장이 시작하면 바로'}</span><i style="width:${(left / QUICK_WAIT) * 100}%"></i></div>
+      <div class="room-seats">${seats.map((x) => x
+        ? `<div class="rm-seat ${x.uid === uid ? 'me' : ''}" style="--pc:${heroById(x.hero)?.color || '#888'}">${character(x.hero, 40, 'cheer')}<b>${esc(x.name)}${x.uid === uid ? ' (나)' : ''}</b><i>${x.uid === room.host ? '방장' : '참가'}</i></div>`
+        : '<div class="rm-seat ai wait"><span class="rm-ai">?</span><b>찾는 중</b><i>못 찾으면 AI</i></div>').join('')}</div>
+      <p class="qm-note">차례 제한 ${room.turn || Online.TURN_SEC}초 · 나가면 AI 가 이어받아요</p>`;
+  };
+  const stop = Online.watchRoom(code, (r) => {
+    if (!alive) return;
+    if (!r || r.status === 'gone' || !r.uids.includes(uid)) {
+      // 방장이 다른 방으로 옮겼거나 방이 사라졌다 — 남은 시간으로 다시 찾는다
+      end(); closeSheet(); Online.forget();
+      if (!host) quickMatch(Math.max(deadline, Date.now() + 8000));
+      return;
+    }
+    room = r;
+    if (r.status === 'play') { end(); startOnline(code, r); return; }
+    if (host && r.uids.length >= r.size) go();
+    draw();
+  });
+  timers.push(setInterval(() => {
+    if (!alive) return;
+    draw();
+    if (Date.now() < deadline) return;
+    if (host) go();
+    else if (Date.now() > deadline + QUICK_GIVEUP * 1000) { end(); Online.leaveRoom(code); quickToAi('방장이 응답하지 않아 AI 와 시작해요'); }
+  }, 500));
+  if (!host) return;
+  timers.push(setInterval(() => Online.beat(code), 10000));
+  // 동시에 방을 연 사람이 있으면 하나로 합친다(코드가 앞선 방으로 — 서로 옮겨 다니지 않게)
+  timers.push(setInterval(async () => {
+    if (!alive || going || !room || room.uids.length > 1) return;
+    const other = (await Online.openRooms(board)).find((r) => r.code < code);
+    if (!other || !alive || going || room.uids.length > 1) return;
+    end();
+    await Online.leaveRoom(code);
+    try { await Online.joinRoom(other.code, { hero: Prefs.getLeader(Records.unlocked()) }); quickWait(other.code, false, deadline); }
+    catch { quickMatch(deadline); }
+  }, 4000));
+}
+
+/** 사람을 못 찾았다: 지금 고른 판 · 인원으로 AI 대결 */
+function quickToAi(text) {
+  closeSheet();
+  toast(text);
+  startGame(false, quickSize() - 1);
+}
+
+/** 대기실: 방 코드 · 자리(빈자리는 AI) · 방장은 자리 수 · 판 · 차례 제한을 고르고 시작 */
 function roomPage(code) {
   closeSheet();
   const uid = Online.myUid();
@@ -837,12 +937,13 @@ function roomPage(code) {
     const seats = Array.from({ length: room.size }, (_, i) => room.seats[i] || null);
     body.innerHTML = `
       <div class="room-code"><span>방 코드</span><b>${code}</b><button class="btn small white" id="rmCopy">초대 링크</button></div>
-      <p>${BOARD_NAMES[room.board] || '순환선'} 판 · ${room.size}자리 · 사람 ${room.seats.length}명${room.seats.length < room.size ? ` · 빈자리 ${room.size - room.seats.length}곳은 AI` : ''}</p>
+      <p>${BOARD_NAMES[room.board] || '순환선'} 판 · 차례 ${room.turn || Online.TURN_SEC}초 · ${room.size}자리 · 사람 ${room.seats.length}명${room.seats.length < room.size ? ` · 빈자리 ${room.size - room.seats.length}곳은 AI` : ''}</p>
       <div class="room-seats">${seats.map((x, i) => x
         ? `<div class="rm-seat ${x.uid === uid ? 'me' : ''}" style="--pc:${heroById(x.hero)?.color || '#888'}">${character(x.hero, 40)}<b>${esc(x.name)}${x.uid === uid ? ' (나)' : ''}</b><i>${i === 0 ? '방장' : `${i + 1}번`}</i></div>`
         : '<div class="rm-seat ai"><span class="rm-ai">AI</span><b>빈자리</b><i>시작하면 AI</i></div>').join('')}</div>
       ${host ? `<div class="rm-opts"><div class="lb-seg" role="radiogroup" aria-label="자리 수"><span>자리</span>${[2, 3, 4].map((n) => `<button role="radio" data-s="${n}" class="${n === room.size ? 'on' : ''}" ${n < room.seats.length ? 'disabled' : ''}>${n}</button>`).join('')}</div>
-        <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${Object.entries(BOARD_NAMES).map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === room.board ? 'on' : ''}">${n}</button>`).join('')}</div></div>`
+        <div class="lb-seg lb-board" role="radiogroup" aria-label="판">${Object.entries(BOARD_NAMES).map(([k, n]) => `<button role="radio" data-b="${k}" class="${k === room.board ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <div class="lb-seg lb-board" role="radiogroup" aria-label="차례 제한"><span>차례</span>${Online.TURN_CHOICES.map((t) => `<button role="radio" data-t="${t}" class="${t === (room.turn || Online.TURN_SEC) ? 'on' : ''}">${t}초</button>`).join('')}</div></div>`
         : '<p class="rm-wait">방장이 시작하면 바로 시작해요</p>'}
       <div class="row"><button class="btn white" id="rmLeave">나가기</button>${host ? `<button class="btn" id="rmGo" ${room.seats.length < 2 ? 'disabled' : ''}>${room.seats.length < 2 ? '친구를 기다리는 중' : '시작'}</button>` : ''}</div>`;
     body.querySelector('#rmCopy').onclick = async () => {
@@ -856,6 +957,7 @@ function roomPage(code) {
     body.querySelector('#rmLeave').onclick = () => { Sound.click(); stop(); Online.leaveRoom(code); closeSheet(); };
     body.querySelectorAll('[data-s]').forEach((b) => { b.onclick = () => { Sound.click(); Online.updateRoom(code, { size: +b.dataset.s }).catch((e) => toast(onlineErr(e))); }; });
     body.querySelectorAll('[data-b]').forEach((b) => { b.onclick = () => { Sound.click(); Online.updateRoom(code, { board: b.dataset.b }).catch((e) => toast(onlineErr(e))); }; });
+    body.querySelectorAll('[data-t]').forEach((b) => { b.onclick = () => { Sound.click(); Online.updateRoom(code, { turn: +b.dataset.t }).catch((e) => toast(onlineErr(e))); }; });
     const go = body.querySelector('#rmGo');
     if (go) go.onclick = async () => {
       Sound.unlock(); Sound.click(); go.disabled = true;
@@ -885,24 +987,32 @@ function planRoom(room) {
   return { status: 'play', seed, heroes: [...heroes, ...bots] };
 }
 
-/** 판 시작(또는 새로고침 뒤 이어 하기): 지금까지 올라온 행동으로 따라잡고 대결 화면으로 */
-async function startOnline(code, room) {
-  closeSheet();
+/** 판 시작(또는 새로고침 뒤 이어 하기 · 판이 어긋나 다시 맞추기): 지금까지 올라온 행동으로 따라잡고 대결 화면으로 */
+async function startOnline(code, room, again = false) {
+  if (!again) closeSheet();
   leaveOnline();
   const uid = Online.myUid(), seat = room.uids.indexOf(uid);
   if (seat < 0) { toast('이 방의 사람이 아니에요'); return; }
   const m = createMatch({ seed: room.seed, heroes: room.heroes, humans: room.uids.length, region: ringOf(room.board) ? room.board : null });
   const O = {
-    code, room, n: 0, inbox: [], log: [], waiter: null, turnKey: null, stop: () => {},
+    code, room, n: 0, inbox: [], log: [], waiter: null, turnKey: null, step: null, stop: () => {},
+    live: new Map(), // uid → { seen(마지막으로 접속 표시를 받은 기기 시각), left, got(한 번이라도 받았나) }
     owners: Object.fromEntries(room.uids.map((u, i) => ['p' + i, u])),
     names: Object.fromEntries(room.seats.map((x, i) => ['p' + i, x.name]))
   };
   delete O.names['p' + seat];
   G.online = O;
+  // 접속 표시: 시작할 때는 모두 있는 것으로(GONE_MS 안에 소식이 없으면 나간 것)
+  const t0 = Date.now();
+  for (const u of room.uids) O.live.set(u, { seen: t0, left: false, got: false });
+  const stopBeat = Online.startPresence(code);
+  const stopLive = Online.watchPresence(code, (u, s) => O.live.set(u, { seen: Date.now(), left: s.left, got: true }));
   // 첫 묶음(지금까지의 행동)을 받을 때까지 기다린다
-  await new Promise((ready) => { O.stop = Online.watchActs(code, (a) => onAct(O, a), ready); });
-  if (G.online !== O) return;
-  const used = O.inbox.length ? fastForward(m, O.inbox, { isBot: (p) => !p.human, ownerOf: (id) => O.owners[id] }) : 0;
+  let stopActs = () => {};
+  await new Promise((ready) => { stopActs = Online.watchActs(code, (a) => onAct(O, a), ready); });
+  O.stop = () => { stopBeat(); stopLive(); stopActs(); };
+  if (G.online !== O) { O.stop(); return; }
+  const used = O.inbox.length ? fastForward(m, O.inbox, O.owners) : 0;
   O.inbox.splice(0, used);
   O.n = used;
   G.daily = false;
@@ -912,7 +1022,18 @@ async function startOnline(code, room) {
   G.hudMoney = {};
   G.combo = null;
   G.entered = used ? new Set(m.players.map((p) => p.id)) : new Set([current(m).id]);
-  enterGame(!!used);
+  enterGame(!!used || again);
+  if (ME().bot) toast('내 자리는 AI 가 이어받았어요 · 지켜보는 중');
+}
+
+/** 온라인 대결 중 나가기: 내 자리는 AI 가 이어받는다 */
+function quitOnline() {
+  const O = G.online;
+  if (!O) return;
+  const s = sheet(`<span class="kind">온라인 대결 · 방 ${O.code}</span><h2>나갈까요?</h2><p>나가면 내 자리는 <b>AI</b> 가 끝까지 이어받고, 이 판의 기록은 남지 않아요.</p>
+    <div class="row"><button class="btn white" id="qStay">계속하기</button><button class="btn" id="qGo">나가기</button></div>`);
+  s.querySelector('#qStay').onclick = () => { Sound.click(); closeSheet(); };
+  s.querySelector('#qGo').onclick = () => { Sound.click(); closeSheet(); Online.markLeft(O.code); Online.forget(); title(); };
 }
 
 /** 온라인 연결 끊기(로비로 돌아갈 때) */
@@ -922,6 +1043,8 @@ function leaveOnline() {
   G.online = null;
   O.stop();
   O.cancel?.();
+  O.step = null;
+  stopClock();
 }
 
 
@@ -937,7 +1060,7 @@ function enterGame(resumed = false) {
       <div class="stamp-spot" id="stampSpot"></div><div class="roller-float" id="roller"></div>
       <div class="hint" id="hint"></div>
       <button class="btn small white zoom-btn" id="zoom">전체 지도</button>
-      <button class="btn small white help-btn2" id="help" aria-label="도움말">?</button></div>
+      <button class="btn small white help-btn2" id="help" aria-label="도움말">?</button>${G.online ? '<button class="btn small white quit-btn" id="quit">나가기</button>' : ''}</div>
     <div class="dock" id="dock">
       <div class="me-row" id="meRow"></div>
       <div class="controls">
@@ -956,6 +1079,7 @@ function enterGame(resumed = false) {
   $('#investBtn').onclick = openInvest;
   $('#zoom').onclick = () => { Sound.click(); if (G.regionView) showPlayer(current(M())); else showRegion(); };
   $('#help').onclick = () => { if (!G.busy) guide(); };
+  if ($('#quit')) $('#quit').onclick = quitOnline;
   $('#mat').onclick = onMapTap;
   drawBoard();
   drawPieces();
@@ -986,9 +1110,9 @@ async function loop() {
   const m = M();
   while (m === M() && m.phase !== 'over') {
     const p = current(m);
-    if (isMine(p)) await humanTurn(p);
-    else if (p.human) await remoteTurn(p);
-    else await aiTurn(p);
+    if (isBot(p)) await aiTurn(p); // AI 상대 · 사람이 나가 AI 가 이어받은 자리
+    else if (isMine(p)) await humanTurn(p);
+    else await remoteTurn(p);
   }
   if (m === M() && m.phase === 'over') await results();
 }
@@ -1045,34 +1169,65 @@ function countUp(el, from, to, ms = 480) {
   setTimeout(() => set(to), ms + 60);
 }
 
-/** 내 차례: 출발·스킬·노선 투자를 기다린다. 달리는 중엔 갈림길을 고르고, 거래 제안엔 답한다 */
+/**
+ * 내 차례(한 단계씩 — 차례가 이어지면 바깥 loop 가 다시 부른다): 굴리기 전엔 출발·스킬·노선 투자를 기다리고,
+ * 달리는 중엔 갈림길을, 명소역에선 고르기를, 거래 제안엔 답을 기다린다.
+ * 온라인이면 단계마다 차례 시계가 돌고, 다 되면 AI 가 그 단계를 대신 둔다(auto). 방에서 나에 대한 대신 두기가 먼저 오면 그것을 따른다.
+ */
 async function humanTurn(p) {
   const m = M();
   // 온라인에서 내가 첫 자리가 아니면 첫 차례에 출발 칸으로 내려선다
   if (G.entered && !G.entered.has(p.id)) await play([{ type: 'turnStart', player: p.id }]);
-  showPlayer(p);
-  if (m.phase === 'roll' && !p.rest) await turnBanner(p);
-  await new Promise((resolve) => { G.wait = resolve; drawControls(); });
-  G.wait = null;
-  if (m.phase === 'pick') {
-    const i = await pickDiePrompt();
-    await doAct('pick', i);
+  let r;
+  if (m.phase === 'roll') {
+    showPlayer(p);
+    if (!p.rest) await turnBanner(p);
+    r = await myStep(new Promise((resolve) => { G.wait = resolve; drawControls(); }));
+    G.wait = null;
+  } else if (m.phase === 'pick') r = await myStep(pickDiePrompt(), 'pick');
+  else if (m.phase === 'move') r = await myStep(pickPath(), 'move');
+  else if (m.phase === 'choose') r = await myStep(choicePrompt(), 'choose');
+  else if (m.phase === 'decide') r = await myStep(offerPrompt(), 'decide');
+  else return;
+  if (m !== M()) return;
+  if (r.time || r.remote) {
+    clearPrompts();
+    if (r.time) { toast('시간 초과 · 이번 단계는 AI 가 대신 둬요'); await doAct('auto'); } else await takeAct();
+    return;
   }
-  if (m.phase === 'move') {
-    const path = await pickPath();
-    await doAct('move', path);
-  }
-  if (m.phase === 'choose') {
-    const v = await choicePrompt();
-    await doAct('choose', v);
-  }
-  if (m.phase === 'decide') {
-    const yes = await offerPrompt();
-    await doAct('decide', yes);
-  }
+  if (r.kind) await doAct(r.kind, r.v);
 }
 
-/** AI 차례: 노선 투자 → 스킬 → 굴리기 → 길 → 거래, 빠르게 */
+/** 내 단계 하나를 기다린다 → { kind, v }(내가 골랐다) · { time }(시간 초과) · { remote }(방에서 먼저 온 행동) */
+function myStep(prompt, kind) {
+  const O = G.online;
+  if (!O) return prompt.then((v) => ({ kind, v }));
+  const m = M(), p = current(m), phase = m.phase;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (r) => { if (done) return; done = true; O.step = null; stopClock(); resolve(r); };
+    // 굴리기 전 단계는 투자 · 스킬을 써도 이어진다 — 그 행동을 넣는 동안 시계를 멈췄다가 새로 건다
+    const arm = () => {
+      const step = { finish, paused: false };
+      step.pause = () => { step.paused = true; stopClock(); };
+      step.resume = () => { if (!done && m === M() && current(m) === p && m.phase === phase) arm(); };
+      O.step = step;
+      startClock(p, turnSec(), () => { if (!G.busy && !step.paused) finish({ time: true }); });
+      if (O.inbox.length) finish({ remote: true });
+    };
+    prompt.then((v) => finish({ kind, v }));
+    arm();
+  });
+}
+
+/** 내 고르기 창 · 갈림길 · 거래 카드를 모두 치운다(시간 초과 · 끼어들기) */
+function clearPrompts() {
+  hideFork(); clearDest(); clearRoute(); closeSheet(); setHint('');
+  app.querySelectorAll('.die-pick, .offer-card').forEach((n) => n.remove());
+  drawControls();
+}
+
+/** AI 차례: 노선 투자 → 스킬 → 굴리기 → 길 → 거래, 빠르게. 사람이 나가 AI 가 이어받은 자리도 */
 async function aiTurn(p) {
   const m = M();
   for (const step of aiSteps(m)) {
@@ -1081,26 +1236,69 @@ async function aiTurn(p) {
   }
 }
 
-/** 내 행동 하나: 판에 넣고 연출한다. 온라인이면 넣기 전에 방에도 올린다 */
-function doAct(a, v) {
-  const m = M();
-  if (G.online) sendMine(a, v);
-  return play(ACTS[a](m, v));
+/** 내 행동 하나: 판에 넣고 연출한다. 온라인이면 넣기 전에 방에도 올린다(그동안 차례 시계는 멈춘다) */
+async function doAct(a, v) {
+  const m = M(), O = G.online;
+  if (O) { O.step?.pause(); sendMine(a, v); }
+  await play(applyAct(m, { a, v }) || []);
+  O?.step?.resume();
 }
 
-// ── 온라인 대결: 다른 사람 차례 ─────────────────────────────
+// ── 온라인 대결: 다른 사람 차례 · 차례 시계 · 심판 ─────────────
 
-/** 다른 사람 차례: 그 사람이 올린 행동을 하나 받아 판에 넣는다(차례가 이어지면 바깥 loop 가 다시 부른다) */
+/** 차례 제한(초) */
+const turnSec = () => G.online?.room.turn || Online.TURN_SEC;
+/** 제한 시간이 지나고 이만큼 더 기다린 뒤 심판이 대신 두기를 올린다(그 사람 화면이 조금 늦을 수 있어서) */
+const GRACE_MS = 8000;
+/** 접속 표시가 이만큼 끊기면 나간 것으로 본다 */
+const GONE_MS = 50000;
+
+/** 다른 사람 차례: 그 사람이 올린 행동을 하나 받아 판에 넣는다. 그동안 시계를 돌리고, 내가 심판이면 시간 초과 · 나간 자리를 챙긴다 */
 async function remoteTurn(p) {
   const m = M(), O = G.online;
   const key = `${m.round}:${m.turn}`;
   if (O.turnKey !== key) { O.turnKey = key; await play([{ type: 'turnStart', player: p.id }]); }
+  if (m !== M()) return;
   setHint(`${nameOf(p)} 차례 · 기다리는 중`);
+  const n0 = O.n, owner = O.owners[p.id];
+  let deadline = Date.now() + turnSec() * 1000, sent = false;
+  startClock(p, turnSec(), () => {});
+  // 심판: 나간 자리는 바로, 시간을 넘긴 자리는 조금 더 기다렸다가 대신 두기를 올린다(올린 것도 행동으로 돌아와 모두 같이 넣는다)
+  const watch = setInterval(() => {
+    if (sent || O.n !== n0 || G.online !== O || !amReferee(p)) return;
+    if (isGone(O, owner)) { sent = true; sendMeta('bot'); }
+    else if (Date.now() > deadline + GRACE_MS) { sent = true; sendMeta('auto'); }
+  }, 1000);
+  await takeAct();
+  clearInterval(watch);
+  stopClock();
+}
+
+/** 방에서 다음 행동을 하나 받아 판에 넣는다 */
+async function takeAct() {
+  const m = M(), O = G.online;
   const a = await nextAct(O);
   if (m !== M() || !a) return;
-  if (!actOk(m, a, (id) => O.owners[id])) return; // 차례가 아닌 사람 · 맞지 않는 단계의 행동은 모두 똑같이 건너뛴다
-  if (a.h && a.h !== sig(m) && !O.warned) { O.warned = true; console.warn('[online] 판 서명이 다르다', a, sig(m)); toast('판이 어긋났어요 · 새로고침하면 다시 맞춰요'); }
+  if (!actOk(m, a, O.owners)) return; // 차례가 아닌 사람 · 맞지 않는 단계의 행동은 모두 똑같이 건너뛴다
+  if (a.h && a.h !== sig(m) && !O.warned) { O.warned = true; console.warn('[online] 판 서명이 다르다', a, sig(m)); toast('판이 어긋났어요 · 다시 맞추는 중'); resync(); return; }
   await play(applyAct(m, a) || []);
+}
+
+/** 심판: 차례인 사람을 뺀, 아직 있는 사람 자리 중 가장 앞 — 그 한 기기만 대신 두기를 올린다 */
+function amReferee(p) {
+  const O = G.online, m = M();
+  const ref = m.players.find((q) => q.human && !q.bot && q !== p && !isGone(O, O.owners[q.id]));
+  return ref?.id === G.me;
+}
+
+/**
+ * 그 사람이 나갔나: 「나가기」를 눌렀거나 접속 표시가 GONE_MS 넘게 끊겼다.
+ * 접속 표시를 한 번도 못 받은 사람(규칙이 막았거나 아직 안 왔다)은 나간 것으로 보지 않는다 — 그때는 시간 초과만으로 챙긴다
+ */
+function isGone(O, uid) {
+  if (uid === Online.myUid()) return false;
+  const s = O.live.get(uid);
+  return !!s?.got && (s.left || Date.now() - s.seen > GONE_MS);
 }
 
 /** 받은 행동 중 다음 순번 하나(아직 없으면 올 때까지) */
@@ -1112,27 +1310,74 @@ function nextAct(O) {
   });
 }
 
-/** 방에서 행동이 왔다: 이미 넣은 것(내가 올린 것)은 넘기고, 나머지는 줄 세운다 */
+/** 방에서 행동이 왔다: 이미 넣은 것(내가 올린 것)은 넘기고, 나머지는 줄 세운다. 내 단계를 기다리던 중이면 끼어든다 */
 function onAct(O, a) {
   O.log[a.n] = a;
   if (a.n < O.n) return;
   O.inbox.push(a);
   O.waiter?.();
+  if (O.step && !O.step.paused) O.step.finish({ remote: true });
 }
 
-/** 내 행동을 방에 올린다(순번은 바로 차지하고, 실패하면 몇 번 더) */
+/** 내 행동을 방에 올린다(순번은 바로 차지한다). 심판의 대신 두기가 먼저 그 순번을 가져갔으면 판을 처음부터 다시 맞춘다 */
 function sendMine(a, v) {
   const m = M(), O = G.online;
   const rec = { n: O.n++, seat: current(m).id, a, v: v === undefined ? null : v, h: sig(m) };
   O.log[rec.n] = { ...rec, by: Online.myUid() };
   const send = async (tries) => {
     try { await Online.sendAct(O.code, rec); } catch (err) {
-      if (tries < 3 && G.online === O) { await sleep(800 * (tries + 1)); return send(tries + 1); }
+      if (G.online !== O) return;
+      if (err?.code === 'permission-denied') { toast('늦었어요 · 판을 다시 맞추는 중'); resync(); return; }
+      if (tries < 3) { await sleep(800 * (tries + 1)); return send(tries + 1); }
       console.warn('[online] 행동을 못 보냈다', err);
       toast('연결이 끊겨 행동을 못 보냈어요 · 새로고침해 주세요');
     }
   };
   send(0);
+}
+
+/** 심판의 대신 두기(auto · bot): 판에 바로 넣지 않고 올리기만 — 서버가 받아 준 것만 돌아와 모두 같이 넣는다(겹치면 늦은 쪽이 거절된다) */
+function sendMeta(a) {
+  const m = M(), O = G.online;
+  Online.sendAct(O.code, { n: O.n, seat: current(m).id, a, v: null, h: sig(m) }).catch((err) => console.warn('[online] 대신 두기 못 올림(먼저 둔 행동이 있다)', err?.code));
+}
+
+/** 판을 처음부터 다시 맞춘다(서버의 행동 기록으로) */
+async function resync() {
+  const O = G.online;
+  if (!O) return;
+  startOnline(O.code, O.room, true);
+}
+
+/** 차례 시계: 남은 초를 판 위에 보이고, 다 되면 onEnd(내 차례면 마지막 5초 째깍) */
+function startClock(p, sec, onEnd) {
+  stopClock();
+  const board = $('#board');
+  if (!board) return;
+  const el = document.createElement('div');
+  el.className = 'turn-clock' + (isMine(p) ? ' me' : '');
+  el.style.setProperty('--pc', colorOf(p));
+  board.appendChild(el);
+  const end = Date.now() + sec * 1000;
+  let last = -1;
+  const tick = () => {
+    const ms = Math.max(0, end - Date.now()), left = Math.ceil(ms / 1000);
+    if (left !== last) {
+      last = left;
+      el.innerHTML = `<b>${left}</b><span>${isMine(p) ? '내 차례' : esc(nameOf(p))}</span><i style="width:${(ms / (sec * 1000)) * 100}%"></i>`;
+      el.classList.toggle('hurry', left <= 5);
+      if (left <= 5 && left > 0 && isMine(p)) Sound.click();
+    }
+    if (ms <= 0) onEnd(); // 연출 중이라 못 끝냈으면 다음 째깍에 다시 묻는다
+  };
+  G.clock = { el, timer: setInterval(tick, 250) };
+  tick();
+}
+function stopClock() {
+  if (!G.clock) return;
+  clearInterval(G.clock.timer);
+  G.clock.el.remove();
+  G.clock = null;
 }
 
 async function onThrow() {
@@ -1591,7 +1836,7 @@ function drawHud() {
   $('#players').innerHTML = m.players.map((p) => `
     <div class="pl ${current(m) === p && m.phase !== 'over' ? 'turn' : ''} ${p.out ? 'out' : ''} ${isMine(p) ? 'me' : ''}" data-player="${p.id}" style="--pc:${colorOf(p)}">
       <span class="pa">${character(p.hero, 34)}${p.out ? '' : hudCharge(p)}</span>
-      <div class="pi"><b>${isMine(p) ? '나' : nameOf(p)}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
+      <div class="pi"><b>${isMine(p) ? '나' : nameOf(p)}${p.human && p.bot ? '<small class="pl-bot">AI</small>' : ''}</b><span class="money">${coin(13)} <i class="mv">${p.out ? '파산' : p.money.toLocaleString()}</i></span><em>역 ${stationsOf(m, p).length}${monoNote(m, p)}${p.coupon ? ' 면제' : ''}</em></div>
     </div>`).join('');
   // 돈이 바뀌었으면 숫자가 차오르고(늘면 초록, 줄면 빨강) 반짝인다
   G.hudMoney ||= {};
@@ -2405,6 +2650,19 @@ const HANDLERS = {
     await sleep(300);
   },
   async turn(e) { drawPieces(); drawHud(); },
+  // 온라인: 시간 초과로 AI 가 한 단계를 대신 뒀다 · 사람이 나가(또는 시간 초과가 이어져) AI 가 끝까지 이어받는다
+  async autoStep(e) {
+    const p = playerById(M(), e.player);
+    if (!isMine(p)) toast(`${nameOf(p)} 시간 초과 · AI 가 대신 둬요${e.count >= AUTO_LIMIT - 1 && e.count < AUTO_LIMIT ? ' (한 번 더면 AI 로)' : ''}`);
+    else if (e.count === AUTO_LIMIT - 1) toast(`시간 초과 ${e.count}번 · 한 번 더면 AI 가 끝까지 이어받아요`);
+  },
+  async botTakeover(e) {
+    const p = playerById(M(), e.player);
+    const why = e.why === 'left' ? '나갔어요' : `시간 초과 ${AUTO_LIMIT}번`;
+    toast(isMine(p) ? `${why} · 내 자리는 AI 가 이어받아요` : `${nameOf(p)} ${why} · AI 가 이어받아요`);
+    drawHud(); drawControls();
+    await sleep(400);
+  },
   async roll(e) {
     const p = playerById(M(), e.player);
     clearLanding();

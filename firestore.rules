@@ -4,6 +4,7 @@ rules_version = '2';
 //   ranking/{uid}  전체 랭킹 한 줄. 누구나 읽고, 본인 줄만 정해진 모양으로 쓴다
 //   rooms/{code}   온라인 대결 방. 로그인하면 읽고(코드로 찾기), 방장은 고치고, 다른 사람은 시작 전에 자기 자리만 넣고 뺀다
 //   rooms/{code}/acts/{n}  방의 행동 기록. 방 사람만 읽고, 판이 시작된 뒤 자기 이름으로 새로 쓰기만(고치기 없음 · 지우기는 방장만)
+//   rooms/{code}/live/{uid}  접속 표시(판 동안 15초마다 · 나가기). 방 사람만 읽고, 자기 것만 쓴다
 // 점수는 기기에서 계산해 올리므로 마음먹고 고치면 막을 수 없다 — 터무니없는 값만 걸러 낸다.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -65,6 +66,15 @@ service cloud.firestore {
           && request.resource.data.a is string && request.resource.data.a.size() <= 10
           && (request.resource.data.v == null || (request.resource.data.v is string && request.resource.data.v.size() <= 4000))
           && request.resource.data.at == request.time;
+      }
+
+      // 접속 표시: 방 사람이 자기 것만 쓰고, 방 사람끼리 읽는다(방장은 방을 치울 때 지운다)
+      match /live/{uid} {
+        function liveRoom() { return get(/databases/$(database)/documents/rooms/$(code)).data; }
+        allow read: if request.auth != null && request.auth.uid in liveRoom().uids;
+        allow create, update: if request.auth != null && request.auth.uid == uid && uid in liveRoom().uids
+          && request.resource.data.keys().hasOnly(['at', 'left']) && request.resource.data.at == request.time && request.resource.data.left is bool;
+        allow delete: if request.auth != null && (request.auth.uid == uid || liveRoom().host == request.auth.uid);
       }
     }
   }

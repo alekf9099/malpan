@@ -1,10 +1,12 @@
 // 온라인 대결 방 — Firestore 로 방을 만들고 들어가고, 판이 시작되면 사람 행동만 주고받는다(규칙 계산은 core/lockstep.js).
 //
-//   rooms/{code}         방 하나: { host, status(wait · play), size(자리 수 2~4), board, seats[{ uid, name, hero }], uids[자리 순서],
-//                                  seed · heroes(시작할 때 방장이 정한다), created, updated }
-//   rooms/{code}/acts/{n} 행동 하나: { n, by, seat, a, v(JSON 글자), h(판 서명), at } — 방 사람만 읽고, 자기 이름으로만 새로 쓴다(고치기 · 지우기 없음)
+//   rooms/{code}         방 하나: { host, status(wait · play · gone), size(자리 수 2~4), board, turn(차례 제한 초), pub(빠른 매칭 방),
+//                                  seats[{ uid, name, hero }], uids[자리 순서], seed · heroes(시작할 때 방장이 정한다), beat(방장이 기다리는 중 — 10초마다), created, updated }
+//   rooms/{code}/acts/{n} 행동 하나: { n, by, seat, a, v(JSON 글자), h(판 서명), at } — 방 사람만 읽고, 자기 이름으로만 새로 쓴다(고치기 없음)
+//   rooms/{code}/live/{uid} 접속 표시: { at, left } — 판 동안 15초마다 · 「나가기」를 누르면 left
 //
-// 같은 순번(n)에는 하나만 쓸 수 있다(규칙이 덮어쓰기를 막는다). 차례인 사람만 쓰므로 순번이 겹치지 않는다.
+// 같은 순번(n)에는 하나만 쓸 수 있다(규칙이 덮어쓰기를 막는다). 차례인 사람만 쓰므로 순번이 겹치지 않는다 —
+// 겹치는 것은 심판(다른 사람)이 시간 초과 · 나간 자리에 대신 두기를 올릴 때뿐이고, 그때 늦은 쪽의 쓰기는 거절된다.
 
 import * as Cloud from './cloud.js';
 
@@ -12,6 +14,11 @@ import * as Cloud from './cloud.js';
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export const CODE_LEN = 4;
 const SAVE = 'yeokjeon.online.v1'; // 마지막으로 들어간 방(새로고침 뒤 이어 하기)
+/** 차례 제한(초) 고를 수 있는 값 · 기본 */
+export const TURN_CHOICES = [15, 30, 60];
+export const TURN_SEC = 30;
+/** 빠른 매칭: 방장이 이만큼 소식이 없으면 버려진 방(밀리초) */
+const BEAT_STALE = 30000;
 
 const pad = (n) => String(n).padStart(6, '0');
 const fbOrNull = async () => ((await Cloud.start()) ? Cloud.firebase() : null);
@@ -21,7 +28,7 @@ export const lastRoom = () => { try { return localStorage.getItem(SAVE) || ''; }
 const remember = (code) => { try { if (code) localStorage.setItem(SAVE, code); else localStorage.removeItem(SAVE); } catch { /* 없어도 진행 */ } };
 
 /** 방 만들기 → 코드(실패하면 throw). 나는 첫 자리 */
-export async function createRoom({ size, board, hero }) {
+export async function createRoom({ size, board, hero, turn = TURN_SEC, pub = false }) {
   const fb = await fbOrNull();
   if (!fb) throw new Error('offline');
   const { fs, db, uid } = fb;
@@ -32,7 +39,7 @@ export async function createRoom({ size, board, hero }) {
       await fs.runTransaction(db, async (tx) => {
         const old = await tx.get(ref);
         if (old.exists() && old.data().status !== 'gone') throw new Error('taken');
-        tx.set(ref, { host: uid, status: 'wait', size, board, seats: [{ uid, name: Cloud.myName(), hero }], uids: [uid], created: fs.serverTimestamp(), updated: fs.serverTimestamp() });
+        tx.set(ref, { host: uid, status: 'wait', size, board, turn, pub, seats: [{ uid, name: Cloud.myName(), hero }], uids: [uid], beat: fs.serverTimestamp(), created: fs.serverTimestamp(), updated: fs.serverTimestamp() });
       });
       remember(code);
       return code;
@@ -130,10 +137,12 @@ export function watchActs(code, fn, ready = () => {}) {
   const { fs, db } = fb;
   const got = new Map();
   let next = 0;
-  return fs.onSnapshot(fs.query(fs.collection(db, 'rooms', code, 'acts'), fs.orderBy('n')), (snap) => {
+  return fs.onSnapshot(fs.query(fs.collection(db, 'rooms', code, 'acts'), fs.orderBy('n')), { includeMetadataChanges: true }, (snap) => {
     for (const ch of snap.docChanges()) {
-      if (ch.type !== 'added') continue;
+      // 서버가 받아 준 것만(내가 막 쓴 것이 거절될 수도 있다 — 심판과 순번이 겹칠 때)
+      if (ch.type === 'removed' || ch.doc.metadata.hasPendingWrites) continue;
       const d = ch.doc.data();
+      if (d.n < next || got.has(d.n)) continue;
       let v = null;
       try { v = d.v == null ? null : JSON.parse(d.v); } catch { /* 깨진 값은 null */ }
       got.set(d.n, { n: d.n, by: d.by, seat: d.seat, a: d.a, v, h: d.h });
@@ -152,6 +161,65 @@ export async function sendAct(code, act) {
     n: act.n, by: uid, seat: act.seat, a: act.a, v: act.v === undefined ? null : JSON.stringify(act.v), h: act.h, at: fs.serverTimestamp()
   });
 }
+
+// ── 접속 표시 ──────────────────────────────────────────────
+
+/** 판 동안 15초마다 '여기 있다'를 남긴다. 끊기 함수를 돌려준다 */
+export function startPresence(code) {
+  const fb = Cloud.firebase();
+  if (!fb) return () => {};
+  const { fs, db, uid } = fb;
+  const ref = fs.doc(db, 'rooms', code, 'live', uid);
+  const beat = () => fs.setDoc(ref, { at: fs.serverTimestamp(), left: false }).catch((err) => console.warn('[online] 접속 표시 실패', err));
+  beat();
+  const timer = setInterval(beat, 15000);
+  return () => clearInterval(timer);
+}
+
+/** 나가기: 다른 사람이 바로 AI 로 바꿀 수 있게 */
+export async function markLeft(code) {
+  const fb = Cloud.firebase();
+  if (!fb) return;
+  const { fs, db, uid } = fb;
+  try { await fs.setDoc(fs.doc(db, 'rooms', code, 'live', uid), { at: fs.serverTimestamp(), left: true }); } catch (err) { console.warn('[online] 나가기 표시 실패', err); }
+}
+
+/** 접속 표시가 바뀔 때마다 fn(uid, { left }) — 받은 때(기기 시각)는 부르는 쪽이 적는다. 끊기 함수를 돌려준다 */
+export function watchPresence(code, fn) {
+  const fb = Cloud.firebase();
+  if (!fb) return () => {};
+  const { fs, db } = fb;
+  return fs.onSnapshot(fs.collection(db, 'rooms', code, 'live'), (snap) => {
+    for (const ch of snap.docChanges()) if (ch.type !== 'removed') fn(ch.doc.id, { left: !!ch.doc.data().left });
+  }, (err) => console.warn('[online] 접속 표시 연결 끊김', err));
+}
+
+// ── 빠른 매칭 ──────────────────────────────────────────────
+
+/** 같은 판으로 사람을 기다리는 빠른 매칭 방들(자리가 남고 방장이 살아 있는 것) — 오래된 것부터 */
+export async function openRooms(board) {
+  const fb = await fbOrNull();
+  if (!fb) return [];
+  const { fs, db, uid } = fb;
+  try {
+    const snap = await fs.getDocs(fs.query(fs.collection(db, 'rooms'), fs.where('pub', '==', true), fs.where('status', '==', 'wait'), fs.where('board', '==', board), fs.limit(20)));
+    const now = Date.now();
+    return snap.docs.map((d) => ({ code: d.id, ...d.data() }))
+      .filter((r) => r.uids.length < r.size && !r.uids.includes(uid) && r.beat && now - r.beat.toMillis() < BEAT_STALE)
+      .sort((a, b) => (a.created?.toMillis() || 0) - (b.created?.toMillis() || 0) || (a.code < b.code ? -1 : 1));
+  } catch (err) { console.warn('[online] 빠른 매칭 방 찾기 실패', err); return []; }
+}
+
+/** 빠른 매칭: 기다리는 방이 있으면 들어가고, 없으면 새로 연다 → { code, host } */
+export async function quickMatch({ size, board, hero }) {
+  for (const r of await openRooms(board)) {
+    try { await joinRoom(r.code, { hero }); return { code: r.code, host: false }; } catch { /* 그사이 찼다 — 다음 방 */ }
+  }
+  return { code: await createRoom({ size, board, hero, pub: true }), host: true };
+}
+
+/** 방장이 기다리는 동안 '살아 있다'(빠른 매칭이 버려진 방을 거른다) */
+export const beat = (code) => updateRoom(code, { beat: Cloud.firebase().fs.serverTimestamp() }).catch(() => {});
 
 export const myUid = () => Cloud.myUid();
 export const forget = () => remember('');

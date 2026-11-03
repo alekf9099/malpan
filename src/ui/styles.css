@@ -2000,3 +2000,26 @@ body.land .demo-sheet .dm-steps li { padding: 4px 10px; }
 .rm-opts .lb-seg { box-shadow: none; }
 .rm-opts .lb-seg button:disabled { opacity: .3; cursor: default; }
 .rm-wait { text-align: center; margin-top: 12px !important; }
+
+/* 빠른 매칭 · 차례 시계 · 나가기 */
+.on-quick { display: flex; align-items: center; gap: 10px; background: var(--yellow); box-shadow: 0 3px 0 var(--ink); }
+.on-quick > div { flex: 1; min-width: 0; }
+.on-quick p { margin-top: 2px; font-size: 12px; }
+.qm-count { position: relative; display: flex; align-items: baseline; gap: 6px; margin-top: 10px; padding: 8px 12px 12px; border: 2.5px solid var(--ink); border-radius: 14px; background: #FFFDF7; overflow: hidden; }
+.qm-count b { font-family: var(--display); font-size: 32px; line-height: 1; }
+.qm-count span { font-size: 13px; font-weight: 800; color: var(--ink-2); }
+.qm-count i { position: absolute; left: 0; bottom: 0; height: 5px; background: #2FA84F; transition: width .5s linear; }
+.qm-note { text-align: center; margin-top: 10px !important; font-size: 12.5px !important; }
+.rm-seat.wait .rm-ai { animation: qmPulse 1.2s ease-in-out infinite; }
+@keyframes qmPulse { 50% { transform: scale(.85); opacity: .6; } }
+.pl-bot { margin-left: 4px; padding: 0 5px; border-radius: 6px; background: var(--ink); color: var(--yellow); font-size: 10px; vertical-align: 2px; }
+.turn-clock { position: absolute; left: 50%; top: 10px; z-index: 2000; translate: -50% 0; display: flex; align-items: baseline; gap: 6px; padding: 4px 12px 7px; overflow: hidden;
+  border: 2.5px solid var(--ink); border-radius: 999px; background: rgba(255,253,247,.94); box-shadow: 0 3px 0 var(--ink); pointer-events: none; }
+.turn-clock b { font-family: var(--display); font-size: 20px; line-height: 1; min-width: 22px; text-align: center; }
+.turn-clock span { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 900; color: var(--ink-2); }
+.turn-clock i { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--pc, #2FA84F); transition: width .25s linear; }
+.turn-clock.me { background: var(--yellow); }
+.turn-clock.hurry { animation: clockHurry .5s ease-in-out infinite alternate; }
+.turn-clock.hurry b { color: #E0533D; }
+@keyframes clockHurry { to { transform: scale(1.08); } }
+.quit-btn { position: absolute; right: 52px; top: 10px; z-index: 2000; height: 34px; padding: 0 10px; }

@@ -2023,3 +2023,48 @@ body.land .demo-sheet .dm-steps li { padding: 4px 10px; }
 .turn-clock.hurry b { color: #E0533D; }
 @keyframes clockHurry { to { transform: scale(1.08); } }
 .quit-btn { position: absolute; right: 52px; top: 10px; z-index: 2000; height: 34px; padding: 0 10px; }
+
+/* 원정 모드 */
+.lb-float.run > span { background: #FFE7B8; }
+.run-sheet .row .btn { min-width: 0; }
+.run-path { display: flex; align-items: center; margin: 12px 0 4px; }
+.rp-line { flex: 1; height: 3px; margin: 0 2px 16px; background: var(--paper-2); border-radius: 2px; }
+.rp-node { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; }
+.rp-node i { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; border: 2.5px solid var(--ink); border-radius: 50%; background: #FFFDF7; font-style: normal; font-family: var(--display); font-size: 16px; color: var(--ink-2); }
+.rp-node.boss i { font-family: var(--body); font-size: 10.5px; font-weight: 900; background: #3A2E2A; color: #F7C94A; }
+.rp-node span { font-size: 10px; font-weight: 900; color: var(--ink-2); white-space: nowrap; }
+.rp-node.done i { background: #2FA84F; color: #FFFDF7; }
+.rp-node.now i { background: var(--yellow); color: var(--ink); box-shadow: 0 0 0 4px rgba(242,179,61,.35); animation: qmPulse 1.4s ease-in-out infinite; }
+.rp-node.done + .rp-line { background: #2FA84F; }
+.run-who, .run-top { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.run-who { padding: 8px 10px; border: 2.5px solid var(--pc); border-radius: 14px; background: #FFFDF7; }
+.run-who b, .run-top b { font-size: 15px; font-weight: 900; }
+.run-who span { display: block; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.run-top > span:last-child:not(.run-hearts) { font-size: 13px; font-weight: 800; color: var(--ink-2); }
+.run-hearts { display: inline-flex; gap: 2px; margin-left: auto; }
+.run-top .run-hearts:first-child { margin-left: 0; }
+.run-stage { margin-top: 10px; padding: 10px 12px; border: 2.5px solid var(--ink); border-radius: 14px; background: #FFFDF7; box-shadow: 0 3px 0 var(--ink); }
+.run-stage.boss { background: #3A2E2A; color: #FFFDF7; }
+.run-stage.boss p { color: #EADCC4; }
+.run-stage h3 { margin: 4px 0 0; font-family: var(--display); font-weight: 400; font-size: 24px; }
+.rs-vs { display: flex; gap: 6px; margin-top: 6px; }
+.rs-rival { display: flex; flex-direction: column; align-items: center; padding: 2px 6px; border-radius: 10px; background: rgba(0,0,0,.04); }
+.rs-rival i { font-style: normal; font-size: 10.5px; font-weight: 900; }
+.rs-rival.boss { background: #F7C94A; color: var(--ink); }
+.run-bonus { font-size: 12.5px !important; }
+.run-bonus b { margin-right: 4px; padding: 0 6px; border-radius: 6px; background: var(--ink); color: var(--yellow); font-size: 11px; }
+.run-bonus.ok b { background: #2FA84F; color: #FFFDF7; }
+.run-relics { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 10px; }
+.run-relics > b { font-size: 12.5px; font-weight: 900; margin-right: 2px; }
+.run-none { font-size: 12px; font-weight: 700; color: var(--ink-3); }
+.relic-chip { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px 2px 2px; border: 2px solid var(--ink); border-radius: 999px; background: #FFFDF7; }
+.relic-chip b { font-size: 11.5px; font-weight: 900; white-space: nowrap; }
+.run-rec { text-align: center; font-size: 12px !important; margin-top: 10px !important; }
+.run-res { margin-top: 10px; }
+.run-gain { justify-content: center; margin-top: 10px; }
+.relic-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.relic-cards.four { grid-template-columns: repeat(2, 1fr); }
+.relic-card { appearance: none; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px; border: 3px solid var(--ink); border-radius: 16px; background: #FFFDF7; box-shadow: 0 4px 0 var(--ink); font-family: var(--body); text-align: center; transition: transform .08s; }
+.relic-card:active { transform: translateY(4px); box-shadow: 0 0 0 var(--ink); }
+.relic-card b { font-size: 14px; font-weight: 900; }
+.relic-card span { font-size: 12px; font-weight: 700; line-height: 1.4; color: var(--ink-2); }

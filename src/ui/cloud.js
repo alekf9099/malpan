@@ -1,7 +1,7 @@
 // 클라우드 저장 · 전체 랭킹(Firebase Auth + Firestore).
 // 설정(firebase-config.js)이 비었거나 SDK 를 못 불러오면 꺼진 채로 — 게임은 기기 저장(localStorage)만으로 그대로 돈다.
 //
-//   users/{uid}    내 저장 하나: { records, daily, prefs, name, at(마지막으로 바뀐 때, 밀리초), updated(서버 시각) } — 나만 읽고 쓴다
+//   users/{uid}    내 저장 하나: { records, daily, prefs, run(원정), name, at(마지막으로 바뀐 때, 밀리초), updated(서버 시각) } — 나만 읽고 쓴다
 //   ranking/{uid}  전체 랭킹 한 줄: { name, hero, rp, total, plays, wins, updated } — 누구나 읽고, 자기 줄만 쓴다
 //
 // 기기 저장이 먼저다: 게임은 늘 localStorage 를 읽고 쓰고, 저장할 때마다 queue() 가 잠시 모았다가 클라우드로 올린다.
@@ -14,7 +14,7 @@
 import { FIREBASE_CONFIG } from './firebase-config.js';
 
 const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
-const KEYS = { records: 'yeokjeon.records.v1', daily: 'yeokjeon.daily.v1', prefs: 'yeokjeon.prefs.v1' };
+const KEYS = { records: 'yeokjeon.records.v1', daily: 'yeokjeon.daily.v1', prefs: 'yeokjeon.prefs.v1', run: 'yeokjeon.run.v1' };
 const META = 'yeokjeon.cloud.v1'; // { uid(마지막으로 맞춘 계정), name, localAt(마지막 기기 저장), syncedAt(마지막으로 올린 것) }
 export const NAME_MAX = 10;
 
@@ -88,7 +88,8 @@ async function pull() {
     const pick = {
       records: score(remote.records, (d) => [d.plays || 0, d.tickets || 0]) > score(local.records, (d) => [d.plays || 0, d.tickets || 0]),
       daily: score(remote.daily, (d) => [d.attend?.count || 0, 0]) > score(local.daily, (d) => [d.attend?.count || 0, 0]),
-      prefs: !local.prefs
+      prefs: !local.prefs,
+      run: score(remote.run, (d) => [d.runs || 0, d.best || 0]) > score(local.run, (d) => [d.runs || 0, d.best || 0])
     };
     for (const [k, key] of Object.entries(KEYS)) if (pick[k] && remote[k]) { writeJSON(key, remote[k]); changed = true; }
   }

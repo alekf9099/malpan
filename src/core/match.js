@@ -111,11 +111,17 @@ export const areaOf = (m) => ringOf(m.region) || regionOf(m.region);
 export const isLoop = (m) => !!ringOf(m.region);
 /** 이 판의 고리(고리 판이 아니면 null) */
 export const ringIn = (m) => ringOf(m.region);
-/** 캐릭터 능력값(순환선이면 heroes.js 의 loop 값으로 덮는다) */
+/**
+ * 캐릭터 능력값(순환선이면 heroes.js 의 loop 값으로 덮는다).
+ * 원정 모드의 유물은 p.mods 로 얹는다 — 숫자는 더하고(할인 · 보너스가 겹친다), 나머지는 덮는다
+ */
 export const perkOf = (m, p) => {
   const h = heroById(p.hero);
-  if (!isLoop(m)) return h;
-  return { ...h, ...(h.loop || {}), ...(m.region !== 'loop' && h.tour ? h.tour : {}) };
+  const base = !isLoop(m) ? h : { ...h, ...(h.loop || {}), ...(m.region !== 'loop' && h.tour ? h.tour : {}) };
+  if (!p.mods) return base;
+  const out = { ...base };
+  for (const [k, v] of Object.entries(p.mods)) out[k] = typeof v === 'number' ? (out[k] || 0) + v : v;
+  return out;
 };
 /** 순환선 판의 모서리 칸이면 그 정보 */
 export const cornerAt = (m, n) => ringIn(m)?.corners[n] || null;
@@ -160,7 +166,8 @@ const fires = (m) => new Set(m.incidents.filter((i) => INCIDENTS[i.kind].block).
 // 사건 하나에만 붙은 stop(고리 판 떡상: 지나가는 상대를 끌어온다)도 같이 — 그건 늘 주인은 빼고
 const delays = (m, p = current(m)) => new Set(m.incidents.filter((i) => (INCIDENTS[i.kind].stop || i.stop) && !((INCIDENTS[i.kind].own || i.stop) && m.owned[i.node] === p.id)).map((i) => i.node));
 export const buyable = (n, m = null) => !isChance(n) && !(m && cornerAt(m, n));
-export const priceFor = (m, n) => stationPrice(n);
+/** 빈 역 사는 값(원정 유물 분양권은 싸게) */
+export const priceFor = (m, n, p = current(m)) => Math.round(stationPrice(n) * (1 - (perkOf(m, p).buyDiscount || 0)));
 export const upgradeFor = (m, n, p) => Math.round(upgradeCost(n) * (1 - (perkOf(m, p).buildDiscount || 0)));
 /** 인수 값: 들인 값 × 1.5 — 중개인은 30% 싸게 */
 export const takeoverFor = (m, n, p = current(m)) => Math.round(takeoverPrice(n, m.levels[n] || 1) * (1 - (perkOf(m, p).takeoverDiscount || 0)));

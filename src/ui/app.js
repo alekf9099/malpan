@@ -39,6 +39,9 @@ import * as Prefs from './prefs.js';
 import * as Daily from './daily.js';
 import * as Cloud from './cloud.js';
 import * as Online from './online.js';
+import * as RunStore from './run-store.js';
+import { relicArt, heartArt } from './relic-art.js';
+import { newRun, stagePlan, stageMatch, finishStage, pickRelic, tally, freshStats, bonusDone, bonusById, stageWon, runReward, relicById, RUN_STAGES, RUN_LIVES, REWARD } from '../core/expedition.js';
 import { ATTEND_REWARDS } from '../core/missions.js';
 import { Sound } from './sound.js';
 
@@ -46,7 +49,7 @@ import { Sound } from './sound.js';
 export const GAME_TITLE = { main: '역전', hanja: '驛戰', sub: '역을 차지하라 — 서울 지하철 땅따먹기' };
 
 const app = document.getElementById('app');
-const G = { m: null, busy: false, size: 4, wait: null, daily: false, me: 'p0', online: null };
+const G = { m: null, busy: false, size: 4, wait: null, daily: false, me: 'p0', online: null, run: null };
 const $ = (sel) => app.querySelector(sel);
 const M = () => G.m;
 const ids = HERO_DATA.map((h) => h.id);
@@ -54,7 +57,7 @@ const ids = HERO_DATA.map((h) => h.id);
 const ME = () => playerById(M(), G.me);
 const isMine = (p) => !!p && p.id === G.me;
 const colorOf = (p) => heroById(p.hero).color;
-const nameOf = (p) => G.online?.names[p.id] || heroById(p.hero).name;
+const nameOf = (p) => G.online?.names[p.id] || (p.boss ? `보스 ${heroById(p.hero).name}` : heroById(p.hero).name);
 const TIME_NAME = { rush: '러시아워', night: '심야', last: '막차' };
 
 // ── 스플래시 ────────────────────────────────────────────────
@@ -116,6 +119,7 @@ const ICON = {
   cal: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10 H21 M8 3 V7 M16 3 V7"/></svg>',
   help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5 Q9.5 7 12 7 Q14.5 7 14.5 9.3 Q14.5 11 12 12 V14 M12 17 V17.2"/></svg>',
   today: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7 V12 L15 14"/></svg>',
+  run: '<svg viewBox="0 0 24 24"><path d="M4 19 L9 13 L13 16 L20 6"/><circle cx="20" cy="6" r="2"/><path d="M3 4 V20 H21"/></svg>',
   online: '<svg viewBox="0 0 24 24"><circle cx="8" cy="8" r="3"/><circle cx="16.5" cy="8" r="3"/><path d="M2.5 19 Q2.5 13.5 8 13.5 Q13.5 13.5 13.5 19 Z M14 13.6 Q21.5 13 21.5 19 H15.5"/></svg>',
   sound: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 Q18 12 16 15 M18.5 7 Q22 12 18.5 17"/></svg>',
   mute: '<svg viewBox="0 0 24 24"><path d="M4 9 H8 L13 5 V19 L8 15 H4 Z M16 9 L21 15 M21 9 L16 15"/></svg>',
@@ -167,6 +171,7 @@ const bannerHTML = (list, i) => {
 
 function title(fromSplash = false) {
   G.m = null;
+  G.run = null;
   leaveOnline();
   app.className = 'app home-app';
   document.title = `${GAME_TITLE.main}(${GAME_TITLE.hanja}): 역을 차지하라`;
@@ -207,6 +212,7 @@ function title(fromSplash = false) {
         </div>
         <div class="lb-side right">
           <button class="lb-float hot" data-go="daily"><span>${ICON.today}</span><b>오늘의 대결</b><i class="lb-date">${today.getMonth() + 1}/${today.getDate()}</i></button>
+          <button class="lb-float run" data-go="run"><span>${ICON.run}</span><b>원정</b>${RunStore.ongoing() ? '<i class="dot"></i>' : ''}</button>
           <button class="lb-float" data-go="guide"><span>${ICON.help}</span><b>도움말</b></button>
         </div>
         <div class="lb-podium" aria-hidden="true"><i></i></div>
@@ -241,6 +247,7 @@ function title(fromSplash = false) {
     else if (k === 'attend') openAttendance();
     else if (k === 'daily') startGame(true);
     else if (k === 'online') onlineMenu();
+    else if (k === 'run') runPage();
   };
   app.querySelectorAll('[data-go]').forEach((b) => { b.onclick = () => go(b.dataset.go); });
   $('#snd').onclick = () => { Sound.toggle(); Sound.unlock(); $('#snd').innerHTML = Sound.isOn() ? ICON.sound : ICON.mute; };
@@ -765,6 +772,7 @@ async function startGame(daily, rivalCount = Prefs.getRivals()) {
   const m = createMatch({ seed, heroes: [me, ...rivals], humans: 1, daily, region: ringOf(Prefs.getBoard()) ? Prefs.getBoard() : null });
   if (!(await matchmaking(me, rivals, daily, areaOf(m)))) return;
   G.daily = daily;
+  G.run = null;
   G.me = 'p0';
   G.m = m;
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
@@ -780,6 +788,145 @@ const BOARD_NAMES = { loop: '순환선', korea: '국내', world: '해외', map: 
 const ONLINE_ERR = { offline: '온라인에 연결하지 못했어요', nothing: '그런 방이 없어요', full: '방이 꽉 찼어요', started: '이미 시작한 방이에요', taken: '방을 만들지 못했어요 · 다시 눌러 주세요' };
 const onlineErr = (err) => ONLINE_ERR[err?.message] || (err?.code === 'permission-denied' ? '권한이 없어요 · 규칙(firestore.rules)을 확인해 주세요' : '연결이 불안정해요 · 다시 해 주세요');
 const inviteLink = (code) => `${location.origin}${location.pathname}?room=${code}`;
+
+// ── 원정 모드(로그라이크): 원정 지도 · 스테이지 · 유물 고르기 · 결과 ────────
+
+const hearts = (n) => `<span class="run-hearts" aria-label="목숨 ${n}">${Array.from({ length: RUN_LIVES }, (_, i) => heartArt(i < n)).join('')}</span>`;
+const relicChip = (id) => { const r = relicById(id); return r ? `<span class="relic-chip" title="${r.desc}">${relicArt(id, 22)}<b>${r.name}</b></span>` : ''; };
+
+/** 원정 지도: 스테이지 길 · 목숨 · 모은 유물 · 다음 스테이지. 진행 중인 원정이 없으면 새 원정 안내 */
+function runPage() {
+  const run = RunStore.ongoing();
+  if (run?.over) { runOver(run); return; }
+  if (run?.offer) { relicPick(run); return; }
+  const rec = RunStore.record();
+  const path = (at) => `<div class="run-path">${RUN_STAGES.map((st, i) => `<div class="rp-node ${i < at ? 'done' : i === at ? 'now' : ''} ${st.boss ? 'boss' : ''}"><i>${st.boss ? '보스' : i + 1}</i><span>${st.name}</span></div>`).join('<b class="rp-line"></b>')}</div>`;
+  if (!run) {
+    const hero = Prefs.getLeader(Records.unlocked()), h = heroById(hero), board = Prefs.getBoard();
+    const s = sheet(`<span class="kind">원정 · 로그라이크</span><h2>역전 원정</h2>
+      <p>짧은 판 <b>${RUN_STAGES.length}개</b>를 이어서 · <b>1등</b>이면 통과하고 <b>유물</b> 3장 중 하나를 얻는다 · 지면 목숨 하나 · 목숨 <b>${RUN_LIVES}개</b> · 마지막은 보스</p>
+      ${path(0)}
+      <div class="run-who" style="--pc:${h.color}">${character(hero, 46, 'cheer')}<div><b>${h.name}</b><span>${BOARD_NAMES[board]} 판 · 로비에서 고른 캐릭터와 판으로</span></div></div>
+      <p class="run-rec">${rec.runs ? `최고 ${rec.best ? `${rec.best}스테이지 통과` : '첫 스테이지'} · 완주 ${rec.clears}번 · 원정 ${rec.runs}번` : '첫 원정'} · 보상: 스테이지마다 승차권 ${REWARD.stage}장 · 완주 +${REWARD.clear}장</p>
+      <div class="row"><button class="btn white" id="rnClose">닫기</button><button class="btn" id="rnNew">원정 시작</button></div>`);
+    s.classList.add('run-sheet');
+    s.querySelector('#rnClose').onclick = () => { Sound.click(); closeSheet(); };
+    s.querySelector('#rnNew').onclick = () => {
+      Sound.unlock(); Sound.click();
+      RunStore.save(newRun({ seed: (Date.now() & 0x7fffffff) || 1, hero, board }));
+      runPage();
+    };
+    return;
+  }
+  const plan = stagePlan(run), h = heroById(run.hero), b = bonusById(plan.bonus);
+  const s = sheet(`<span class="kind">원정 · ${BOARD_NAMES[run.board]} 판</span><h2>역전 원정</h2>
+    <div class="run-top" style="--pc:${h.color}">${character(run.hero, 40)}<b>${h.name}</b>${hearts(run.lives)}</div>
+    ${path(run.stage)}
+    <div class="run-stage ${plan.boss ? 'boss' : ''}">
+      <span class="kind">${plan.boss ? '보스 스테이지' : `스테이지 ${run.stage + 1}`}${run.tries ? ` · 다시 도전 ${run.tries}` : ''}</span>
+      <h3>${plan.name}</h3>
+      <div class="rs-vs">${plan.rivals.map((id, i) => `<span class="rs-rival ${plan.boss && i === 0 ? 'boss' : ''}" style="--pc:${heroById(id).color}">${character(id, 34, plan.boss && i === 0 ? 'cheer' : 'idle')}<i>${plan.boss && i === 0 ? '보스' : heroById(id).name}</i></span>`).join('')}</div>
+      <p>상대 ${plan.rivals.length}명 · ${plan.rounds}바퀴 · 1등이면 통과 · 상대 자금 ${(START_MONEY + plan.cash).toLocaleString()}으로 시작${plan.relics ? ` · 상대마다 유물 ${plan.relics}개` : ''}${plan.boss ? ` · 보스는 자금 +${plan.boss.cash} · 유물 ${plan.boss.relics}개` : ''}</p>
+      <p class="run-bonus"><b>보너스</b> ${b.text} — 해내면 다음 유물 4장 중에서</p>
+    </div>
+    <div class="run-relics"><b>유물 ${run.relics.length}</b>${run.relics.length ? run.relics.map(relicChip).join('') : '<span class="run-none">아직 없음 · 스테이지를 통과하면 얻는다</span>'}</div>
+    <div class="row"><button class="btn white" id="rnQuit">포기</button><button class="btn white" id="rnClose">닫기</button><button class="btn" id="rnGo">출발</button></div>`);
+  s.classList.add('run-sheet');
+  s.querySelector('#rnClose').onclick = () => { Sound.click(); closeSheet(); };
+  s.querySelector('#rnGo').onclick = () => { Sound.unlock(); Sound.click(); startStage(); };
+  s.querySelector('#rnQuit').onclick = () => {
+    Sound.click();
+    const q = sheet(`<span class="kind">원정</span><h2>원정을 그만둘까요?</h2><p>여기까지 통과한 스테이지만큼 승차권을 받고 끝나요(${runReward(run)}장).</p>
+      <div class="row"><button class="btn white" id="qNo">계속하기</button><button class="btn" id="qYes">그만두기</button></div>`);
+    q.querySelector('#qNo').onclick = () => { Sound.click(); runPage(); };
+    q.querySelector('#qYes').onclick = () => { Sound.click(); runOver({ ...run, over: true }); };
+  };
+}
+
+/** 스테이지 시작: 원정 상태로 판을 꾸려 대결 화면으로 */
+function startStage() {
+  const run = RunStore.ongoing();
+  if (!run || run.over) return;
+  closeSheet();
+  leaveOnline();
+  const plan = stagePlan(run);
+  const m = stageMatch(run, plan);
+  G.run = { run, plan };
+  G.daily = false;
+  G.me = 'p0';
+  G.m = m;
+  G.stats = freshStats();
+  G.hudMoney = {};
+  G.combo = null;
+  G.entered = new Set([current(m).id]);
+  enterGame();
+}
+
+/** 스테이지가 끝났다: 통과 · 실패, 보너스, 목숨 → 유물 고르기 · 다시 도전 · 원정 결과 */
+async function stageResults() {
+  const m = M(), me = ME(), { run, plan } = G.run;
+  const won = stageWon(m), bonus = won && bonusDone(plan.bonus, G.stats), b = bonusById(plan.bonus);
+  const next = finishStage(run, { won, bonus });
+  Daily.addMatch({ ...G.stats, play: 1, win: won ? 1 : 0 });
+  RunStore.save(next); // 다 끝났어도 남겨 둔다 — 결과를 보기 전에 꺼도 다음에 원정 결과(보상)부터
+  G.run = null;
+  const reason = me.out ? '파산' : m.reason === 'bankrupt' ? '모든 상대 파산' : m.reason === 'monopoly' ? `${winnerName(m)} 독점` : `${hhmm(m.end)} 막차 · ${me.place}등`;
+  const s = sheet(`
+    <div class="rs-head ${won ? 'win' : ''}" style="--pc:${colorOf(me)}">
+      <div class="rs-rays"></div>
+      <div class="rs-hero">${character(me.hero, 104, won ? 'dance' : 'sad')}</div>
+      <b class="rs-place">${won ? (plan.last ? '보스 격파!' : '통과!') : '실패'}</b><span>${plan.name} · ${reason}</span>
+    </div>
+    <div class="run-res">
+      <p class="run-bonus ${bonus ? 'ok' : ''}"><b>보너스</b> ${b.text} — ${bonus ? '달성! 다음 유물 4장 중에서' : won ? '못 함' : '통과해야 인정돼요'}</p>
+      <div class="run-top">${hearts(next.lives)}<span>${won ? `${next.stage}/${RUN_STAGES.length} 스테이지 통과` : next.over ? '목숨이 다 떨어졌어요' : `목숨 하나를 잃었어요 · 같은 스테이지를 새 판으로`}</span></div>
+    </div>
+    <div class="row"><button class="btn white" id="rsHome">로비</button><button class="btn" id="rsNext">${next.over ? '원정 결과' : won ? '유물 고르기' : '다시 도전'}</button></div>`);
+  s.classList.add('result-sheet');
+  if (won) { Sound.win(); buzz([40, 30, 40, 30, 90]); } else Sound.lose();
+  tween(s.querySelector('.rs-head'), [{ transform: 'translateY(-60px) scale(.8)', opacity: 0 }, { transform: 'translateY(6px) scale(1.04)', opacity: 1, offset: 0.7 }, { transform: 'none', opacity: 1 }], { duration: 480, easing: 'cubic-bezier(.3,.7,.3,1.2)' });
+  const go = () => { if (next.over) runOver(next); else if (next.offer) relicPick(next); else { title(); runPage(); } };
+  s.querySelector('#rsNext').onclick = () => { Sound.click(); title(); go(); };
+  s.querySelector('#rsHome').onclick = () => { Sound.click(); title(); if (next.over) runOver(next); };
+}
+
+/** 유물 고르기: 후보 3~4장 중 하나 */
+function relicPick(run) {
+  const s = sheet(`<span class="kind">원정 · ${run.stage}/${RUN_STAGES.length} 통과</span><h2>유물 고르기</h2><p>하나를 골라 원정 끝까지 가져가요</p>
+    <div class="relic-cards ${run.offer.length > 3 ? 'four' : ''}">${run.offer.map((id) => { const r = relicById(id); return `<button class="relic-card" data-r="${id}">${relicArt(id, 52)}<b>${r.name}</b><span>${r.desc}</span></button>`; }).join('')}</div>`);
+  s.classList.add('run-sheet');
+  s.querySelectorAll('.relic-card').forEach((c, i) => {
+    tween(c, [{ transform: 'translateY(30px) rotate(-6deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 320, delay: i * 90, easing: 'cubic-bezier(.3,.7,.3,1.2)', fill: 'backwards' });
+    c.onclick = () => {
+      Sound.unlock(); Sound.heung(2);
+      RunStore.save(pickRelic(run, c.dataset.r));
+      toast(`${relicById(c.dataset.r).name} 획득!`);
+      runPage();
+    };
+  });
+}
+
+/** 원정이 끝났다(완주 · 목숨 다함 · 포기): 보상 승차권 · 기록 */
+function runOver(run) {
+  const reward = runReward(run);
+  const rec = RunStore.finish(run);
+  if (reward) Records.addTickets(reward);
+  const h = heroById(run.hero);
+  const s = sheet(`
+    <div class="rs-head ${run.won ? 'win' : ''}" style="--pc:${h.color}">
+      <div class="rs-rays"></div>
+      <div class="rs-hero">${character(run.hero, 104, run.won ? 'dance' : 'idle')}</div>
+      <b class="rs-place">${run.won ? '원정 완주!' : '원정 끝'}</b><span>${run.stage}/${RUN_STAGES.length} 스테이지 · 보너스 ${run.bonuses}번 · 유물 ${run.relics.length}개</span>
+    </div>
+    <div class="run-relics">${run.relics.map(relicChip).join('') || '<span class="run-none">유물 없음</span>'}</div>
+    <div class="rs-gain run-gain">${ticketPill()}<b>+${reward}장</b></div>
+    <p class="run-rec">최고 ${rec.best}스테이지 · 완주 ${rec.clears}번 · 원정 ${rec.runs}번</p>
+    <div class="row"><button class="btn white" id="roHome">로비</button><button class="btn" id="roAgain">새 원정</button></div>`);
+  s.classList.add('result-sheet');
+  if (run.won) { Sound.win(); FX.confetti(200, 120, 70, 1.6); }
+  s.querySelector('#roHome').onclick = () => { Sound.click(); title(); };
+  s.querySelector('#roAgain').onclick = () => { Sound.click(); title(); runPage(); };
+}
 
 /** 온라인 대결 첫 창: 이어 하기 · 방 만들기 · 코드로 참가 */
 async function onlineMenu(code = '') {
@@ -1016,6 +1163,7 @@ async function startOnline(code, room, again = false) {
   O.inbox.splice(0, used);
   O.n = used;
   G.daily = false;
+  G.run = null;
   G.me = 'p' + seat;
   G.m = m;
   G.stats = { buy: 0, upgrade: 0, landmark: 0, takeover: 0, goal: 0, hot: 0, toll: 0 };
@@ -1095,10 +1243,11 @@ function enterGame(resumed = false) {
 function intro() {
   const m = M();
   const s = sheet(`
-    <span class="kind">${G.online ? `온라인 대결 · 방 ${G.online.code}` : G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
+    <span class="kind">${G.online ? `온라인 대결 · 방 ${G.online.code}` : G.run ? `원정 ${G.run.plan.index + 1}/${RUN_STAGES.length} · ${G.run.plan.name}` : G.daily ? '오늘의 대결' : '대결'} · ${areaOf(m).name}${isLoop(m) ? '' : ' 지역'} · ${m.players.length}명</span>
     <h2 style="margin-top:6px">${hhmm(CLOCK.start)} 첫차</h2>
     <div class="vs">${m.players.map((p, i) => `<div class="vs-p ${isMine(p) ? 'me' : ''}" style="--pc:${colorOf(p)}">${character(p.hero, 54, 'cheer')}<b>${isMine(p) ? '나' : nameOf(p)}</b><span>${tileName(p.node)}</span></div>`).join('<i>VS</i>')}</div>
-    <p>${isLoop(m) ? `${ringIn(m).intro} · 가운데 <b>적립금 단지</b>는 축제 칸에 서면 통째로<br>` : ''}시작 자금 <b>${START_MONEY.toLocaleString()}</b> · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
+    <p>${isLoop(m) ? `${ringIn(m).intro} · 가운데 <b>적립금 단지</b>는 축제 칸에 서면 통째로<br>` : ''}시작 자금 <b>${(G.run ? ME().money : START_MONEY).toLocaleString()}</b>${G.run && m.players.some((p) => p.money !== ME().money) ? ` · 상대 ${m.players.slice(1).map((p) => p.money.toLocaleString()).join(' · ')}` : ''} · 승리 조건: 상대 <b>파산</b> / <b>${hotsOf(m).length ? `명소역 ${m.hotWin}곳 · ` : ''}${isLoop(m) ? `${m.lineWin}칸 연속` : `한 노선 ${m.lineWin}역`}</b> 독점 / <b>${roundsOf(m)}바퀴 막차</b> 자산 1위</p>
+    ${G.run ? `<p class="run-bonus"><b>원정</b> 1등이면 통과 · ${roundsOf(m)}바퀴 · 보너스: ${bonusById(G.run.plan.bonus).text}</p>${G.run.run.relics.length ? `<div class="run-relics">${G.run.run.relics.map((id) => `<span class="relic-chip" title="${relicById(id).desc}">${relicArt(id, 22)}<b>${relicById(id).name}</b></span>`).join('')}</div>` : ''}` : ''}
     <div class="row"><button class="btn white" id="how">도움말</button><button class="btn" id="go">시작</button></div>`);
   s.querySelector('#how').onclick = () => { Sound.click(); guide(() => loop()); };
   s.querySelector('#go').onclick = () => { Sound.click(); closeSheet(); if (!Prefs.seenGuide()) guide(() => loop()); else loop(); };
@@ -1108,13 +1257,15 @@ function intro() {
 
 async function loop() {
   const m = M();
-  while (m === M() && m.phase !== 'over') {
+  // 원정: 내가 파산하면 남은 AI 끼리 끝까지 두지 않고 바로 결과
+  const done = () => m.phase === 'over' || (G.run && ME().out);
+  while (m === M() && !done()) {
     const p = current(m);
     if (isBot(p)) await aiTurn(p); // AI 상대 · 사람이 나가 AI 가 이어받은 자리
     else if (isMine(p)) await humanTurn(p);
     else await remoteTurn(p);
   }
-  if (m === M() && m.phase === 'over') await results();
+  if (m === M() && done()) await results();
 }
 
 // ── 손맛: 내 차례 배너 · 진동 · 큰 통행료 · 돈 카운트업 ──
@@ -2478,18 +2629,9 @@ function demoStage(layer, h, others, plan) {
 // ── 이벤트 연출 ────────────────────────────────────────────
 
 /** 일일 미션용: 이번 판에 내가 한 일을 센다 */
+/** 미션 · 원정 보너스 목표에 쓰는 판 기록(세는 기준은 core/expedition 의 tally) */
 function countForMissions(e) {
-  const s = G.stats, m = M();
-  if (!s || !m) return;
-  const me = ME();
-  if (e.player === me.id) {
-    if (e.type === 'buy') s.buy++;
-    if (e.type === 'upgrade') { s.upgrade++; if (e.level >= MAX_LEVEL) s.landmark++; }
-    if (e.type === 'takeover') s.takeover++;
-    if (e.type === 'goal') s.goal++;
-    if (e.type === 'hotspot') s.hot++;
-  }
-  if (e.type === 'pay' && e.to === me.id && (e.why === 'toll' || e.why === 'pass')) s.toll += e.amount;
+  if (G.stats && M()) tally(G.stats, e, ME().id);
 }
 
 async function play(events) {
@@ -3077,6 +3219,7 @@ const CHEST = `<svg viewBox="0 0 80 64" width="104" height="83" aria-hidden="tru
   <rect x="34" y="32" width="12" height="13" rx="3" fill="#F2B33D" stroke="#22201D" stroke-width="2.4"/><circle cx="40" cy="38" r="2" fill="#22201D"/></svg>`;
 
 async function results() {
+  if (G.run) return stageResults();
   const m = M();
   const me = ME();
   const win = me.place === 1;
